@@ -1,1 +1,2 @@
-# parallel-parser
+# Parallel Parser for a Bachelor Project.
+
