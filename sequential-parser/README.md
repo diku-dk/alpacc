@@ -28,12 +28,13 @@ An example of a grammar defined in a json file is.
 * `grammar`
   The `grammar` field would define a grammar like this.
 
-  $
-  T \to aTc \\
-  T \to R \\
-  R \to  \\
-  R \to bR \\ 
-  $
+  $T \to aTc$ 
+  
+  $T \to R$
+  
+  $R \to$
+
+  $R \to bR$
 
   The list of list is used much like the notation $A \to c | d$.
 * `start` the first production to be used.
