@@ -5,9 +5,10 @@ import GHC.Generics ( Generic )
 import Data.Aeson ( decode, FromJSON, ToJSON )
 import qualified Data.ByteString.Lazy as BS
 import qualified Data.Set as S
-import Data.Maybe ( fromJust )
+import Data.Maybe
 import Debug.Trace ( traceShow )
 import qualified Data.List as L
+import Data.Aeson.KeyMap (singleton)
 
 data GrammarData =
   Grammar
@@ -87,8 +88,8 @@ contraint grammar nonterminal seq = S.unions $ uncurry auxiliary <$> right_symbo
 constraints :: M.Map (Grammar String) [[Grammar String]] -> S.Set (FollowContraint String)
 constraints grammar = S.unions $ M.mapWithKey (\k v -> S.unions $ contraint grammar k <$> v) grammar
 
-toExtendedGrammar :: GrammarData -> M.Map (Grammar String) [[Grammar String]]
-toExtendedGrammar grammar_data = toGrammar new_grammar_data
+toExtendedGrammar :: GrammarData -> GrammarData
+toExtendedGrammar grammar_data = new_grammar_data
   where
     new_start = extendStart grammar_data
     old_start = start grammar_data
@@ -101,9 +102,10 @@ toExtendedGrammar grammar_data = toGrammar new_grammar_data
                                     , terminals = new_terminals
                                     , nonterminals = new_nonterminals}
 
-follow :: Ord a => S.Set (FollowContraint a) -> M.Map (Grammar a) (S.Set (Grammar a))
-follow constraints' = fst . head $ dropWhile (uncurry (/=)) iterations
+follow :: M.Map (Grammar String) [[Grammar String]] -> M.Map (Grammar String) (S.Set (Grammar String))
+follow grammar' = fst . head $ dropWhile (uncurry (/=)) iterations
   where
+    constraints' = constraints grammar'
     iterations = iterate auxiliary (empty_follow_sets, M.empty)
     auxiliary (a, b) = (foldl (flip addConstraint) a constraints', a)
     nonterminals' [] = []
@@ -113,16 +115,49 @@ follow constraints' = fst . head $ dropWhile (uncurry (/=)) iterations
     addConstraint (SetConstraint set a) m = M.adjust (`S.union` set) a m
     addConstraint (GraConstraint a b) m = M.adjust (`S.union` (m M.! a)) b m
 
-main :: IO ()
+firstTable :: M.Map (Grammar String) [[Grammar String]] -> M.Map (Grammar String, Grammar String) [Grammar String]
+firstTable extended_grammar = toMap . concat $ M.elems firsts
+  where 
+    toMap = M.fromList . S.toList . S.unions
+    firsts = M.mapWithKey auxiliary extended_grammar   
+    auxiliary nonterminal' productions = aux <$> productions
+      where
+        aux prod = prodPair prod `S.map ` first extended_grammar prod
+        prodPair prod terminal = ((nonterminal', terminal), prod)
+
+nullableAbdFollowTable :: M.Map (Grammar String) [[Grammar String]] -> M.Map (Grammar String, Grammar String) [Grammar String]
+nullableAbdFollowTable extended_grammar = toMap $ rearrangeTuples <$> intersections
+  where
+    toMap = M.fromList . S.toList . S.unions
+    rearrangeTuples (non, (ters, prod)) = (\ter -> ((non, ter), prod)) `S.map` ters
+    intersections = M.toList $ M.intersectionWith (,) followTable nullableTable
+    followTable = follow extended_grammar
+    -- Does not make sure the production rule i unique it just takes the first
+    first_prod = fmap head . M.filter (not . L.null)
+    nullableTable = first_prod $ L.filter (nullable extended_grammar) <$> extended_grammar
+
+mkTable :: GrammarData -> M.Map (Grammar String, Grammar String) [Grammar String]
+mkTable grammar_data = first_table `M.union` nullable_follow_table
+  where extended_grammar = toGrammar $ toExtendedGrammar grammar_data
+        nullable_follow_table = nullableAbdFollowTable extended_grammar
+        first_table = firstTable extended_grammar
+
+main :: IO () 
 main = do
   input <- BS.getContents
   let grammar_data = fromJust (decode input :: Maybe GrammarData)
   let grammar = toGrammar grammar_data
-  let extended_grammar = toExtendedGrammar grammar_data
+  let extended_grammar = toGrammar $ toExtendedGrammar grammar_data
   mapM_ print $ M.mapWithKey (\k v -> (k, nullable grammar <$> v)) grammar
   putStrLn ""
   mapM_ print $ M.mapWithKey (\k v -> (k, first grammar <$> v)) grammar
   putStrLn ""
   mapM_ print $ constraints extended_grammar
   putStrLn ""
-  mapM_ print . M.toList . follow $ constraints extended_grammar
+  mapM_ print . M.toList $  follow extended_grammar
+  putStrLn ""
+  mapM_ print . M.toList $ firstTable extended_grammar
+  putStrLn ""
+  mapM_ print . M.toList $ nullableAbdFollowTable extended_grammar
+  putStrLn ""
+  mapM_ print . M.toList $ mkTable grammar_data
