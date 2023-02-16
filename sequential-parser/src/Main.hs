@@ -9,7 +9,6 @@ import qualified Data.Set as S
 import Data.Maybe
 import Debug.Trace ( traceShow )
 import qualified Data.List as L
-import Data.Aeson.KeyMap (singleton)
 import Data.Bifunctor (bimap)
 
 data GrammarData =
@@ -151,16 +150,16 @@ mkTable grammar_data = unpacks $ first_table `M.union` nullable_follow_table
     nullable_follow_table = nullableFollowTable extended_grammar
     first_table = firstTable extended_grammar
 
-parse :: GrammarData -> [String] -> [[String]]
+parse :: GrammarData -> [String] -> [(String, [String])]
 parse grammar_data str = auxiliary str [extendStart grammar_data]
   where
     table = mkTable grammar_data
     auxiliary [] [] = []
-    auxiliary _ [] = []
-    auxiliary [] _ = []
+    auxiliary _ [] = error "Could not be parsed."
+    auxiliary [] _ = error "Could not be parsed."
     auxiliary (y:input) (x:stack)
       | y == x = auxiliary input stack
-      | otherwise = (production :) $ auxiliary (y:input) (production ++ stack)
+      | otherwise = ((x, production) :) $ auxiliary (y:input) (production ++ stack)
       where
         production = table M.! (x, y)
 
@@ -172,18 +171,21 @@ main = do
   let grammar_data = fromJust (decode input :: Maybe GrammarData)
   let grammar = toGrammar grammar_data
   let extended_grammar = toGrammar $ toExtendedGrammar grammar_data
+  putStrLn "Nullable Productions:"
   mapM_ print $ M.mapWithKey (\k v -> (k, nullable grammar <$> v)) grammar
-  putStrLn ""
+  putStrLn "First sets of Productions:"
   mapM_ print $ M.mapWithKey (\k v -> (k, first grammar <$> v)) grammar
-  putStrLn ""
+  putStrLn "Constraints of Grammar:"
   mapM_ print $ constraints extended_grammar
-  putStrLn ""
+  putStrLn "Follow sets of productions"
   mapM_ print . M.toList $  follow extended_grammar
-  putStrLn ""
+  putStrLn "Table where a in FIRST(alpha)"
   mapM_ print . M.toList $ firstTable extended_grammar
-  putStrLn ""
+  putStrLn "Table where a in FOLLOW(a) and NULLABLE(alpha)"
   mapM_ print . M.toList $ nullableFollowTable extended_grammar
-  putStrLn ""
+  putStrLn "The table for tablen driven LL(1) parsing."
   mapM_ print . M.toList $ mkTable grammar_data
+  putStrLn ""
+  putStrLn "Input that will be parsed:"
   parse_this <- getLine
   mapM_ print . parse grammar_data $ L.singleton <$> parse_this
