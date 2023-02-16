@@ -1,0 +1,13 @@
+{
+    "start": "N",
+    "extendStart": "N'",
+    "extendEnd": "$",
+    "nonterminals": ["N", "A", "B", "C"],
+    "terminals": ["a", "b"],
+    "grammar": {
+        "N": [["B", "A"], ["A", "B"]],
+        "A": [["a"], ["C", "A", "C"]],
+        "B": [["b"], ["C", "B", "C"]],
+        "C": [["a"], ["b"]]
+    }
+}
