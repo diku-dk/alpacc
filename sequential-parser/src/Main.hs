@@ -151,7 +151,7 @@ mkTable grammar_data = unpacks $ first_table `M.union` nullable_follow_table
     nullable_follow_table = nullableFollowTable extended_grammar
     first_table = firstTable extended_grammar
 
-parse :: GrammarData -> [String] -> [(String, [String])]
+parse :: GrammarData -> [String] -> [[String]]
 parse grammar_data str = auxiliary str [extendStart grammar_data]
   where
     table = mkTable grammar_data
@@ -160,7 +160,7 @@ parse grammar_data str = auxiliary str [extendStart grammar_data]
     auxiliary [] _ = []
     auxiliary (y:input) (x:stack)
       | y == x = auxiliary input stack
-      | otherwise = ((y, production) :) $ auxiliary (y:input) (production ++ stack)
+      | otherwise = (production :) $ auxiliary (y:input) (production ++ stack)
       where
         production = table M.! (x, y)
 
