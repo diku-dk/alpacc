@@ -1,5 +1,6 @@
 module Main where
 
+import System.Environment
 import qualified Data.Map as M
 import GHC.Generics ( Generic )
 import Data.Aeson ( decode, FromJSON, ToJSON )
@@ -9,6 +10,7 @@ import Data.Maybe
 import Debug.Trace ( traceShow )
 import qualified Data.List as L
 import Data.Aeson.KeyMap (singleton)
+import Data.Bifunctor (bimap)
 
 data GrammarData =
   Grammar
@@ -61,7 +63,8 @@ first grammar = auxiliary S.empty
       | otherwise = S.unions $ auxiliary new_visited <$> grammar M.! nonterminal
       where
         new_visited = S.insert nonterminal visited
-    auxiliary visited as = S.unions $ auxiliary visited . L.singleton <$> takeWhileOneMore (nullable grammar . L.singleton) as
+    auxiliary visited as = S.unions $ auxiliary visited . L.singleton <$> nullables
+      where nullables = takeWhileOneMore (nullable grammar . L.singleton) as
 
 rightSymbols :: [Grammar a] -> [(Grammar a, [Grammar a])]
 rightSymbols [] = []
@@ -117,16 +120,16 @@ follow grammar' = fst . head $ dropWhile (uncurry (/=)) iterations
 
 firstTable :: M.Map (Grammar String) [[Grammar String]] -> M.Map (Grammar String, Grammar String) [Grammar String]
 firstTable extended_grammar = toMap . concat $ M.elems firsts
-  where 
+  where
     toMap = M.fromList . S.toList . S.unions
-    firsts = M.mapWithKey auxiliary extended_grammar   
+    firsts = M.mapWithKey auxiliary extended_grammar
     auxiliary nonterminal' productions = aux <$> productions
       where
         aux prod = prodPair prod `S.map ` first extended_grammar prod
         prodPair prod terminal = ((nonterminal', terminal), prod)
 
-nullableAbdFollowTable :: M.Map (Grammar String) [[Grammar String]] -> M.Map (Grammar String, Grammar String) [Grammar String]
-nullableAbdFollowTable extended_grammar = toMap $ rearrangeTuples <$> intersections
+nullableFollowTable :: M.Map (Grammar String) [[Grammar String]] -> M.Map (Grammar String, Grammar String) [Grammar String]
+nullableFollowTable extended_grammar = toMap $ rearrangeTuples <$> intersections
   where
     toMap = M.fromList . S.toList . S.unions
     rearrangeTuples (non, (ters, prod)) = (\ter -> ((non, ter), prod)) `S.map` ters
@@ -136,15 +139,36 @@ nullableAbdFollowTable extended_grammar = toMap $ rearrangeTuples <$> intersecti
     first_prod = fmap head . M.filter (not . L.null)
     nullableTable = first_prod $ L.filter (nullable extended_grammar) <$> extended_grammar
 
-mkTable :: GrammarData -> M.Map (Grammar String, Grammar String) [Grammar String]
-mkTable grammar_data = first_table `M.union` nullable_follow_table
-  where extended_grammar = toGrammar $ toExtendedGrammar grammar_data
-        nullable_follow_table = nullableAbdFollowTable extended_grammar
-        first_table = firstTable extended_grammar
+unpack :: Grammar a -> a
+unpack (Nonterminal a) = a
+unpack (Terminal a) = a
 
-main :: IO () 
+mkTable :: GrammarData -> M.Map (String, String) [String]
+mkTable grammar_data = unpacks $ first_table `M.union` nullable_follow_table
+  where
+    unpacks = (fmap unpack <$>) . M.mapKeys (bimap unpack unpack)
+    extended_grammar = toGrammar $ toExtendedGrammar grammar_data
+    nullable_follow_table = nullableFollowTable extended_grammar
+    first_table = firstTable extended_grammar
+
+parse :: GrammarData -> [String] -> [(String, [String])]
+parse grammar_data str = auxiliary str [extendStart grammar_data]
+  where
+    table = mkTable grammar_data
+    auxiliary [] [] = []
+    auxiliary _ [] = []
+    auxiliary [] _ = []
+    auxiliary (y:input) (x:stack)
+      | y == x = auxiliary input stack
+      | otherwise = ((y, production) :) $ auxiliary (y:input) (production ++ stack)
+      where
+        production = table M.! (x, y)
+
+main :: IO ()
 main = do
-  input <- BS.getContents
+  args <- getArgs
+  input <- BS.readFile $ head args
+  print input
   let grammar_data = fromJust (decode input :: Maybe GrammarData)
   let grammar = toGrammar grammar_data
   let extended_grammar = toGrammar $ toExtendedGrammar grammar_data
@@ -158,6 +182,8 @@ main = do
   putStrLn ""
   mapM_ print . M.toList $ firstTable extended_grammar
   putStrLn ""
-  mapM_ print . M.toList $ nullableAbdFollowTable extended_grammar
+  mapM_ print . M.toList $ nullableFollowTable extended_grammar
   putStrLn ""
   mapM_ print . M.toList $ mkTable grammar_data
+  parse_this <- getLine
+  mapM_ print . parse grammar_data $ L.singleton <$> parse_this
