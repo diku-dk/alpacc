@@ -11,6 +11,8 @@ import Debug.Trace ( traceShow )
 import qualified Data.List as L
 import Data.Bifunctor (bimap)
 
+debug x = traceShow ("DEBUG: " ++ show x) x
+
 data GrammarData =
   Grammar
     { start               :: String
@@ -118,14 +120,11 @@ follow grammar' = fst . head $ dropWhile (uncurry (/=)) iterations
     addConstraint (GraConstraint a b) m = M.adjust (`S.union` (m M.! a)) b m
 
 firstTable :: M.Map (Grammar String) [[Grammar String]] -> M.Map (Grammar String, Grammar String) [Grammar String]
-firstTable extended_grammar = toMap . concat $ M.elems firsts
+firstTable extended_grammar = M.fromList firsts
   where
-    toMap = M.fromList . S.toList . S.unions
-    firsts = M.mapWithKey auxiliary extended_grammar
-    auxiliary nonterminal' productions = aux <$> productions
-      where
-        aux prod = prodPair prod `S.map ` first extended_grammar prod
-        prodPair prod terminal = ((nonterminal', terminal), prod)
+    firsts = concatMap auxiliary $ concatMap aux $ M.toList extended_grammar
+    aux (a, as) = (a,) <$> as 
+    auxiliary (a, as) = [((a, y), as) | y <- S.toList $ first extended_grammar as]
 
 nullableFollowTable :: M.Map (Grammar String) [[Grammar String]] -> M.Map (Grammar String, Grammar String) [Grammar String]
 nullableFollowTable extended_grammar = toMap $ rearrangeTuples <$> intersections
@@ -155,8 +154,8 @@ parse grammar_data str = auxiliary str [extendStart grammar_data]
   where
     table = mkTable grammar_data
     auxiliary [] [] = []
-    auxiliary _ [] = error "Could not be parsed."
-    auxiliary [] _ = error "Could not be parsed."
+    auxiliary _ [] = []
+    auxiliary [] _ = []
     auxiliary (y:input) (x:stack)
       | y == x = auxiliary input stack
       | otherwise = ((x, production) :) $ auxiliary (y:input) (production ++ stack)
@@ -180,7 +179,7 @@ main = do
   putStrLn "Follow sets of productions"
   mapM_ print . M.toList $  follow extended_grammar
   putStrLn "Table where a in FIRST(alpha)"
-  mapM_ print . M.toList $ firstTable extended_grammar
+  mapM_ print $ firstTable grammar
   putStrLn "Table where a in FOLLOW(a) and NULLABLE(alpha)"
   mapM_ print . M.toList $ nullableFollowTable extended_grammar
   putStrLn "The table for tablen driven LL(1) parsing."
