@@ -27,6 +27,6 @@ executable sequential-parser
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
-    build-depends:    base ^>=4.16.3.0, Stack, containers, split, aeson, text, bytestring
+    build-depends:    base, containers, split, aeson, text, bytestring
     hs-source-dirs:   src
     default-language: Haskell2010

@@ -28,25 +28,24 @@ instance ToJSON GrammarData
 
 data Grammar a = Nonterminal a | Terminal a deriving (Eq, Show, Ord)
 
-toGrammar :: GrammarData -> M.Map (Grammar String) [[Grammar String]]
-toGrammar d = M.mapKeys Nonterminal . fmap (fmap (fmap toGrammar)) $ grammar d
+toGrammar :: GrammarData -> M.Map String [[Grammar String]]
+toGrammar d = fmap (fmap (fmap toGrammar)) $ grammar d
   where
     toGrammar a
       | a `elem` terminals d = Terminal a
       | a `elem` nonterminals d = Nonterminal a
       | otherwise = error $ "'" ++ show a ++ "' is neither a terminal or a nonterminal."
 
-nullable :: M.Map (Grammar String) [[Grammar String]] -> [Grammar String] -> Bool
+nullable :: M.Map String [[Grammar String]] -> [Grammar String] -> Bool
 nullable grammar = auxiliary S.empty
   where
-    auxiliary _ [] = True
-    auxiliary _ [Terminal _] = False
-    auxiliary visited [nonterminal]
+    auxiliary1 _ (Terminal _) = False
+    auxiliary1 visited (Nonterminal nonterminal)
       | nonterminal `S.member` visited = False
       | otherwise = any (auxiliary new_visited) $ grammar M.! nonterminal
       where
         new_visited = S.insert nonterminal visited
-    auxiliary visited as = all (auxiliary visited . L.singleton) as
+    auxiliary visited as = all (auxiliary1 visited) as
 
 takeWhileOneMore :: (a -> Bool) -> [a] -> [a]
 takeWhileOneMore _ [] = []
@@ -54,12 +53,12 @@ takeWhileOneMore predicate (x:xs)
   | predicate x = x : takeWhileOneMore predicate xs
   | otherwise = [x]
 
-first :: M.Map (Grammar String) [[Grammar String]] -> [Grammar String] -> S.Set (Grammar String)
+first :: M.Map String [[Grammar String]] -> [Grammar String] -> S.Set String
 first grammar = auxiliary S.empty
   where
     auxiliary _ [] = S.empty
-    auxiliary _ [Terminal a] = S.singleton $ Terminal a
-    auxiliary visited [nonterminal]
+    auxiliary _ [Terminal a] = S.singleton a
+    auxiliary visited [Nonterminal nonterminal]
       | nonterminal `S.member` visited = S.empty
       | otherwise = S.unions $ auxiliary new_visited <$> grammar M.! nonterminal
       where
@@ -67,15 +66,15 @@ first grammar = auxiliary S.empty
     auxiliary visited as = S.unions $ auxiliary visited . L.singleton <$> nullables
       where nullables = takeWhileOneMore (nullable grammar . L.singleton) as
 
-rightSymbols :: [Grammar a] -> [(Grammar a, [Grammar a])]
+rightSymbols :: [Grammar a] -> [(a, [Grammar a])]
 rightSymbols [] = []
 rightSymbols ((Terminal _):xs) = rightSymbols xs
-rightSymbols (x:xs) = (x, xs) : rightSymbols xs
+rightSymbols ((Nonterminal x):xs) = (x, xs) : rightSymbols xs
 
-data FollowContraint a = SetConstraint (S.Set (Grammar a)) (Grammar a)
-                       | GraConstraint (Grammar a) (Grammar a) deriving (Eq, Show, Ord)
+data FollowContraint a = SetConstraint (S.Set a) (a)
+                       | GraConstraint a a deriving (Eq, Show, Ord)
 
-contraint :: M.Map (Grammar String) [[Grammar String]] -> Grammar String -> [Grammar String] -> S.Set (FollowContraint String)
+contraint :: M.Map String [[Grammar String]] -> String -> [Grammar String] -> S.Set (FollowContraint String)
 contraint grammar nonterminal seq = S.unions $ uncurry auxiliary <$> right_symbols
   where
     right_symbols = rightSymbols seq
@@ -84,12 +83,12 @@ contraint grammar nonterminal seq = S.unions $ uncurry auxiliary <$> right_symbo
         set = first grammar right
         fstCond = if S.null set
                   then S.empty
-                  else S.singleton (SetConstraint set nonterminal')
+                  else S.singleton (SetConstraint set nonterminal' :: FollowContraint String)
         sndCond = if nonterminal /= nonterminal' && nullable grammar right
                   then S.singleton (GraConstraint nonterminal nonterminal')
                   else S.empty
 
-constraints :: M.Map (Grammar String) [[Grammar String]] -> S.Set (FollowContraint String)
+constraints :: M.Map String [[Grammar String]] -> S.Set (FollowContraint String)
 constraints grammar = S.unions $ M.mapWithKey (\k v -> S.unions $ contraint grammar k <$> v) grammar
 
 toExtendedGrammar :: GrammarData -> GrammarData
@@ -106,7 +105,7 @@ toExtendedGrammar grammar_data = new_grammar_data
                                     , terminals = new_terminals
                                     , nonterminals = new_nonterminals}
 
-follow :: M.Map (Grammar String) [[Grammar String]] -> M.Map (Grammar String) (S.Set (Grammar String))
+follow :: M.Map String [[Grammar String]] -> M.Map String (S.Set String)
 follow grammar' = fst . head $ dropWhile (uncurry (/=)) iterations
   where
     constraints' = constraints grammar'
@@ -119,14 +118,14 @@ follow grammar' = fst . head $ dropWhile (uncurry (/=)) iterations
     addConstraint (SetConstraint set a) m = M.adjust (`S.union` set) a m
     addConstraint (GraConstraint a b) m = M.adjust (`S.union` (m M.! a)) b m
 
-firstTable :: M.Map (Grammar String) [[Grammar String]] -> M.Map (Grammar String, Grammar String) [Grammar String]
+firstTable :: M.Map String [[Grammar String]] -> M.Map (String, String) [Grammar String]
 firstTable extended_grammar = M.fromList firsts
   where
     firsts = concatMap auxiliary $ concatMap aux $ M.toList extended_grammar
     aux (a, as) = (a,) <$> as 
     auxiliary (a, as) = [((a, y), as) | y <- S.toList $ first extended_grammar as]
 
-nullableFollowTable :: M.Map (Grammar String) [[Grammar String]] -> M.Map (Grammar String, Grammar String) [Grammar String]
+nullableFollowTable :: M.Map String [[Grammar String]] -> M.Map (String, String) [Grammar String]
 nullableFollowTable extended_grammar = toMap $ rearrangeTuples <$> intersections
   where
     toMap = M.fromList . S.toList . S.unions
@@ -142,9 +141,8 @@ unpack (Nonterminal a) = a
 unpack (Terminal a) = a
 
 mkTable :: GrammarData -> M.Map (String, String) [String]
-mkTable grammar_data = unpacks $ first_table `M.union` nullable_follow_table
+mkTable grammar_data = fmap unpack <$> (first_table `M.union` nullable_follow_table)
   where
-    unpacks = (fmap unpack <$>) . M.mapKeys (bimap unpack unpack)
     extended_grammar = toGrammar $ toExtendedGrammar grammar_data
     nullable_follow_table = nullableFollowTable extended_grammar
     first_table = firstTable extended_grammar
