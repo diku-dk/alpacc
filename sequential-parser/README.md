@@ -1,7 +1,7 @@
 # Table-driven LL(1) parser
 A primitive table-driven LL(1) parser [1, 68] which prints out the productions used for parsing a
-given string. It is primitive since it assumes that you have defined a context-free grammar which is
-well-defined. The least the parser do is throw an error if the input could not be parsed. This
+given string. Primitive meaning it assumes that you have defined a context-free grammar which is
+LL(1). The least the parser do is throw an error if the input could not be parsed. This
 parser was created as an exercise to help the author understand table-driven LL(1) parsing.
 
 Sources:
@@ -25,8 +25,7 @@ An example of a grammar defined in a json file is.
 }
 ```
 
-* `grammar`
-  The `grammar` field would define a grammar like this.
+* `grammar`: the `grammar` field would define a grammar like this.
 
   $T \to aTc$ 
   
@@ -37,9 +36,9 @@ An example of a grammar defined in a json file is.
   $R \to bR$
 
   The list of list is used much like the notation $A \to c | d$.
-* `start` the first production to be used.
-* `terminals` and `nonterminals` are the once used in `grammar`.
-* `extendStart` and `extendEnd` should just be distinct from the `terminals` and `nonterminals` they
+* `start`: the first production to be used.
+* `terminals` and `nonterminals`: are the once used in `grammar`.
+* `extendStart` and `extendEnd`: should just be distinct from the `terminals` and `nonterminals` they
   are used to extend the grammar such that FOLLOW can be used.
 
 ## Usage
