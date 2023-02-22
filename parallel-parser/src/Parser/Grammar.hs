@@ -68,7 +68,7 @@ toProduction :: [String] -> [String] -> String -> Symbol
 toProduction ts nts symbol
   | symbol `elem` nts = NT $ read symbol
   | symbol `elem` ts = T $ read symbol
-  | otherwise = error (show ts ++ " " ++ show nts ++ " " ++ show symbol)
+  | otherwise = error $ show symbol ++ " is not a defined symbol."
 
 elem' :: ReadP String
 elem' = munch1 (`notElem` [' ', ',', '}', '{', '(', ')', '\n', '\r', '\t'])
