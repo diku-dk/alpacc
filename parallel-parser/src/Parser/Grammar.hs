@@ -1,15 +1,19 @@
-module MyLib (
-  Terminal (..),
-  Nonterminal (..),
-  Grammar (..),
-  ExtendedGrammar (..),
-  extendedGrammarToGrammar) where
+module Parser.Grammar
+  ( Terminal (..),
+    Nonterminal (..),
+    Grammar (..),
+    ExtendedGrammar (..),
+    Symbol(..),
+    Production(..),
+    extendedGrammarToGrammar,
+    nonterminal,
+    symbols,
+  )
+where
 
 import Control.Monad (join)
 import Data.Aeson (FromJSON, ToJSON, decode)
 import Data.Bifunctor (Bifunctor (first, second))
-import qualified Data.ByteString.Char8 as BS8
-import qualified Data.ByteString.Lazy as BSL
 import Data.Char as C
 import Data.Composition
 import Data.Maybe
@@ -19,17 +23,38 @@ import Text.ParserCombinators.ReadP
 
 debug x = traceShow ("DEBUG: " ++ show x) x
 
-newtype Terminal = Terminal String deriving (Show)
+newtype Terminal = Terminal String deriving (Ord, Eq)
 
 instance Read Terminal where
   readsPrec _ a = [(Terminal a, "")]
 
-newtype Nonterminal = Nonterminal String deriving (Show)
+instance Show Terminal where
+  show (Terminal a) = a
+
+newtype Nonterminal = Nonterminal String deriving (Ord, Eq)
+
+instance Show Nonterminal where
+  show (Nonterminal a) = a
 
 instance Read Nonterminal where
   readsPrec _ a = [(Nonterminal a, "")]
 
-data Production = Production Nonterminal [Either Nonterminal Terminal] deriving (Show)
+data Symbol = NT Nonterminal | T Terminal deriving (Ord, Eq)
+
+instance Show Symbol where
+  show (NT a) = show a
+  show (T a) = show a
+
+data Production = Production Nonterminal [Symbol] deriving (Ord, Eq)
+
+instance Show Production where
+  show (Production nt s) = show nt ++ " -> " ++ unwords (show <$> s)
+
+symbols :: Production -> [Symbol]
+symbols (Production _ symbols) = symbols
+
+nonterminal :: Production -> Nonterminal
+nonterminal (Production n _) = n
 
 data Grammar = Grammar
   { start :: Nonterminal,
@@ -39,14 +64,14 @@ data Grammar = Grammar
   }
   deriving (Show)
 
-toProduction :: [String] -> [String] -> String -> Either Nonterminal Terminal
+toProduction :: [String] -> [String] -> String -> Symbol
 toProduction ts nts symbol
-  | symbol `elem` nts = Left $ read symbol
-  | symbol `elem` ts = Right $ read symbol
-  | otherwise = error "test"
+  | symbol `elem` nts = NT $ read symbol
+  | symbol `elem` ts = T $ read symbol
+  | otherwise = error (show ts ++ " " ++ show nts ++ " " ++ show symbol)
 
 elem' :: ReadP String
-elem' = munch1 C.isAlphaNum
+elem' = munch1 (`notElem` [' ', ',', '}', '{', '(', ')', '\n', '\r', '\t'])
 
 sep :: ReadP ()
 sep = do
@@ -70,7 +95,7 @@ pGrammar = tuple
     production ts nts = do
       nt <- elem'
       _ <- skipSpaces
-      arrow <- string "->"
+      _ <- string "->"
       _ <- skipSpaces
       symbols <- sepBySkip elem' (many1 (char ' '))
       return $ Production (read nt) (toProduction ts nts <$> symbols)
@@ -114,20 +139,21 @@ instance Read ExtendedGrammar where
         _ <- sep
         grammar' <- pGrammar
         _ <- skipSpaces
-        return 
-          ExtendedGrammar {
-            extendedStart = read extended_start,
-            extendedEnd = read extended_end,
-            grammar = grammar'
-          }
+        return
+          ExtendedGrammar
+            { extendedStart = read extended_start,
+              extendedEnd = read extended_end,
+              grammar = grammar'
+            }
 
 extendedGrammarToGrammar :: ExtendedGrammar -> Grammar
-extendedGrammarToGrammar extended_grammar = Grammar {
-  start = extended_start,
-  terminals = terminals',
-  nonterminals = nonterminals',
-  productions = productions' 
-}
+extendedGrammarToGrammar extended_grammar =
+  Grammar
+    { start = extended_start,
+      terminals = terminals',
+      nonterminals = nonterminals',
+      productions = productions'
+    }
   where
     extended_end = extendedEnd extended_grammar
     extended_start = extendedStart extended_grammar
@@ -136,4 +162,4 @@ extendedGrammarToGrammar extended_grammar = Grammar {
     terminals' = extended_end : terminals grammar'
     nonterminals' = extended_start : nonterminals grammar'
     productions' = extended_production : productions grammar'
-    extended_production = Production extended_start [Left start', Right extended_end]
+    extended_production = Production extended_start [NT start', T extended_end]

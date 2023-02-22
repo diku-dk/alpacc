@@ -19,7 +19,9 @@ category:           Language
 extra-source-files: CHANGELOG.md
 
 library
-    exposed-modules:  MyLib
+    exposed-modules:
+        Parser.Grammar,
+        Parser.Parsing
     default-extensions:
         FlexibleContexts, 
         FlexibleInstances,

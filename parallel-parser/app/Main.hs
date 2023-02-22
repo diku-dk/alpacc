@@ -1,11 +1,11 @@
 module Main where
 
-import MyLib ( Grammar, Terminal, Nonterminal, ExtendedGrammar, extendedGrammarToGrammar )
-import qualified Data.ByteString.Lazy as BS
-import System.Environment
-import Text.ParserCombinators.ReadP
-import qualified Data.Char as C
+import Parser.Grammar 
+import Parser.Parsing
 
 main :: IO ()
 main = do
-  print . extendedGrammarToGrammar $ (read "( T , e , ( D , { a } , { D } , { D -> a } ) )" :: ExtendedGrammar)
+  contents <- getContents
+  -- print . nullable . extendedGrammarToGrammar $ (read contents :: ExtendedGrammar)
+  let grammar = read contents :: Grammar
+  print . zip (productions grammar) . nullable $ grammar
