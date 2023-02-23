@@ -12,8 +12,6 @@ module Parser.Grammar
   )
 where
 
-import Control.Monad (join)
-import Data.Aeson (FromJSON, ToJSON, decode)
 import Data.Bifunctor (Bifunctor (first, second))
 import Data.Char as C
 import Data.Composition

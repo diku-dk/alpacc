@@ -9,7 +9,8 @@ module Parser.Parsing
     rightSymbols,
     constraints,
     follows,
-    Parser.Parsing.last,
+    follow,
+    last,
     before
   )
 where
