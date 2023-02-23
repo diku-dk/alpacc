@@ -45,7 +45,7 @@ nullable grammar = auxiliary S.empty
       | otherwise = any (auxiliary new_visited) $ grammar M.! nonterminal
       where
         new_visited = S.insert nonterminal visited
-    auxiliary visited as = all (auxiliary1 visited) as
+    auxiliary visited = all (auxiliary1 visited)
 
 takeWhileOneMore :: (a -> Bool) -> [a] -> [a]
 takeWhileOneMore _ [] = []
@@ -122,7 +122,7 @@ firstTable :: M.Map String [[Grammar String String]] -> M.Map (String, String) [
 firstTable extended_grammar = M.fromList firsts
   where
     firsts = concatMap auxiliary $ concatMap aux $ M.toList extended_grammar
-    aux (a, as) = (a,) <$> as 
+    aux (a, as) = (a,) <$> as
     auxiliary (a, as) = [((a, y), as) | y <- S.toList $ first extended_grammar as]
 
 nullableFollowTable :: M.Map String [[Grammar String String]] -> M.Map (String, String) [Grammar String String]
