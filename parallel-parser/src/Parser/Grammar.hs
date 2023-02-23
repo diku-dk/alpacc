@@ -8,6 +8,7 @@ module Parser.Grammar
     extendedGrammarToGrammar,
     nonterminal,
     symbols,
+    reverseGrammar
   )
 where
 
@@ -163,3 +164,8 @@ extendedGrammarToGrammar extended_grammar =
     nonterminals' = extended_start : nonterminals grammar'
     productions' = extended_production : productions grammar'
     extended_production = Production extended_start [NT start', T extended_end]
+
+reverseGrammar :: Grammar -> Grammar
+reverseGrammar grammar = grammar {productions = reverseProduction <$> productions grammar}
+  where
+    reverseProduction (Production nt s) = Production nt (reverse s)
