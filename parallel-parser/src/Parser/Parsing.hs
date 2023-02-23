@@ -6,6 +6,8 @@ module Parser.Parsing
     constraints,
     follows,
     follow,
+    last',
+    before
   )
 where
 
@@ -21,9 +23,9 @@ toProductionsMap = M.fromList . fmap toPair . L.groupBy nonterminalEq . L.sort
     toPair a = (nonterminal $ head a, symbols <$> a)
 
 fixedPointIterate :: Eq b => (b -> b) -> b -> b
-fixedPointIterate f a = fst . head . dropWhile (uncurry (/=)) . drop 1 $ iterate helper (a, a)
+fixedPointIterate f a = fst . head . dropWhile (uncurry (/=)) . drop 1 $ iterate swapApply (a, a)
   where
-    helper (n, _) = (f n, n)
+    swapApply (n, _) = (f n, n)
 
 nullables :: Grammar -> [Bool]
 nullables grammar = all (nullable' final_nullable_map) . symbols <$> productions grammar
@@ -76,8 +78,9 @@ firstOne grammar (NT nt) = firsts' M.! nt
     firsts' = M.unionsWith S.union . zipWith M.singleton nonterminals' $ firsts grammar
 
 first :: Grammar -> [Symbol] -> S.Set Terminal
-first grammar = S.unions . map first'
+first grammar = S.unions . fmap first' . takeWhileOneMore isNullable
   where
+    isNullable = nullableOne grammar
     first' = firstOne grammar
 
 rightSymbols :: [Symbol] -> [(Nonterminal, [Symbol])]
@@ -119,3 +122,15 @@ follows grammar = fixedPointIterate f init_follow_map
 follow :: Grammar -> Nonterminal -> S.Set Terminal
 follow grammar = (follows' M.!)
   where follows' = follows grammar
+
+reverseGrammar :: Grammar -> Grammar
+reverseGrammar grammar = grammar { productions = reverseProduction <$> productions grammar }
+  where reverseProduction (Production nt s) = Production nt (reverse s) 
+
+last' :: Grammar -> [Symbol] -> S.Set Terminal
+last' grammar = lasts . reverse
+  where lasts = first $ reverseGrammar grammar
+
+before :: Grammar -> Nonterminal -> S.Set Terminal
+before grammar = (befores M.!)
+  where befores = follows $ reverseGrammar grammar

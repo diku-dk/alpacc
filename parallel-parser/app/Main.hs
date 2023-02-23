@@ -12,3 +12,5 @@ main = do
   print . zip (productions grammar) . firsts $ grammar
   print $ constraints grammar
   print $ follows grammar
+  print . zip (productions grammar) $ last' grammar . symbols <$> productions grammar
+  print . zip (nonterminals grammar) $ before grammar <$> nonterminals grammar
