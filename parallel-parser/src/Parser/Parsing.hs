@@ -1,8 +1,8 @@
 module Parser.Parsing
   ( nullable,
     nullables,
-    firsts,
     firstsMaxK,
+    first,
     toProductionsMap,
     takeWhileNMore,
     fixedPointIterate,
@@ -11,11 +11,12 @@ module Parser.Parsing
     follows,
     follow,
     last,
-    before
+    before,
   )
 where
 
 import Prelude hiding (last)
+import Data.Function
 import qualified Data.List as L
 import qualified Data.Map as M
 import qualified Data.Set as S
@@ -56,35 +57,34 @@ takeWhileNMore n predicate (x : xs)
   | predicate x = x : takeWhileNMore n predicate xs
   | otherwise = x : take (n - 1) xs
 
-helper :: Int -> M.Map Nonterminal (S.Set [Terminal]) -> S.Set [Terminal] -> Symbol -> S.Set [Terminal]
-helper k first_map first' (T t) = S.map (take k . (++[t])) first'
-helper k first_map first' (NT nt) = exteneded_first
-  where nt_first = S.toList $ first_map M.! nt
-        first_list = S.toList first'
-        exteneded_first = S.fromList [take k $ ts ++ ts' | ts <- first_list, ts' <- nt_first ]
+first' :: M.Map Nonterminal (S.Set [Terminal]) -> Symbol -> S.Set [Terminal]
+first' first_map (T t) = S.singleton [t]
+first' first_map (NT nt) = first_map M.! nt 
+
+truncatedProduct :: Int -> S.Set [Terminal] -> S.Set [Terminal] -> S.Set [Terminal]
+truncatedProduct k a b = S.fromList [take k $ ts ++ ts' | ts <- a_list, ts' <- b_list ]
+  where a_list = S.toList a
+        b_list = S.toList b
 
 firstAB :: Int -> Grammar -> M.Map Nonterminal (S.Set [Terminal]) -> [Symbol] -> S.Set [Terminal]
-firstAB k grammar first_map = foldl (helper k first_map) (S.singleton []) . takeWhileNMore k isNullable
+firstAB k grammar first_map = foldl (truncatedProduct k) (S.singleton []) . fmap (first' first_map) . takeWhileNMore k isNullable
   where isNullable = nullable grammar . L.singleton
 
-firstsMaxK :: Int -> Grammar -> [S.Set [Terminal]]
-firstsMaxK k grammar = firstAB' final_first_map . symbols <$> productions grammar
+firstsMaxK :: Int -> Grammar -> M.Map Nonterminal (S.Set [Terminal])
+firstsMaxK k grammar = fixedPointIterate (firstNontermianl productions_map) init_first_map
   where
     firstAB' = firstAB k grammar
     init_first_map = M.fromList . map (,S.singleton []) $ nonterminals grammar
     productions_map = toProductionsMap $ productions grammar
     firstNontermianl prods first_map = fmap (S.unions . fmap (firstAB' first_map)) prods
-    final_first_map = fixedPointIterate (firstNontermianl productions_map) init_first_map
 
 firsts :: Int -> Grammar -> [S.Set [Terminal]]
-firsts k grammar = auxiliary <$> firstsMaxK k grammar
-  where auxiliary :: S.Set [Terminal] -> S.Set [Terminal]
-        auxiliary = S.unions . zipWith (S.map . take) [1..k] . repeat
+firsts k grammar = first k grammar . symbols <$> productions grammar
 
 first :: Int -> Grammar -> [Symbol] -> S.Set [Terminal]
-first k grammar = S.filter (not . null) . firstAB k grammar first_map
-  where nonterminals' = nonterminal <$> productions grammar
-        first_map = M.unionsWith S.union . zipWith M.singleton nonterminals' $ firsts k grammar
+first k grammar = auxiliary . firstAB k grammar first_map
+  where first_map = firstsMaxK k grammar
+        auxiliary = S.unions . zipWith (S.map . take) [1..k] . repeat
 
 rightSymbols :: [Symbol] -> [(Nonterminal, [Symbol])]
 rightSymbols [] = []
