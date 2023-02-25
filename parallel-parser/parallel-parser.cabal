@@ -22,7 +22,6 @@ library
     exposed-modules:
         Parser.Grammar,
         Parser.Parsing
-        Parser.ParsingOneSymbol
     default-extensions:
         FlexibleContexts, 
         FlexibleInstances,

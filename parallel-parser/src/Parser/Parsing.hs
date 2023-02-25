@@ -15,14 +15,14 @@ module Parser.Parsing
   )
 where
 
-import Prelude hiding (last)
 import Data.Function
 import qualified Data.List as L
 import qualified Data.Map as M
 import qualified Data.Set as S
 import Parser.Grammar
+import Prelude hiding (last)
 
-toProductionsMap :: [Production] -> M.Map Nonterminal [[Symbol]]
+toProductionsMap :: (Ord nt, Ord t) => [Production nt t] -> M.Map nt [[Symbol nt t]]
 toProductionsMap = M.fromList . fmap toPair . L.groupBy nonterminalEq . L.sort
   where
     nonterminalEq a b = nonterminal a == nonterminal b
@@ -33,23 +33,25 @@ fixedPointIterate f a = fst . head . dropWhile (uncurry (/=)) . drop 1 $ iterate
   where
     swapApply (n, _) = (f n, n)
 
-nullables :: Grammar -> [Bool]
-nullables grammar = all (nullable' final_nullable_map) . symbols <$> productions grammar
+nullables :: (Ord nt, Ord t, Show nt, Show t) => Grammar nt t -> M.Map nt Bool
+nullables grammar = fixedPointIterate (nullableNontermianl productions_map) init_nullable_map
   where
     init_nullable_map = M.fromList . map (,False) $ nonterminals grammar
-    nullable' _ (T _) = False
-    nullable' nullable_map (NT a) = nullable_map M.! a
+    nullable' _ (Terminal _) = False
+    nullable' nullable_map (Nonterminal a) = nullable_map M.! a
     productions_map = toProductionsMap $ productions grammar
     nullableNontermianl prods nullable_map = (any . all $ nullable' nullable_map) <$> prods
-    final_nullable_map = fixedPointIterate (nullableNontermianl productions_map) init_nullable_map
 
-nullable :: Grammar -> [Symbol] -> Bool
-nullable grammar = all nullable'
+nullableOne :: (Ord nt, Ord t, Show nt, Show t) => Grammar nt t -> Symbol nt t -> Bool
+nullableOne _ (Terminal t) = False
+nullableOne grammar (Nonterminal nt) = nullable_map M.! nt
   where
-    nullable' (NT nt) = nullables' M.! nt
-    nullable' (T t) = False
-    nonterminals' = nonterminal <$> productions grammar
-    nullables' = M.unionsWith (||) . zipWith M.singleton nonterminals' $ nullables grammar
+    nullable_map = nullables grammar
+
+nullable :: (Ord nt, Ord t, Show nt, Show t) => Grammar nt t -> [Symbol nt t] -> Bool
+nullable grammar = all nullableOne'
+  where
+    nullableOne' = nullableOne grammar
 
 takeWhileNMore :: Int -> (a -> Bool) -> [a] -> [a]
 takeWhileNMore _ _ [] = []
@@ -57,20 +59,24 @@ takeWhileNMore n predicate (x : xs)
   | predicate x = x : takeWhileNMore n predicate xs
   | otherwise = x : take (n - 1) xs
 
-first' :: M.Map Nonterminal (S.Set [Terminal]) -> Symbol -> S.Set [Terminal]
-first' first_map (T t) = S.singleton [t]
-first' first_map (NT nt) = first_map M.! nt 
+firstOne :: Ord nt => M.Map nt (S.Set [t]) -> Symbol nt t -> S.Set [t]
+firstOne first_map (Terminal t) = S.singleton [t]
+firstOne first_map (Nonterminal nt) = first_map M.! nt
 
-truncatedProduct :: Int -> S.Set [Terminal] -> S.Set [Terminal] -> S.Set [Terminal]
-truncatedProduct k a b = S.fromList [take k $ ts ++ ts' | ts <- a_list, ts' <- b_list ]
-  where a_list = S.toList a
-        b_list = S.toList b
+truncatedProduct :: Ord t => Int -> S.Set [t] -> S.Set [t] -> S.Set [t]
+truncatedProduct k a b = S.fromList [take k $ ts ++ ts' | ts <- a_list, ts' <- b_list]
+  where
+    a_list = S.toList a
+    b_list = S.toList b
 
-firstAB :: Int -> Grammar -> M.Map Nonterminal (S.Set [Terminal]) -> [Symbol] -> S.Set [Terminal]
-firstAB k grammar first_map = foldl (truncatedProduct k) (S.singleton []) . fmap (first' first_map) . takeWhileNMore k isNullable
-  where isNullable = nullable grammar . L.singleton
+firstAB :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> M.Map nt (S.Set [t]) -> [Symbol nt t] -> S.Set [t]
+firstAB k grammar first_map = foldl truncatedProductSymbol (S.singleton []) . kNullables
+  where
+    truncatedProductSymbol a b = truncatedProduct k a (firstOne first_map b)
+    kNullables = takeWhileNMore k nullableOne'
+    nullableOne' = nullableOne grammar
 
-firstsMaxK :: Int -> Grammar -> M.Map Nonterminal (S.Set [Terminal])
+firstsMaxK :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> M.Map nt (S.Set [t])
 firstsMaxK k grammar = fixedPointIterate (firstNontermianl productions_map) init_first_map
   where
     firstAB' = firstAB k grammar
@@ -78,29 +84,35 @@ firstsMaxK k grammar = fixedPointIterate (firstNontermianl productions_map) init
     productions_map = toProductionsMap $ productions grammar
     firstNontermianl prods first_map = fmap (S.unions . fmap (firstAB' first_map)) prods
 
-firsts :: Int -> Grammar -> [S.Set [Terminal]]
-firsts k grammar = first k grammar . symbols <$> productions grammar
+first :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> [Symbol nt t] -> S.Set [t]
+first k grammar =
+  removeEpsilon
+    . reverseTerminals
+    . S.unions
+    . takeWhile (not . S.null)
+    . iterate (S.map tail . removeEpsilon)
+    . reverseTerminals
+    . firstAB k grammar first_map
+  where
+    first_map = firstsMaxK k grammar
+    removeEpsilon = S.filter (not . L.null)
+    reverseTerminals = S.map L.reverse
 
-first :: Int -> Grammar -> [Symbol] -> S.Set [Terminal]
-first k grammar = auxiliary . firstAB k grammar first_map
-  where first_map = firstsMaxK k grammar
-        auxiliary = S.unions . zipWith (S.map . take) [1..k] . repeat
-
-rightSymbols :: [Symbol] -> [(Nonterminal, [Symbol])]
+rightSymbols :: [Symbol nt t] -> [(nt, [Symbol nt t])]
 rightSymbols [] = []
-rightSymbols ((T _) : xs) = rightSymbols xs
-rightSymbols ((NT x) : xs) = (x, xs) : rightSymbols xs
+rightSymbols ((Terminal _) : xs) = rightSymbols xs
+rightSymbols ((Nonterminal x) : xs) = (x, xs) : rightSymbols xs
 
-data Constraint
-  = TConstraint (S.Set [Terminal]) Nonterminal
-  | NTConstraint Nonterminal Nonterminal
+data Constraint nt t
+  = TConstraint (S.Set [t]) nt
+  | NTConstraint nt nt
   deriving (Eq, Ord)
 
-instance Show Constraint where
+instance (Show nt, Show t) => Show (Constraint nt t) where
   show (TConstraint ts nt) = "{" ++ L.intercalate ", " (show <$> S.toList ts) ++ "} ⊆ " ++ show nt
   show (NTConstraint nt nt') = show nt ++ " ⊆ " ++ show nt'
 
-constraints :: Int -> Grammar -> [S.Set Constraint]
+constraints :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> [S.Set (Constraint nt t)]
 constraints k grammar = helper <$> productions grammar
   where
     nullable' = nullable grammar
@@ -112,9 +124,9 @@ constraints k grammar = helper <$> productions grammar
           where
             first_set = first' right
             tConstraint = S.fromList [TConstraint first_set nt' | not (S.null first_set)]
-            ntConstraint =  S.fromList [NTConstraint nt nt' | nt /= nt' && nullable' right]
+            ntConstraint = S.fromList [NTConstraint nt nt' | nt /= nt' && nullable' right]
 
-follows :: Int -> Grammar -> M.Map Nonterminal (S.Set [Terminal])
+follows :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> M.Map nt (S.Set [t])
 follows k grammar = fixedPointIterate f init_follow_map
   where
     constraints' = S.unions $ constraints k grammar
@@ -123,17 +135,17 @@ follows k grammar = fixedPointIterate f init_follow_map
     addConstraint (NTConstraint nt nt') m = M.adjust (`S.union` (m M.! nt)) nt' m
     f a = foldl (flip addConstraint) a constraints'
 
-follow :: Int -> Grammar -> Nonterminal -> S.Set [Terminal]
+follow :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> nt -> S.Set [t]
 follow k grammar = (follows' M.!)
   where
     follows' = follows k grammar
 
-last :: Int -> Grammar -> [Symbol] -> S.Set [Terminal]
+last :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t  -> [Symbol nt t] -> S.Set [t]
 last q grammar = S.map reverse . lasts . reverse
   where
     lasts = first q $ reverseGrammar grammar
 
-before :: Int -> Grammar -> Nonterminal -> S.Set [Terminal]
-before q grammar =  S.map reverse . (befores M.!)
+before :: (Ord nt, Ord t, Show nt, Show t) => Int ->  Grammar nt t  -> nt -> S.Set [t]
+before q grammar = S.map reverse . (befores M.!)
   where
     befores = follows q $ reverseGrammar grammar
