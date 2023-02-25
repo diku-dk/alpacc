@@ -1,13 +1,12 @@
+{-# OPTIONS_GHC -Wno-missing-fields #-}
 module Parser.Grammar
-  ( Terminal (..),
-    Nonterminal (..),
-    Grammar (..),
-    ExtendedGrammar (..),
+  ( Grammar (..),
     Symbol(..),
     Production(..),
-    extendedGrammarToGrammar,
-    nonterminal,
+    T(..),
+    NT(..),
     symbols,
+    nonterminal,
     reverseGrammar
   )
 where
@@ -17,153 +16,109 @@ import Data.Char as C
 import Data.Composition
 import Data.Maybe
 import Debug.Trace (traceShow)
-import GHC.Generics (Generic)
 import Text.ParserCombinators.ReadP
 
 debug x = traceShow ("DEBUG: " ++ show x) x
 
-newtype Terminal = Terminal String deriving (Ord, Eq)
+newtype T = T String deriving (Ord, Eq)
 
-instance Read Terminal where
-  readsPrec _ a = [(Terminal a, "")]
+instance Read T where
+  readsPrec _ a = [(T a, "")]
 
-instance Show Terminal where
-  show (Terminal a) = a
+instance Show T where
+  show (T a) = a
 
-newtype Nonterminal = Nonterminal String deriving (Ord, Eq)
+newtype NT = NT String deriving (Ord, Eq)
 
-instance Show Nonterminal where
-  show (Nonterminal a) = a
+instance Show NT where
+  show (NT a) = a
 
-instance Read Nonterminal where
-  readsPrec _ a = [(Nonterminal a, "")]
+instance Read NT where
+  readsPrec _ a = [(NT a, "")]
 
-data Symbol = NT Nonterminal | T Terminal deriving (Ord, Eq)
+data Symbol nt t = Nonterminal nt | Terminal t deriving (Ord, Eq, Show, Read)
+data Production nt t = Production nt [Symbol nt t] deriving (Ord, Eq, Show, Read)
 
-instance Show Symbol where
-  show (NT a) = show a
-  show (T a) = show a
+symbols :: Production nt t -> [Symbol nt t]
+symbols (Production _ s) = s
 
-data Production = Production Nonterminal [Symbol] deriving (Ord, Eq)
+nonterminal :: Production nt t -> nt
+nonterminal (Production nt _) = nt
 
-instance Show Production where
-  show (Production nt s) = show nt ++ " -> " ++ unwords (show <$> s)
-
-symbols :: Production -> [Symbol]
-symbols (Production _ symbols) = symbols
-
-nonterminal :: Production -> Nonterminal
-nonterminal (Production n _) = n
-
-data Grammar = Grammar
-  { start :: Nonterminal,
-    terminals :: [Terminal],
-    nonterminals :: [Nonterminal],
-    productions :: [Production]
+data (Show nt, Show t) => Grammar nt t = Grammar
+  { start :: nt,
+    terminals :: [t],
+    nonterminals :: [nt],
+    productions :: [Production nt t]
   }
   deriving (Show)
 
-toProduction :: [String] -> [String] -> String -> Symbol
-toProduction ts nts symbol
-  | symbol `elem` nts = NT $ read symbol
-  | symbol `elem` ts = T $ read symbol
-  | otherwise = error $ show symbol ++ " is not a defined symbol."
 
-elem' :: ReadP String
-elem' = munch1 (`notElem` [' ', ',', '}', '{', '(', ')', '\n', '\r', '\t'])
+skipWhiteSpaces :: ReadP ()
+skipWhiteSpaces = do
+  _ <- munch (`elem` [' ', '\n', '\r', '\t'])
+  return ()
+
+skipSpacesAround :: ReadP a -> ReadP a 
+skipSpacesAround a = do
+  _ <- skipWhiteSpaces
+  result <- a
+  _ <- skipWhiteSpaces
+  return result
 
 sep :: ReadP ()
 sep = do
-  _ <- skipSpaces
-  _ <- char ','
-  skipSpaces
+  _ <- skipSpacesAround (char ',')
+  return ()
 
 sepBySkip :: ReadP a -> ReadP sep -> ReadP [a]
-sepBySkip a sep' = do
-  _ <- skipSpaces
-  result <- sepBy a sep'
-  _ <- skipSpaces
-  return result
+sepBySkip a sep' = skipSpacesAround $ sepBy a sep'
 
-pGrammar :: ReadP Grammar
+set :: ReadP [String]
+set = between (char '{') (char '}') (sepBySkip (munch1 (`notElem` [',', '}'])) sep)
+
+toSymbol :: (Read nt, Read t) => [String] -> [String] -> String -> Symbol nt t
+toSymbol ts nts symbol
+  | symbol `elem` nts = Nonterminal $ read symbol
+  | symbol `elem` ts = Terminal $ read symbol
+  | otherwise = error $ show symbol ++ " is not a defined symbol."
+
+pGrammar :: (Read nt, Read t, Show nt, Show t) => ReadP (Grammar nt t)
 pGrammar = tuple
   where
-    set = sepBySkip elem' sep
+    set = sepBySkip setElement sep
     production_set ts nts = sepBySkip (production ts nts) sep
-
+    setElement = munch1 (`notElem` [' ', ',', '}', '\n', '\r', '\t'])
+    tupleElement = munch1 (`notElem` [' ', ',', ')', '\n', '\r', '\t'])
+    
     production ts nts = do
-      nt <- elem'
-      _ <- skipSpaces
-      _ <- string "->"
-      _ <- skipSpaces
-      symbols <- sepBySkip elem' (many1 (char ' '))
-      return $ Production (read nt) (toProduction ts nts <$> symbols)
+      nt <- setElement
+      _ <- skipSpacesAround $ string "->"
+      symbols <- sepBySkip setElement (many1 (char ' '))
+      return $ Production (read nt) (toSymbol ts nts <$> symbols)
 
     tuple = between (char '(') (char ')') $ do
-      _ <- skipSpaces
-      s <- elem'
+      _ <- skipWhiteSpaces
+      s <- tupleElement
       _ <- sep
       ts <- between (char '{') (char '}') set
       _ <- sep
       nts <- between (char '{') (char '}') set
       _ <- sep
       ps <- between (char '{') (char '}') (production_set ts nts)
-      _ <- skipSpaces
-      return
-        Grammar
-          { start = read s,
-            terminals = read <$> ts,
-            nonterminals = read <$> nts,
-            productions = ps
-          }
+      _ <- skipWhiteSpaces
+      return 
+         Grammar
+           { start = read s,
+             terminals = read <$> ts,
+             nonterminals = read <$> nts,
+             productions = ps
+           }
 
-instance Read Grammar where
+instance (Read nt, Read t, Show nt, Show t) => Read (Grammar nt t) where
   readsPrec _ = readP_to_S pGrammar
 
-data ExtendedGrammar = ExtendedGrammar
-  { extendedStart :: Nonterminal,
-    extendedEnd :: Terminal,
-    grammar :: Grammar
-  }
-  deriving (Show)
-
-instance Read ExtendedGrammar where
-  readsPrec _ = readP_to_S tuple
-    where
-      tuple = between (char '(') (char ')') $ do
-        _ <- skipSpaces
-        extended_start <- elem'
-        _ <- sep
-        extended_end <- elem'
-        _ <- sep
-        grammar' <- pGrammar
-        _ <- skipSpaces
-        return
-          ExtendedGrammar
-            { extendedStart = read extended_start,
-              extendedEnd = read extended_end,
-              grammar = grammar'
-            }
-
-extendedGrammarToGrammar :: ExtendedGrammar -> Grammar
-extendedGrammarToGrammar extended_grammar =
-  Grammar
-    { start = extended_start,
-      terminals = terminals',
-      nonterminals = nonterminals',
-      productions = productions'
-    }
-  where
-    extended_end = extendedEnd extended_grammar
-    extended_start = extendedStart extended_grammar
-    grammar' = grammar extended_grammar
-    start' = start grammar'
-    terminals' = extended_end : terminals grammar'
-    nonterminals' = extended_start : nonterminals grammar'
-    productions' = extended_production : productions grammar'
-    extended_production = Production extended_start [NT start', T extended_end]
-
-reverseGrammar :: Grammar -> Grammar
+reverseGrammar :: (Show nt, Show t) => Grammar nt t -> Grammar nt t
 reverseGrammar grammar = grammar {productions = reverseProduction <$> productions grammar}
   where
     reverseProduction (Production nt s) = Production nt (reverse s)
