@@ -1,21 +1,14 @@
 module Parser.Parsing
   ( nullable,
-    nullables,
-    firstsMaxK,
     first,
-    toProductionsMap,
-    takeWhileNMore,
-    fixedPointIterate,
-    rightSymbols,
-    constraints,
-    follows,
     follow,
     last,
     before,
+    llpItems,
   )
 where
 
-import Data.Function
+import Data.Function (flip, ($), (.))
 import qualified Data.List as L
 import qualified Data.Map as M
 import qualified Data.Set as S
@@ -69,7 +62,13 @@ truncatedProduct k a b = S.fromList [take k $ ts ++ ts' | ts <- a_list, ts' <- b
     a_list = S.toList a
     b_list = S.toList b
 
-firstAB :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> M.Map nt (S.Set [t]) -> [Symbol nt t] -> S.Set [t]
+firstAB ::
+  (Ord nt, Ord t, Show nt, Show t) =>
+  Int ->
+  Grammar nt t ->
+  M.Map nt (S.Set [t]) ->
+  [Symbol nt t] ->
+  S.Set [t]
 firstAB k grammar first_map = foldl truncatedProductSymbol (S.singleton []) . kNullables
   where
     truncatedProductSymbol a b = truncatedProduct k a (firstOne first_map b)
@@ -84,19 +83,25 @@ firstsMaxK k grammar = fixedPointIterate (firstNontermianl productions_map) init
     productions_map = toProductionsMap $ productions grammar
     firstNontermianl prods first_map = fmap (S.unions . fmap (firstAB' first_map)) prods
 
+-- I think i misunderstood the definition.
+-- first :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> [Symbol nt t] -> S.Set [t]
+-- first k grammar =
+--   removeEpsilon
+--     . reverseTerminals
+--     . S.unions
+--     . takeWhile (not . S.null)
+--     . iterate (S.map tail . removeEpsilon)
+--     . reverseTerminals
+--     . firstAB k grammar first_map
+--   where
+--     first_map = firstsMaxK k grammar
+--     removeEpsilon = S.filter (not . L.null)
+--     reverseTerminals = S.map L.reverse
+
 first :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> [Symbol nt t] -> S.Set [t]
-first k grammar =
-  removeEpsilon
-    . reverseTerminals
-    . S.unions
-    . takeWhile (not . S.null)
-    . iterate (S.map tail . removeEpsilon)
-    . reverseTerminals
-    . firstAB k grammar first_map
+first k grammar = S.filter (not . L.null) . firstAB k grammar first_map
   where
     first_map = firstsMaxK k grammar
-    removeEpsilon = S.filter (not . L.null)
-    reverseTerminals = S.map L.reverse
 
 rightSymbols :: [Symbol nt t] -> [(nt, [Symbol nt t])]
 rightSymbols [] = []
@@ -140,12 +145,50 @@ follow k grammar = (follows' M.!)
   where
     follows' = follows k grammar
 
-last :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t  -> [Symbol nt t] -> S.Set [t]
+last :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> [Symbol nt t] -> S.Set [t]
 last q grammar = S.map reverse . lasts . reverse
   where
     lasts = first q $ reverseGrammar grammar
 
-before :: (Ord nt, Ord t, Show nt, Show t) => Int ->  Grammar nt t  -> nt -> S.Set [t]
+before :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> nt -> S.Set [t]
 before q grammar = S.map reverse . (befores M.!)
   where
     befores = follows q $ reverseGrammar grammar
+
+data DotSymbol nt t = Dot | DSymbol (Symbol nt t) deriving (Ord, Eq, Show, Read)
+
+data DotProduction nt t = DotProduction nt [DotSymbol nt t] deriving (Ord, Eq, Show, Read)
+
+toDotPoduction :: Production nt t -> DotProduction nt t
+toDotPoduction (Production nt s) = DotProduction nt $ DSymbol <$> s
+
+beforeDot :: (Eq nt, Eq t) => DotProduction nt t -> [DotSymbol nt t]
+beforeDot (DotProduction _ s) = takeWhile (/=Dot) s
+
+mapSymbols :: ([DotSymbol nt t1] -> [DotSymbol nt t2]) -> DotProduction nt t1 -> DotProduction nt t2
+mapSymbols f (DotProduction nt s) = DotProduction nt (f s)
+
+data Item nt t = Item
+  { production :: DotProduction nt t,
+    suffix :: [t],
+    prefix :: [t],
+    shortestPrefix :: [t]
+  } deriving (Show)
+
+mkDInit :: (Show nt, Show t, Ord nt, Ord t) => Int -> Grammar nt t -> Item nt t
+mkDInit q grammar =
+  Item
+    { production = mapSymbols (++[Dot]) $ toDotPoduction production',
+      suffix = if null last' then [] else S.findMax last',
+      prefix = [],
+      shortestPrefix = []
+    }
+  where
+    production' =  head $ findProductions grammar (start grammar)
+    last' = last q grammar $ symbols production'
+
+-- llpItems :: Int -> Int -> Grammar nt t ->
+llpItems q k grammar = d_init
+  where
+    augmented_grammar = augmentGrammar grammar
+    d_init = mkDInit 1 augmented_grammar

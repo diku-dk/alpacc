@@ -2,7 +2,7 @@ module Main where
 
 
 import Parser.Grammar
-import Parser.Parsing ( nullable, constraints, follows, last, before, firstsMaxK, first )
+import Parser.Parsing
 import qualified Data.Map as M
 import Prelude hiding (last)
 import Text.ParserCombinators.ReadP
@@ -17,12 +17,13 @@ main :: IO ()
 main = do
   contents <- getContents
   let grammar = read contents :: Grammar NT T
-  print grammar
+  let augmentedGrammar = augmentGrammar grammar
   let nullable' = nullable grammar
-  mapM_ print $ (\(Production nt s) -> (nt, s, nullable' s)) <$> productions grammar
-  print $ constraints 2 grammar
-  print . M.toList $ follows 1 grammar
+  let last' = last 2 augmentedGrammar
+  -- mapM_ print $ (\(Production nt s) -> (nt, s, nullable' s)) <$> productions grammar
   let first' = first 5 grammar
   mapM_ print $ (\(Production nt s) -> (nt, s, first' s)) <$> productions grammar
-  print . zip (productions grammar) $ last 2 grammar . symbols <$> productions grammar
-  print . zip (nonterminals grammar) $ before 2 grammar <$> nonterminals grammar
+  -- print . zip (productions grammar) $ last 2 grammar . symbols <$> productions grammar
+  -- print . zip (nonterminals grammar) $ before 2 grammar <$> nonterminals grammar
+  -- print $ (\(Production nt s) -> (nt, last' s)) <$> productions augmentedGrammar
+  print $ llpItems 1 1 grammar
