@@ -1,17 +1,20 @@
-{-# OPTIONS_GHC -Wno-missing-fields #-}
 module Parser.Grammar
   ( Grammar (..),
     Symbol(..),
     Production(..),
+    AugmentedNonterminal(..),
+    AugmentedTerminal(..),
     T(..),
     NT(..),
     symbols,
     nonterminal,
-    reverseGrammar
+    reverseGrammar,
+    augmentGrammar,
+    findProductions
   )
 where
 
-import Data.Bifunctor (Bifunctor (first, second))
+import Data.Bifunctor (Bifunctor (first, second, bimap))
 import Data.Char as C
 import Data.Composition
 import Data.Maybe
@@ -21,6 +24,19 @@ import Text.ParserCombinators.ReadP
 debug x = traceShow ("DEBUG: " ++ show x) x
 
 newtype T = T String deriving (Ord, Eq)
+
+data AugmentedTerminal t = AugmentedTerminal t | RightTurnstile | LeftTurnstile deriving (Ord, Eq)
+
+instance Show t => Show (AugmentedTerminal t) where
+  show RightTurnstile = "⊢"
+  show LeftTurnstile = "⊣"
+  show (AugmentedTerminal t) = show t
+
+data AugmentedNonterminal nt = AugmentedNonterminal nt | Start deriving (Ord, Eq)
+
+instance Show nt => Show (AugmentedNonterminal nt) where
+  show (AugmentedNonterminal nt) = show nt
+  show Start = "⊥"
 
 instance Read T where
   readsPrec _ a = [(T a, "")]
@@ -37,7 +53,18 @@ instance Read NT where
   readsPrec _ a = [(NT a, "")]
 
 data Symbol nt t = Nonterminal nt | Terminal t deriving (Ord, Eq, Show, Read)
+
+instance Bifunctor Symbol where
+  first f (Nonterminal nt) = Nonterminal $ f nt
+  first _ (Terminal t) = Terminal t
+  second _ (Nonterminal nt) = Nonterminal nt
+  second f (Terminal t) = Terminal $ f t
+
 data Production nt t = Production nt [Symbol nt t] deriving (Ord, Eq, Show, Read)
+
+instance Bifunctor Production where
+  first f (Production nt s) = Production (f nt) (first f <$> s)
+  second f (Production nt s) = Production nt (second f <$> s)
 
 symbols :: Production nt t -> [Symbol nt t]
 symbols (Production _ s) = s
@@ -53,13 +80,12 @@ data (Show nt, Show t) => Grammar nt t = Grammar
   }
   deriving (Show)
 
-
 skipWhiteSpaces :: ReadP ()
 skipWhiteSpaces = do
   _ <- munch (`elem` [' ', '\n', '\r', '\t'])
   return ()
 
-skipSpacesAround :: ReadP a -> ReadP a 
+skipSpacesAround :: ReadP a -> ReadP a
 skipSpacesAround a = do
   _ <- skipWhiteSpaces
   result <- a
@@ -90,7 +116,7 @@ pGrammar = tuple
     production_set ts nts = sepBySkip (production ts nts) sep
     setElement = munch1 (`notElem` [' ', ',', '}', '\n', '\r', '\t'])
     tupleElement = munch1 (`notElem` [' ', ',', ')', '\n', '\r', '\t'])
-    
+
     production ts nts = do
       nt <- setElement
       _ <- skipSpacesAround $ string "->"
@@ -107,7 +133,7 @@ pGrammar = tuple
       _ <- sep
       ps <- between (char '{') (char '}') (production_set ts nts)
       _ <- skipWhiteSpaces
-      return 
+      return
          Grammar
            { start = read s,
              terminals = read <$> ts,
@@ -118,7 +144,26 @@ pGrammar = tuple
 instance (Read nt, Read t, Show nt, Show t) => Read (Grammar nt t) where
   readsPrec _ = readP_to_S pGrammar
 
+findProductions :: (Eq b, Show b, Show t) => Grammar b t -> b -> [Production b t]
+findProductions grammar nt = filter ((==nt) . nonterminal) $ productions grammar
+
 reverseGrammar :: (Show nt, Show t) => Grammar nt t -> Grammar nt t
 reverseGrammar grammar = grammar {productions = reverseProduction <$> productions grammar}
   where
     reverseProduction (Production nt s) = Production nt (reverse s)
+
+augmentGrammar :: 
+  (Show nt, Show t) => 
+  Grammar nt t -> 
+  Grammar (AugmentedNonterminal nt) (AugmentedTerminal t)
+augmentGrammar grammar =
+  grammar
+    { start = Start,
+      terminals = LeftTurnstile : RightTurnstile : (AugmentedTerminal <$> terminals grammar),
+      nonterminals = Start : (AugmentedNonterminal <$> nonterminals grammar),
+      productions = Production Start symbols' : (augmentProduction <$> productions grammar)
+    }
+  where
+    start' = Nonterminal . AugmentedNonterminal $ start grammar
+    symbols' = [Terminal RightTurnstile, start', Terminal LeftTurnstile]
+    augmentProduction = bimap AugmentedNonterminal AugmentedTerminal
