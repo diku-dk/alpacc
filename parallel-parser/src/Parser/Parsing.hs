@@ -175,7 +175,7 @@ initD :: (Show nt, Show t, Ord nt, Ord t) => Int -> Grammar nt t -> Item nt t
 initD q grammar =
   Item
     { production = toDotPoduction production',
-      suffix = if null last' then [] else S.findMax last',
+      suffix = if null last' then [] else S.findMin last',
       prefix = [],
       shortestPrefix = []
     }
@@ -185,9 +185,16 @@ initD q grammar =
 
 moveDot (DotProduction nt s s') = DotProduction nt (init s) (L.last s : s')
 moveDots = takeWhileNMore 1 isNotEpsilon . iterate moveDot
-  where isNotEpsilon (DotProduction _ s _) = not $ L.null s
+  where
+    isNotEpsilon (DotProduction _ s _) = not $ L.null s
 
--- llpItems :: Int -> Int -> Grammar nt t ->
+newD q k grammar item = u
+  where
+    u = S.findMin . S.unions $ S.map (last q grammar . (++alpha) . fmap Terminal) (before q grammar y)
+    v = S.findMin . first k grammar $ fmap Terminal (prefix item)
+    alpha = init alphaX
+    (DotProduction y alphaX beta) = production item
+
 llpItems q k grammar = d_init
   where
     augmented_grammar = augmentGrammar grammar
