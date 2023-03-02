@@ -34,7 +34,7 @@ library
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
-    build-depends:    base ^>=4.16.4.0, containers, split, aeson, text, bytestring, composition
+    build-depends:    base ^>=4.16.4.0, containers, split, aeson, text, bytestring, composition, split
     hs-source-dirs:   src
     default-language: Haskell2010
 

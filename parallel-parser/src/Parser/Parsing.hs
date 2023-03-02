@@ -5,15 +5,19 @@ module Parser.Parsing
     last,
     before,
     llpItems,
+    Item(..),
+    moveDots
   )
 where
 
 import Data.Function (flip, ($), (.))
 import qualified Data.List as L
+import Data.List.Split (splitOn)
 import qualified Data.Map as M
 import qualified Data.Set as S
 import Parser.Grammar
 import Prelude hiding (last)
+import Data.Maybe
 
 toProductionsMap :: (Ord nt, Ord t) => [Production nt t] -> M.Map nt [[Symbol nt t]]
 toProductionsMap = M.fromList . fmap toPair . L.groupBy nonterminalEq . L.sort
@@ -155,18 +159,10 @@ before q grammar = S.map reverse . (befores M.!)
   where
     befores = follows q $ reverseGrammar grammar
 
-data DotSymbol nt t = Dot | DSymbol (Symbol nt t) deriving (Ord, Eq, Show, Read)
-
-data DotProduction nt t = DotProduction nt [DotSymbol nt t] deriving (Ord, Eq, Show, Read)
+data DotProduction nt t = DotProduction nt [Symbol nt t] [Symbol nt t] deriving (Ord, Eq, Show, Read)
 
 toDotPoduction :: Production nt t -> DotProduction nt t
-toDotPoduction (Production nt s) = DotProduction nt $ DSymbol <$> s
-
-beforeDot :: (Eq nt, Eq t) => DotProduction nt t -> [DotSymbol nt t]
-beforeDot (DotProduction _ s) = takeWhile (/=Dot) s
-
-mapSymbols :: ([DotSymbol nt t1] -> [DotSymbol nt t2]) -> DotProduction nt t1 -> DotProduction nt t2
-mapSymbols f (DotProduction nt s) = DotProduction nt (f s)
+toDotPoduction (Production nt s) = DotProduction nt s []
 
 data Item nt t = Item
   { production :: DotProduction nt t,
@@ -175,20 +171,24 @@ data Item nt t = Item
     shortestPrefix :: [t]
   } deriving (Show)
 
-mkDInit :: (Show nt, Show t, Ord nt, Ord t) => Int -> Grammar nt t -> Item nt t
-mkDInit q grammar =
+initD :: (Show nt, Show t, Ord nt, Ord t) => Int -> Grammar nt t -> Item nt t
+initD q grammar =
   Item
-    { production = mapSymbols (++[Dot]) $ toDotPoduction production',
+    { production = toDotPoduction production',
       suffix = if null last' then [] else S.findMax last',
       prefix = [],
       shortestPrefix = []
     }
   where
-    production' =  head $ findProductions grammar (start grammar)
+    production' = head $ findProductions grammar (start grammar)
     last' = last q grammar $ symbols production'
+
+moveDot (DotProduction nt s s') = DotProduction nt (init s) (L.last s : s')
+moveDots = takeWhileNMore 1 isNotEpsilon . iterate moveDot
+  where isNotEpsilon (DotProduction _ s _) = not $ L.null s
 
 -- llpItems :: Int -> Int -> Grammar nt t ->
 llpItems q k grammar = d_init
   where
     augmented_grammar = augmentGrammar grammar
-    d_init = mkDInit 1 augmented_grammar
+    d_init = initD q augmented_grammar
