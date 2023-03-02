@@ -22,8 +22,8 @@ main = do
   let last' = last 2 augmentedGrammar
   -- mapM_ print $ (\(Production nt s) -> (nt, s, nullable' s)) <$> productions grammar
   let first' = first 5 grammar
-  mapM_ print $ (\(Production nt s) -> (nt, s, first' s)) <$> productions grammar
+  -- mapM_ print $ (\(Production nt s) -> (nt, s, first' s)) <$> productions grammar
   -- print . zip (productions grammar) $ last 2 grammar . symbols <$> productions grammar
   -- print . zip (nonterminals grammar) $ before 2 grammar <$> nonterminals grammar
   -- print $ (\(Production nt s) -> (nt, last' s)) <$> productions augmentedGrammar
-  print $ llpItems 1 1 grammar
+  print . moveDots . production $ llpItems 1 1 grammar
