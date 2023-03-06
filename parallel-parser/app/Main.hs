@@ -33,4 +33,4 @@ main = do
   -- let (DotProduction nt s s') = (L.!! 2) . moveDots . toDotProduction $ head test_production
   -- mapM_ print $ llpItems 1 1 grammar
   -- let temp = T . L.singleton <$> "aabbbcc$"
-  print $ llpItems 1 1 grammar -- llkParse 1 grammar (temp, [Nonterminal $ start grammar], []) 
+  mapM_ print $ llpItems 1 1 grammar -- llkParse 1 grammar (temp, [Nonterminal $ start grammar], []) 

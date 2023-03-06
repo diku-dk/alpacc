@@ -10,7 +10,10 @@ module Parser.Grammar
     nonterminal,
     reverseGrammar,
     augmentGrammar,
-    findProductions
+    findProductions,
+    isTerminal,
+    isNonterminal,
+    toProductionsMap
   )
 where
 
@@ -20,7 +23,9 @@ import Data.Composition
 import Data.Maybe
 import Debug.Trace (traceShow)
 import Text.ParserCombinators.ReadP
-
+import Data.Map (Map (..))
+import qualified Data.Map as M
+import qualified Data.List as L
 
 newtype T = T String deriving (Ord, Eq)
 
@@ -166,3 +171,16 @@ augmentGrammar grammar =
     start' = Nonterminal . AugmentedNonterminal $ start grammar
     symbols' = [Terminal RightTurnstile, start', Terminal LeftTurnstile]
     augmentProduction = bimap AugmentedNonterminal AugmentedTerminal
+
+isTerminal :: Symbol nt t -> Bool
+isTerminal (Terminal _) = True
+isTerminal (Nonterminal _) = False
+
+isNonterminal :: Symbol nt t -> Bool
+isNonterminal = not . isTerminal
+
+toProductionsMap :: (Ord nt, Ord t) => [Production nt t] -> Map nt [[Symbol nt t]]
+toProductionsMap = M.fromList . fmap toPair . L.groupBy nonterminalEq . L.sort
+  where
+    nonterminalEq a b = nonterminal a == nonterminal b
+    toPair a = (nonterminal $ head a, symbols <$> a)

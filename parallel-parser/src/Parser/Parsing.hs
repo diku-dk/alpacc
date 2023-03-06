@@ -30,13 +30,8 @@ import Parser.Grammar
 import Prelude hiding (last)
 
 debug x = traceShow ("DEBUG: " ++ show x) x
-checkpoint = traceShow "Checkpoint"
 
-toProductionsMap :: (Ord nt, Ord t) => [Production nt t] -> Map nt [[Symbol nt t]]
-toProductionsMap = M.fromList . fmap toPair . L.groupBy nonterminalEq . L.sort
-  where
-    nonterminalEq a b = nonterminal a == nonterminal b
-    toPair a = (nonterminal $ head a, symbols <$> a)
+checkpoint = traceShow "Checkpoint"
 
 fixedPointIterate :: Eq b => (b -> b) -> b -> b
 fixedPointIterate f a = fst . head . dropWhile (uncurry (/=)) . drop 1 $ iterate swapApply (a, a)
@@ -99,21 +94,6 @@ firsts k grammar = fixedPointIterate (firstNontermianl productions_map) init_fir
     init_first_map = M.fromList . map (,S.singleton []) $ nonterminals grammar
     productions_map = toProductionsMap $ productions grammar
     firstNontermianl prods first_map = fmap (S.unions . fmap (firstAB' first_map)) prods
-
--- I think i misunderstood the definition.
--- first :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> [Symbol nt t] -> Set [t]
--- first k grammar =
---   removeEpsilon
---     . reverseTerminals
---     . S.unions
---     . takeWhile (not . S.null)
---     . iterate (S.map tail . removeEpsilon)
---     . reverseTerminals
---     . firstAB k grammar first_map
---   where
---     first_map = firsts k grammar
---     removeEpsilon = S.filter (not . L.null)
---     reverseTerminals = S.map L.reverse
 
 first :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> [Symbol nt t] -> Set [t]
 first k grammar = firstAB k grammar first_map
@@ -178,17 +158,17 @@ toDotProduction :: Production nt t -> DotProduction nt t
 toDotProduction (Production nt s) = DotProduction nt s []
 
 data Item nt t = Item
-  { production :: DotProduction nt t,
+  { dotProduction :: DotProduction nt t,
     suffix :: Set [t],
     prefix :: Set [t],
     shortestPrefix :: [Symbol nt t]
   }
-  deriving (Show)
+  deriving (Eq, Ord, Show)
 
 initD :: (Show nt, Show t, Ord nt, Ord t) => Int -> Grammar nt t -> Item nt t
 initD q grammar =
   Item
-    { production = toDotProduction production',
+    { dotProduction = toDotProduction production',
       suffix = if null last' then S.singleton [] else last',
       prefix = S.singleton [],
       shortestPrefix = []
@@ -197,20 +177,22 @@ initD q grammar =
     production' = head $ findProductions grammar (start grammar)
     last' = last q grammar $ symbols production'
 
+moveDot :: DotProduction nt t -> DotProduction nt t
 moveDot (DotProduction nt s s') = DotProduction nt (init s) (L.last s : s')
 
-moveDots = takeWhileNMore 1 isNotEpsilon . drop 1 . iterate moveDot
+moveDots :: DotProduction nt t -> [DotProduction nt t]
+moveDots = takeWhileNMore 1 isNotEpsilon . iterate moveDot
   where
     isNotEpsilon (DotProduction _ s _) = not $ L.null s
 
 firstTable :: (Show nt, Show t, Ord nt, Ord t) => Int -> Grammar nt t -> Map (nt, [t]) Int
-firstTable k grammar = M.unions $ auxiliary <$> zip (productions grammar) [0..]
+firstTable k grammar = M.unions $ auxiliary <$> zip (productions grammar) [0 ..]
   where
     first' = first k grammar
     auxiliary (Production nt a, i) = M.fromList [((nt, y), i) | y <- S.toList $ first' a]
 
 nullableFollowTable :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> Map (nt, [t]) Int
-nullableFollowTable k grammar = M.unions $ auxiliary <$> zip [0..] (productions grammar)
+nullableFollowTable k grammar = M.unions $ auxiliary <$> zip [0 ..] (productions grammar)
   where
     follow' = follow k grammar
     nullable' = nullable grammar
@@ -226,7 +208,7 @@ llkParse :: (Show nt, Show t, Ord nt, Ord t) => Int -> Grammar nt t -> ([t], [Sy
 llkParse k grammar = auxiliary
   where
     table = llkTable k grammar
-    production_map = M.fromList . zip [0..] $ productions grammar
+    production_map = M.fromList . zip [0 ..] $ productions grammar
     auxiliary ([], stack, parsed) = Just ([], stack, reverse parsed)
     auxiliary (input, [], parsed) = Just (input, [], reverse parsed)
     auxiliary (x : xs, (Terminal y) : ys, parsed)
@@ -251,78 +233,98 @@ llkParse k grammar = auxiliary
 
         Just (index, production) = maybeTuple
 
--- I have been overcomplicating things i think.
--- isTerminal :: Symbol nt t -> Bool
--- isTerminal (Terminal _) = True
--- isTerminal (Nonterminal _) = False
--- 
--- expansions :: (Ord t, Show nt, Show t, Ord nt) => Grammar nt t -> [Symbol nt t] -> Seq [Symbol nt t]
--- expansions grammar s = expand SQ.empty SQ.empty (SQ.fromList s)
---   where
---     production_map = fmap (fmap SQ.fromList) . toProductionsMap $ productions grammar
---     expand es _ SQ.Empty = es
---     expand es ys ((Terminal x) :<| xs) = expand es (ys :|> Terminal x) xs
---     expand es ys ((Nonterminal x) :<| xs) = expand (es >< ps) (ys :|> Nonterminal x) xs
---       where
---         smallExpand e = ys >< e >< xs
---         ps = mapM smallExpand (production_map M.! x)
--- 
--- isPrefix :: (Show nt, Show t, Ord t, Ord nt) => Grammar nt t -> [Symbol nt t] -> [Symbol nt t] -> Bool
--- isPrefix grammar seq = bfs S.empty . SQ.singleton
---   where
---     size = length seq
---     isPrefix' :: (Eq a) => [a] -> [a] -> Bool
---     isPrefix' = all (uncurry (==)) .: zip
---     expansions' = expansions grammar
---     bfs _ SQ.Empty = False
---     bfs visited (top :<| queue)
---       | isPrefix' top seq = True
---       | top `S.member` visited = bfs new_visited queue
---       | all isTerminal $ take size top = bfs new_visited queue
---       | otherwise = bfs new_visited (queue >< expansions' top)
---       where
---         new_visited = S.insert top visited
+expansions :: (Ord t, Show nt, Show t, Ord nt) => Grammar nt t -> [Symbol nt t] -> Seq [Symbol nt t]
+expansions grammar s = expand SQ.empty SQ.empty (SQ.fromList s)
+  where
+    production_map = fmap (fmap SQ.fromList) . toProductionsMap $ productions grammar
+    expand es _ SQ.Empty = es
+    expand es ys ((Terminal x) :<| xs) = expand es (ys :|> Terminal x) xs
+    expand es ys ((Nonterminal x) :<| xs) = expand (es >< ps) (ys :|> Nonterminal x) xs
+      where
+        smallExpand e = ys >< e >< xs
+        ps = mapM smallExpand (production_map M.! x)
 
--- solveShortestsPrefix :: (Show nt, Show t, Ord nt, Ord t) => Grammar nt t -> [Symbol nt t] -> [Symbol nt t] -> [Symbol nt t]
+isLeastOneTerminal :: (Show nt, Show t, Ord t, Ord nt) => Grammar nt t -> [Symbol nt t] -> Bool
+isLeastOneTerminal grammar = bfs S.empty . SQ.singleton
+  where
+    expansions' = expansions grammar
+    bfs _ SQ.Empty = False
+    bfs visited (top :<| queue)
+      | top `S.member` visited = bfs new_visited queue
+      | null top = bfs new_visited queue
+      | isTerminal $ head top = True
+      | otherwise = bfs new_visited (queue >< expansions' top)
+      where
+        new_visited = S.insert top visited
 
-solveShortestsPrefix grammar seq prefix' = prefixes (debug prefix')
+solveShortestsPrefix :: (Show nt, Show t, Ord t, Ord nt) => Grammar nt t -> p -> [Symbol nt t] -> [Symbol nt t]
+solveShortestsPrefix _ _ [] = []
+solveShortestsPrefix grammar seq s = solveShortestsPrefix' s
   where
     prefixes = reverse . takeWhile (not . L.null) . iterate init
+    solveShortestsPrefix' = head . dropWhile (not . isLeastOneTerminal grammar) . prefixes
 
-newD q k grammar vi delta dot_production = solveShortestsPrefix grammar alpha x_delta
-  -- Item
-  --   { production = dot_production,
-  --     suffix = uj,
-  --     prefix = vj,
-  --     shortestPrefix = solveShortestsPrefix grammar alpha x_delta
-  --   }
+newLlpItem :: (Ord t, Ord nt, Show nt, Show t) => Int -> Int -> Grammar nt t -> Set [t] -> [Symbol nt t] -> DotProduction nt t -> Item nt t
+newLlpItem q k grammar vi delta dot_production = item
   where
-    uj = S.unions $ (last q grammar . (++ alpha) . fmap Terminal) `S.map` S.insert [] (before q grammar y)
-    vj = S.unions $ (first k grammar . (x ++) . fmap Terminal) `S.map` S.insert [] vi
+    uj = S.filter (not . null) . S.unions $ (last q grammar . (++ alpha) . fmap Terminal) `S.map` S.insert [] (before q grammar y)
+    vj = S.filter (not . null) . S.unions $ (first k grammar . (x ++) . fmap Terminal) `S.map` S.insert [] vi
     x = [L.head x_beta | not (L.null x_beta)]
     x_delta = x ++ delta
+    shortest_prefix = solveShortestsPrefix grammar alpha x_delta
+    item =
+      Item
+        { dotProduction = dot_production,
+          suffix = uj,
+          prefix = vj,
+          shortestPrefix = shortest_prefix
+        }
     (DotProduction y alpha x_beta) = dot_production
 
-llpItems q k grammar = auxiliary d_init
-  where
-    augmented_grammar = augmentGrammar grammar
-    d_init = initD q augmented_grammar
-    auxiliary d = newD q k augmented_grammar v delta <$> moveDots p
-      where
-        p = production d
-        v = prefix d
-        delta = shortestPrefix d
+addLlpItem :: (Ord t, Ord nt, Show nt, Show t) => Int -> Grammar nt t -> p -> Item nt t -> Set (Item nt t)
+addLlpItem q grammar items old_item
+  | null alpha_y = S.empty
+  | isTerminal $ L.last alpha_y = S.empty
+  | otherwise = S.fromList $ newItem <$> deltas
+    where
+      Item
+        { dotProduction = DotProduction x alpha_y beta,
+          suffix = u,
+          prefix = v,
+          shortestPrefix = gamma
+        } = old_item
+      y = (\(Nonterminal nt) -> nt) $ L.last alpha_y
+      productions' = productions grammar
+      deltas = symbols <$> findProductions grammar y
+      newItem delta =
+        Item
+        { dotProduction = DotProduction y delta [],
+          suffix = u',
+          prefix = v,
+          shortestPrefix = gamma
+        }
+        where
+          u' = S.filter (not . null) . S.unions $ (last q grammar . (++ delta) . fmap Terminal) `S.map` before q grammar y
 
--- addAnotherD q grammar delta
---     (Item { production = DotProduction x alpha_y beta,
---       suffix = _,
---       prefix = v,
---       shortestPrefix = gamma
---     }) = Item { production = DotProduction y delta [],
---       suffix = u',
---       prefix = v,
---       shortestPrefix = gamma
---     }
---   where
---     u' = S.findMin . S.unions $ S.map (last q grammar . (++delta) . fmap Terminal) (before q grammar y)
---     y = (\(Nonterminal nt) -> nt) $ L.last alpha_y
+addLlpItems :: (Ord t, Ord nt, Show nt, Show t) => Int -> Grammar nt t -> Set (Item nt t) -> Set (Item nt t)
+addLlpItems q grammar items = S.union items . S.unions $ addLlpItem q grammar items `S.map` items
+
+initialLlpItems :: (Ord t, Ord nt, Show nt, Show t) => Int -> Int -> Grammar nt t -> Item nt t -> Set (Item nt t)
+initialLlpItems q k grammar llp_item = S.fromList $ newLlpItem' <$> moveDots dot_production
+  where
+    newLlpItem' = newLlpItem q k grammar v delta
+    dot_production = dotProduction llp_item
+    v = prefix llp_item
+    delta = shortestPrefix llp_item
+
+solveLlpItems :: (Ord t, Ord nt, Show nt, Show t) => Int -> Int -> Grammar nt t -> Item nt t -> Set (Set (Item nt t))
+solveLlpItems q k grammar = S.map solveALllpItemSet . initialLlpItems q k grammar
+  where
+    solveALllpItemSet = fixedPointIterate (addLlpItems q grammar) . S.singleton
+
+llpItems :: (Ord t, Ord nt, Show nt, Show t) => Int -> Int -> Grammar nt t -> Set (Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t)))
+llpItems q k grammar = fixedPointIterate solveLlpItems' d_init
+  where
+    solveLlpItems' = S.unions . S.map (solveLlpItems q k augmented_grammar) . S.unions
+    augmented_grammar = augmentGrammar grammar
+    d_init = S.singleton . S.singleton $ initD q augmented_grammar
