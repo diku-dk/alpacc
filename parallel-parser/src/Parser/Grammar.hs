@@ -21,7 +21,6 @@ import Data.Maybe
 import Debug.Trace (traceShow)
 import Text.ParserCombinators.ReadP
 
-debug x = traceShow ("DEBUG: " ++ show x) x
 
 newtype T = T String deriving (Ord, Eq)
 
