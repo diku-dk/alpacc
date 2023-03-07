@@ -257,9 +257,9 @@ isLeastOneTerminal grammar = bfs S.empty . SQ.singleton
       where
         new_visited = S.insert top visited
 
-solveShortestsPrefix :: (Show nt, Show t, Ord t, Ord nt) => Grammar nt t -> p -> [Symbol nt t] -> [Symbol nt t]
-solveShortestsPrefix _ _ [] = []
-solveShortestsPrefix grammar seq s = solveShortestsPrefix' s
+solveShortestsPrefix :: (Show nt, Show t, Ord t, Ord nt) => Grammar nt t -> [Symbol nt t] -> [Symbol nt t]
+solveShortestsPrefix _ [] = []
+solveShortestsPrefix grammar s = solveShortestsPrefix' s
   where
     prefixes = reverse . takeWhile (not . L.null) . iterate init
     solveShortestsPrefix' = head . dropWhile (not . isLeastOneTerminal grammar) . prefixes
@@ -271,7 +271,7 @@ newLlpItem q k grammar vi delta dot_production = item
     vj = S.filter (not . null) . S.unions $ (first k grammar . (x ++) . fmap Terminal) `S.map` S.insert [] vi
     x = [L.head x_beta | not (L.null x_beta)]
     x_delta = x ++ delta
-    shortest_prefix = solveShortestsPrefix grammar alpha x_delta
+    shortest_prefix = solveShortestsPrefix grammar x_delta
     item =
       Item
         { dotProduction = dot_production,
@@ -317,14 +317,17 @@ initialLlpItems q k grammar llp_item = S.fromList $ newLlpItem' <$> moveDots dot
     v = prefix llp_item
     delta = shortestPrefix llp_item
 
-solveLlpItems :: (Ord t, Ord nt, Show nt, Show t) => Int -> Int -> Grammar nt t -> Item nt t -> Set (Set (Item nt t))
-solveLlpItems q k grammar = S.map solveALllpItemSet . initialLlpItems q k grammar
-  where
-    solveALllpItemSet = fixedPointIterate (addLlpItems q grammar) . S.singleton
+solveLlpItem :: (Ord t, Ord nt, Show nt, Show t) => Int -> Int -> Grammar nt t -> Item nt t -> Set (Item nt t)
+solveLlpItem q k grammar = fixedPointIterate (addLlpItems q grammar) . initialLlpItems q k grammar
 
-llpItems :: (Ord t, Ord nt, Show nt, Show t) => Int -> Int -> Grammar nt t -> Set (Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t)))
-llpItems q k grammar = fixedPointIterate solveLlpItems' d_init
+solveLlpItems :: (Ord t, Ord nt, Show nt, Show t) => Int -> Int -> Grammar nt t -> Set (Item nt t) -> Set (Set (Item nt t))
+solveLlpItems q k grammar = S.map (solveLlpItem q k grammar)
+
+findProperSubsets items = S.filter (\item -> not $ any (S.isProperSubsetOf item) items) items
+
+llpItems q k grammar = fixedPointIterate unionSolveLlpItems d_init
   where
-    solveLlpItems' = S.unions . S.map (solveLlpItems q k augmented_grammar) . S.unions
     augmented_grammar = augmentGrammar grammar
-    d_init = S.singleton . S.singleton $ initD q augmented_grammar
+    d_init = S.singleton $ initD q augmented_grammar
+    solveLlpItems' = solveLlpItems q k augmented_grammar 
+    unionSolveLlpItems = S.unions . solveLlpItems'
