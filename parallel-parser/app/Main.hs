@@ -17,6 +17,11 @@ debug x = traceShow ("DEBUG: " ++ show x) x
 
 example = fromList [Terminal $ T "a", Terminal $ T "+", Terminal $ T "[", Terminal $ T "a", Terminal $ T "+", Terminal $ T "a", Terminal $ T "]"]
 
+printLlpItems :: Show a => S.Set a -> IO ()
+printLlpItems set = do
+  mapM_ print set
+  putStrLn "\n\n"
+
 main :: IO ()
 main = do
   contents <- getContents
@@ -33,4 +38,4 @@ main = do
   -- let (DotProduction nt s s') = (L.!! 2) . moveDots . toDotProduction $ head test_production
   -- mapM_ print $ llpItems 1 1 grammar
   -- let temp = T . L.singleton <$> "aabbbcc$"
-  mapM_ print $ llpItems 1 1 grammar -- llkParse 1 grammar (temp, [Nonterminal $ start grammar], []) 
+  print . S.size $ llpItems 1 1 grammar -- llkParse 1 grammar (temp, [Nonterminal $ start grammar], []) 
