@@ -20,7 +20,7 @@ example = fromList [Terminal $ T "a", Terminal $ T "+", Terminal $ T "[", Termin
 printLlpItems :: Show a => S.Set a -> IO ()
 printLlpItems set = do
   mapM_ print set
-  putStrLn "\n\n"
+  putStrLn ""
 
 main :: IO ()
 main = do
@@ -38,4 +38,4 @@ main = do
   -- let (DotProduction nt s s') = (L.!! 2) . moveDots . toDotProduction $ head test_production
   -- mapM_ print $ llpItems 1 1 grammar
   -- let temp = T . L.singleton <$> "aabbbcc$"
-  print . S.size $ llpItems 1 1 grammar -- llkParse 1 grammar (temp, [Nonterminal $ start grammar], []) 
+  mapM_ printLlpItems $ llpItems 1 1 grammar -- llkParse 1 grammar (temp, [Nonterminal $ start grammar], []) 
