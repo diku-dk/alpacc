@@ -5,7 +5,6 @@ module Parser.Parsing
     last,
     before,
     Item (..),
-    moveDots,
     llpItems,
     DotProduction (..),
     toDotProduction,
@@ -15,7 +14,7 @@ where
 
 import Data.Composition
 import Data.Foldable (toList)
-import Data.Function (flip, ($), (.))
+import Data.Function (flip, ($), (.), on)
 import qualified Data.List as L
 import Data.List.Split (splitOn)
 import Data.Map (Map (..))
@@ -28,18 +27,19 @@ import qualified Data.Set as S
 import Debug.Trace (traceShow)
 import Parser.Grammar
 import Prelude hiding (last)
+import Data.Bifunctor (Bifunctor(bimap))
 
 debug x = traceShow ("DEBUG: " ++ show x) x
 
 checkpoint = traceShow "Checkpoint"
 
-fixedPointIterate :: Eq b => (b -> b) -> b -> b
-fixedPointIterate f a = fst . head . dropWhile (uncurry (/=)) . drop 1 $ iterate swapApply (a, a)
+fixedPointIterate :: Eq b => (b -> b -> Bool) -> (b -> b) -> b -> b
+fixedPointIterate cmp f a = fst . head . dropWhile (uncurry cmp) . drop 1 $ iterate swapApply (a, a)
   where
     swapApply (n, _) = (f n, n)
 
 nullables :: (Ord nt, Ord t, Show nt, Show t) => Grammar nt t -> Map nt Bool
-nullables grammar = fixedPointIterate (nullableNontermianl productions_map) init_nullable_map
+nullables grammar = fixedPointIterate (/=) (nullableNontermianl productions_map) init_nullable_map
   where
     init_nullable_map = M.fromList . map (,False) $ nonterminals grammar
     nullable' _ (Terminal _) = False
@@ -88,7 +88,7 @@ firstAB k grammar first_map = foldl truncatedProductSymbol (S.singleton []) . kN
     nullableOne' = nullableOne grammar
 
 firsts :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> Map nt (Set [t])
-firsts k grammar = fixedPointIterate (firstNontermianl productions_map) init_first_map
+firsts k grammar = fixedPointIterate (/=) (firstNontermianl productions_map) init_first_map
   where
     firstAB' = firstAB k grammar
     init_first_map = M.fromList . map (,S.singleton []) $ nonterminals grammar
@@ -129,7 +129,7 @@ constraints k grammar = helper <$> productions grammar
             ntConstraint = S.fromList [NTConstraint nt nt' | nt /= nt' && nullable' right]
 
 follows :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> Map nt (Set [t])
-follows k grammar = fixedPointIterate f init_follow_map
+follows k grammar = fixedPointIterate (/=) f init_follow_map
   where
     constraints' = S.unions $ constraints k grammar
     init_follow_map = M.fromList . map (,S.empty) $ nonterminals grammar
@@ -176,14 +176,6 @@ initD q grammar =
   where
     production' = head $ findProductions grammar (start grammar)
     last' = last q grammar $ symbols production'
-
-moveDot :: DotProduction nt t -> DotProduction nt t
-moveDot (DotProduction nt s s') = DotProduction nt (init s) (L.last s : s')
-
-moveDots :: DotProduction nt t -> [DotProduction nt t]
-moveDots = takeWhileNMore 1 isNotEpsilon . iterate moveDot
-  where
-    isNotEpsilon (DotProduction _ s _) = not $ L.null s
 
 firstTable :: (Show nt, Show t, Ord nt, Ord t) => Int -> Grammar nt t -> Map (nt, [t]) Int
 firstTable k grammar = M.unions $ auxiliary <$> zip (productions grammar) [0 ..]
@@ -304,30 +296,30 @@ addLlpItem q grammar items old_item
           shortestPrefix = gamma
         }
         where
-          u' = S.filter (not . null) . S.unions $ (last q grammar . (++ delta) . fmap Terminal) `S.map` before q grammar y
+          u' = S.filter (not . null) . S.unions $ (last q grammar . (++ delta) . fmap Terminal) `S.map` S.insert [] (before q grammar y)
 
 addLlpItems :: (Ord t, Ord nt, Show nt, Show t) => Int -> Grammar nt t -> Set (Item nt t) -> Set (Item nt t)
 addLlpItems q grammar items = S.union items . S.unions $ addLlpItem q grammar items `S.map` items
 
-initialLlpItems :: (Ord t, Ord nt, Show nt, Show t) => Int -> Int -> Grammar nt t -> Item nt t -> Set (Item nt t)
-initialLlpItems q k grammar llp_item = S.fromList $ newLlpItem' <$> moveDots dot_production
+moveDot :: DotProduction nt t -> Maybe (DotProduction nt t)
+moveDot (DotProduction _ [] _) = Nothing
+moveDot (DotProduction nt s s') = Just $ DotProduction nt (init s) (L.last s : s')
+
+nextLlpItem :: (Ord t, Ord nt, Show nt, Show t) => Int -> Int -> Grammar nt t -> Item nt t -> Maybe (Item nt t)
+nextLlpItem q k grammar llp_item = newLlpItem' <$> moveDot dot_production
   where
     newLlpItem' = newLlpItem q k grammar v delta
     dot_production = dotProduction llp_item
     v = prefix llp_item
     delta = shortestPrefix llp_item
 
-solveLlpItem :: (Ord t, Ord nt, Show nt, Show t) => Int -> Int -> Grammar nt t -> Item nt t -> Set (Item nt t)
-solveLlpItem q k grammar = fixedPointIterate (addLlpItems q grammar) . initialLlpItems q k grammar
+solveLlpItem q k grammar = fixedPointIterate (/=) (addLlpItems q grammar) . S.fromList . maybeToList . nextLlpItem q k grammar
 
-solveLlpItems :: (Ord t, Ord nt, Show nt, Show t) => Int -> Int -> Grammar nt t -> Set (Item nt t) -> Set (Set (Item nt t))
-solveLlpItems q k grammar = S.map (solveLlpItem q k grammar)
-
-findProperSubsets items = S.filter (\item -> not $ any (S.isProperSubsetOf item) items) items
-
-llpItems q k grammar = fixedPointIterate unionSolveLlpItems d_init
+llpItems q k grammar = fst $ fixedPointIterate ((/=) `on` fst) auxiliary (S.empty, [d_init])
   where
     augmented_grammar = augmentGrammar grammar
-    d_init = S.singleton $ initD q augmented_grammar
-    solveLlpItems' = solveLlpItems q k augmented_grammar 
-    unionSolveLlpItems = S.unions . solveLlpItems'
+    d_init = initD q augmented_grammar
+    solveLlpItem' = solveLlpItem q k augmented_grammar
+    auxiliary (items, x:xs) = (S.insert new items, xs ++ toList new)
+      where
+        new = solveLlpItem' x
