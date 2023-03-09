@@ -1,5 +1,5 @@
-module Parser.Grammar
-  ( Grammar (..),
+module ParallelParser.Grammar
+  ( Grammar(..),
     Symbol(..),
     Production(..),
     AugmentedNonterminal(..),
@@ -76,13 +76,13 @@ symbols (Production _ s) = s
 nonterminal :: Production nt t -> nt
 nonterminal (Production nt _) = nt
 
-data (Show nt, Show t) => Grammar nt t = Grammar
+data Grammar nt t = Grammar
   { start :: nt,
     terminals :: [t],
     nonterminals :: [nt],
     productions :: [Production nt t]
   }
-  deriving (Show)
+  deriving (Ord, Eq, Show)
 
 skipWhiteSpaces :: ReadP ()
 skipWhiteSpaces = do
@@ -113,7 +113,7 @@ toSymbol ts nts symbol
   | symbol `elem` ts = Terminal $ read symbol
   | otherwise = error $ show symbol ++ " is not a defined symbol."
 
-pGrammar :: (Read nt, Read t, Show nt, Show t) => ReadP (Grammar nt t)
+pGrammar :: (Read nt, Read t) => ReadP (Grammar nt t)
 pGrammar = tuple
   where
     set = sepBySkip setElement sep
@@ -145,21 +145,18 @@ pGrammar = tuple
              productions = ps
            }
 
-instance (Read nt, Read t, Show nt, Show t) => Read (Grammar nt t) where
+instance (Read nt, Read t) => Read (Grammar nt t) where
   readsPrec _ = readP_to_S pGrammar
 
-findProductions :: (Eq b, Show b, Show t) => Grammar b t -> b -> [Production b t]
+findProductions :: (Eq b) => Grammar b t -> b -> [Production b t]
 findProductions grammar nt = filter ((==nt) . nonterminal) $ productions grammar
 
-reverseGrammar :: (Show nt, Show t) => Grammar nt t -> Grammar nt t
+reverseGrammar :: Grammar nt t -> Grammar nt t
 reverseGrammar grammar = grammar {productions = reverseProduction <$> productions grammar}
   where
     reverseProduction (Production nt s) = Production nt (reverse s)
 
-augmentGrammar :: 
-  (Show nt, Show t) => 
-  Grammar nt t -> 
-  Grammar (AugmentedNonterminal nt) (AugmentedTerminal t)
+augmentGrammar :: Grammar nt t -> Grammar (AugmentedNonterminal nt) (AugmentedTerminal t)
 augmentGrammar grammar =
   grammar
     { start = Start,
