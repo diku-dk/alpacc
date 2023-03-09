@@ -1,8 +1,8 @@
 module Main where
 
 
-import Parser.Grammar
-import Parser.Parsing
+import ParallelParser.Grammar
+import ParallelParser.Parser
 import qualified Data.Map as M
 import Prelude hiding (last)
 import Text.ParserCombinators.ReadP
