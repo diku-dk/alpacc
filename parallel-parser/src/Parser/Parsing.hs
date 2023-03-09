@@ -240,44 +240,44 @@ expansions grammar = expand SQ.empty SQ.empty . SQ.fromList
         smallExpand e = ys >< e >< xs
         ps = SQ.fromList $ toList . smallExpand <$> (production_map M.! x)
 
-isLeastOneTerminal :: (Show nt, Show t, Ord t, Ord nt) => Grammar nt t -> [Symbol nt t] -> Bool
-isLeastOneTerminal grammar = bfs S.empty . SQ.singleton
+isTerminalPrefix :: (Show nt, Show t, Ord t, Ord nt) => Grammar nt t -> t -> [Symbol nt t] -> Bool
+isTerminalPrefix grammar t = bfs S.empty . SQ.singleton
   where
     expansions' = expansions grammar
     bfs _ SQ.Empty = False
     bfs visited (top :<| queue)
       | top `S.member` visited = bfs new_visited queue
       | null top = bfs new_visited queue
-      | isTerminal $ head top = True
+      | Terminal t == head top = True
+      | isTerminal $ head top = bfs new_visited queue
       | otherwise = bfs new_visited (queue >< expansions' top)
       where
         new_visited = S.insert top visited
 
-solveShortestsPrefix :: (Show nt, Show t, Ord t, Ord nt) => Grammar nt t -> [Symbol nt t] -> S.Set [Symbol nt t]
-solveShortestsPrefix _ [] = S.empty
-solveShortestsPrefix grammar s = S.fromList $ solveShortestsPrefix' s
+solveShortestsPrefix :: (Show nt, Show t, Ord t, Ord nt) => Grammar nt t -> t -> [Symbol nt t] -> [Symbol nt t]
+solveShortestsPrefix grammar t = solveShortestsPrefix'
   where
     prefixes = reverse . takeWhile (not . L.null) . iterate init
     nullable' = nullable grammar
-    isLeastOneTerminal' = isLeastOneTerminal grammar
-    solveShortestsPrefix' = L.filter isLeastOneTerminal' . takeWhileNMore 1 (nullable' . safeHead) . prefixes
+    isTerminalPrefix' = isTerminalPrefix grammar t
+    solveShortestsPrefix' = safeHead . dropWhile (not . isTerminalPrefix') . prefixes
     safeHead [] = []
-    safeHead (x:xs) = [x]
+    safeHead (x:xs) = x
 
 newLlpItems :: (Ord t, Ord nt, Show nt, Show t) => Int -> Int -> Grammar nt t -> [t] -> [Symbol nt t] -> DotProduction nt t -> S.Set (Item nt t)
-newLlpItems q k grammar vi delta dot_production = S.fromList [newItem sp u v | u <- uj, v <- vj, sp <- shortest_prefixes]
+newLlpItems q k grammar vi delta dot_production = S.fromList [newItem u v | u <- uj, v <- vj]
   where
     uj = toList . S.filter (not . null) . S.unions $ (last q grammar . (++ alpha) . fmap Terminal) `S.map` S.insert [] (before q grammar y)
     vj = toList . S.filter (not . null) . S.unions $ (first k grammar . (x ++) . fmap Terminal) `S.map` S.fromList [[], vi]
     x = [L.head x_beta | not (L.null x_beta)]
     x_delta = x ++ delta
-    shortest_prefixes = toList $ solveShortestsPrefix grammar x_delta
-    newItem sp u v =
+    solveShortestsPrefix' v = solveShortestsPrefix grammar v x_delta
+    newItem u v =
       Item
         { dotProduction = dot_production,
           suffix = u,
           prefix = v,
-          shortestPrefix = sp
+          shortestPrefix = solveShortestsPrefix' $ head v
         }
     (DotProduction y alpha x_beta) = dot_production
 
