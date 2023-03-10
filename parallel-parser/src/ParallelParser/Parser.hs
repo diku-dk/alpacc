@@ -9,13 +9,14 @@ module ParallelParser.Parser
     DotProduction (..),
     toDotProduction,
     llkParse,
-    psls
+    psls,
   )
 where
 
+import Data.Bifunctor (Bifunctor (bimap))
 import Data.Composition
-import Data.Foldable 
-import Data.Function (flip, ($), (.), on)
+import Data.Foldable
+import Data.Function (flip, on, ($), (.))
 import qualified Data.List as L
 import Data.List.Split (splitOn)
 import Data.Map (Map (..))
@@ -28,7 +29,6 @@ import qualified Data.Set as S
 import Debug.Trace (traceShow)
 import ParallelParser.Grammar
 import Prelude hiding (last)
-import Data.Bifunctor (Bifunctor(bimap))
 
 debug x = traceShow ("DEBUG: " ++ show x) x
 
@@ -262,7 +262,7 @@ solveShortestsPrefix grammar t = solveShortestsPrefix'
     isTerminalPrefix' = isTerminalPrefix grammar t
     solveShortestsPrefix' = safeHead . dropWhile (not . isTerminalPrefix') . prefixes
     safeHead [] = []
-    safeHead (x:xs) = x
+    safeHead (x : xs) = x
 
 newLlpItems :: (Ord t, Ord nt) => Int -> Int -> Grammar nt t -> [t] -> [Symbol nt t] -> DotProduction nt t -> S.Set (Item nt t)
 newLlpItems q k grammar vi delta dot_production = S.fromList [newItem u v | u <- uj, v <- vj]
@@ -286,26 +286,26 @@ addLlpItem q grammar items old_item
   | null alpha_y = S.empty
   | isTerminal $ L.last alpha_y = S.empty
   | otherwise = S.unions $ newItems <$> deltas
-    where
-      Item
-        { dotProduction = DotProduction x alpha_y beta,
-          suffix = u,
-          prefix = v,
-          shortestPrefix = gamma
-        } = old_item
-      y = (\(Nonterminal nt) -> nt) $ L.last alpha_y
-      productions' = productions grammar
-      deltas = symbols <$> findProductions grammar y
-      newItems delta = S.fromList [newItem y | y <- u']
-        where
-          u' = toList . S.filter (not . null) . S.unions $ (last q grammar . (++ delta) . fmap Terminal) `S.map` S.insert [] (before q grammar y)
-          newItem z =
-            Item
-              { dotProduction = DotProduction y delta [],
-                suffix = z,
-                prefix = v,
-                shortestPrefix = gamma
-              }
+  where
+    Item
+      { dotProduction = DotProduction x alpha_y beta,
+        suffix = u,
+        prefix = v,
+        shortestPrefix = gamma
+      } = old_item
+    y = (\(Nonterminal nt) -> nt) $ L.last alpha_y
+    productions' = productions grammar
+    deltas = symbols <$> findProductions grammar y
+    newItems delta = S.fromList [newItem y | y <- u']
+      where
+        u' = toList . S.filter (not . null) . S.unions $ (last q grammar . (++ delta) . fmap Terminal) `S.map` S.insert [] (before q grammar y)
+        newItem z =
+          Item
+            { dotProduction = DotProduction y delta [],
+              suffix = z,
+              prefix = v,
+              shortestPrefix = gamma
+            }
 
 addLlpItems :: (Ord t, Ord nt) => Int -> Grammar nt t -> Set (Item nt t) -> Set (Item nt t)
 addLlpItems q grammar items = S.union items . S.unions $ addLlpItem q grammar items `S.map` items
@@ -322,38 +322,48 @@ nextLlpItems q k grammar llp_item = newLlpItem' <$> moveDot dot_production
     v = prefix llp_item
     delta = shortestPrefix llp_item
 
-solveLlpItems :: (Ord t, Ord nt) => Int -> Int -> Grammar nt t -> Item nt t -> Set (Set (Item nt t))
-solveLlpItems q k grammar = S.map (fixedPointIterate (/=) (addLlpItems q grammar)) . S.fromList . maybeToList . nextLlpItems q k grammar
+solveLlpItems :: (Ord t, Ord nt) => Int -> Int -> Grammar nt t -> Set (Item nt t) -> Set (Set (Item nt t))
+solveLlpItems q k grammar =
+  S.map (fixedPointIterate (/=) (addLlpItems q grammar))
+    . S.fromList
+    . fmap (S.unions . mapMaybe (nextLlpItems q k grammar))
+    . L.groupBy ((==) `on` auxiliary)
+    . L.sortOn auxiliary
+    . toList
+    where
+      auxiliary = safeLast . (\(DotProduction _ xs _) -> xs) . dotProduction
+      safeLast [] = Nothing
+      safeLast x = Just $ L.last x
 
-llpCollection :: (Ord t, Ord nt) => Int -> Int -> Grammar nt t -> Set (Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t)))
-llpCollection q k grammar = auxiliary S.empty (S.singleton d_init) (toList d_init)
+llpCollection :: (Ord t, Ord nt, Show t, Show nt) => Int -> Int -> Grammar nt t -> Set (Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t)))
+llpCollection q k grammar = S.filter (not . null) $ auxiliary S.empty d_init (toList d_init)
   where
     augmented_grammar = augmentGrammar grammar
-    d_init = initD q augmented_grammar
+    d_init = S.singleton $ initD q augmented_grammar
     solveLlpItems' = solveLlpItems q k augmented_grammar
     auxiliary _ items [] = items
-    auxiliary visited items (x:xs) 
+    auxiliary visited items (x : xs)
       | x `S.member` visited = auxiliary visited items xs
       | otherwise = auxiliary new_visited new_items new_queue
       where
         new_visited = S.insert x visited
         new_item = solveLlpItems' x
         new_items = S.union new_item items
-        new_queue = xs ++ toList (S.unions new_item)
+        new_queue = xs ++ toList new_item
 
 psls :: (Ord t, Ord nt) => Set (Set (Item nt t)) -> M.Map ([t], [t]) [Symbol nt t]
 psls = M.fromList . mapMaybe auxiliary . toList . S.unions
   where
-    auxiliary old_item 
+    auxiliary old_item
       | null x || null y || null gamma = Nothing
       | null alpha_z = Nothing
       | isTerminal z = Just ((x, y), gamma)
       | otherwise = Nothing
-        where
-          Item
-            { dotProduction = DotProduction _ alpha_z _,
-              suffix = x,
-              prefix = y,
-              shortestPrefix = gamma
-            } = old_item
-          z = L.last alpha_z
+      where
+        Item
+          { dotProduction = DotProduction _ alpha_z _,
+            suffix = x,
+            prefix = y,
+            shortestPrefix = gamma
+          } = old_item
+        z = L.last alpha_z
