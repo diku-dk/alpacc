@@ -78,18 +78,18 @@ rightTurnstile' = Terminal RightTurnstile
 
 pslsTable =
   Map.fromList
-    [ (([augT "+"], [augT "["]), [augNT' "T"]),
-      (([augT "+"], [augT "a"]), [augNT' "T"]),
-      (([augT "["], [augT "["]), [augNT' "E"]),
-      (([augT "["], [augT "a"]), [augNT' "E"]),
-      (([augT "]"], [augT "+"]), [augNT' "E'"]),
-      (([augT "]"], [augT "]"]), [augNT' "E'", augT' "]"]),
-      (([augT "]"], [LeftTurnstile]), [augNT' "E'", leftTurnstile']),
-      (([augT "a"], [augT "+"]), [augNT' "E'"]),
-      (([augT "a"], [augT "]"]), [augNT' "E'", augT' "]"]),
-      (([augT "a"], [LeftTurnstile]), [augNT' "E'", leftTurnstile']),
-      (([RightTurnstile], [augT "["]), [augNT' "E"]),
-      (([RightTurnstile], [augT "a"]), [augNT' "E"])
+    [ (([augT "+"], [augT "["]), Set.fromList [[augNT' "T"]]),
+      (([augT "+"], [augT "a"]), Set.fromList [[augNT' "T"]]),
+      (([augT "["], [augT "["]), Set.fromList [[augNT' "E"]]),
+      (([augT "["], [augT "a"]), Set.fromList [[augNT' "E"]]),
+      (([augT "]"], [augT "+"]), Set.fromList [[augNT' "E'"]]),
+      (([augT "]"], [augT "]"]), Set.fromList [[augNT' "E'", augT' "]"]]),
+      (([augT "]"], [LeftTurnstile]), Set.fromList [[augNT' "E'", leftTurnstile']]),
+      (([augT "a"], [augT "+"]), Set.fromList [[augNT' "E'"]]),
+      (([augT "a"], [augT "]"]), Set.fromList [[augNT' "E'", augT' "]"]]),
+      (([augT "a"], [LeftTurnstile]), Set.fromList [[augNT' "E'", leftTurnstile']]),
+      (([RightTurnstile], [augT "["]), Set.fromList [[augNT' "E"]]),
+      (([RightTurnstile], [augT "a"]), Set.fromList [[augNT' "E"]])
     ]
 
 collection :: Set.Set (Set.Set (Item (AugmentedNonterminal String) (AugmentedTerminal String)))
@@ -491,13 +491,13 @@ augmentGrammarTestCase = TestCase $ assertEqual "Augment grammar test" expected 
 collectionTestCase = TestCase $ assertEqual "LLP collection test" expected result
   where
     expected = Set.empty
-    computed_collection = llpCollection 1 1 grammar
+    computed_collection = llpCollection 1 1 augmentedGrammar
     result = Set.difference computed_collection collection
 
 pslsTestCase = TestCase $ assertEqual "PSLS table test" expected result
   where
     expected = pslsTable
-    collection' = llpCollection 1 1 grammar
+    collection' = llpCollection 1 1 augmentedGrammar
     result = psls collection'
 
 tests =
