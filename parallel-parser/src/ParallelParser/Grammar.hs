@@ -13,7 +13,8 @@ module ParallelParser.Grammar
     findProductions,
     isTerminal,
     isNonterminal,
-    toProductionsMap
+    toProductionsMap,
+    unpackNTTGrammar
   )
 where
 
@@ -26,6 +27,7 @@ import Text.ParserCombinators.ReadP
 import Data.Map (Map (..))
 import qualified Data.Map as M
 import qualified Data.List as L
+import Data.ByteString (unpack)
 
 newtype T = T String deriving (Ord, Eq)
 
@@ -181,3 +183,14 @@ toProductionsMap = M.fromList . fmap toPair . L.groupBy nonterminalEq . L.sort
   where
     nonterminalEq a b = nonterminal a == nonterminal b
     toPair a = (nonterminal $ head a, symbols <$> a)
+
+unpackNTTGrammar :: Grammar NT T -> Grammar String String
+unpackNTTGrammar grammar =
+  grammar
+    { start = unpackNT $ start grammar,
+      terminals = unpackT <$> terminals grammar,
+      nonterminals = unpackNT <$> nonterminals grammar,
+      productions = bimap unpackNT unpackT <$> productions grammar
+    }
+    where unpackT (T s) = s
+          unpackNT (NT s) = s

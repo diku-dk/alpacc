@@ -1,0 +1,13 @@
+(
+    S,
+    {a, b, c, d, e, f},
+    {S, A, B},
+    {
+        S -> a A,
+        S -> b A,
+        A -> c A d A,
+        A -> f,
+        B -> e B d B,
+        B -> f
+    }
+)

@@ -10,6 +10,8 @@ module ParallelParser.Parser
     toDotProduction,
     llkParse,
     psls,
+    llpParsingTable,
+    llpParse
   )
 where
 
@@ -267,8 +269,8 @@ solveShortestsPrefix grammar t = solveShortestsPrefix'
 newLlpItems :: (Ord t, Ord nt) => Int -> Int -> Grammar nt t -> [t] -> [Symbol nt t] -> DotProduction nt t -> S.Set (Item nt t)
 newLlpItems q k grammar vi delta dot_production = S.fromList [newItem u v | u <- uj, v <- vj]
   where
-    uj = toList . S.filter (not . null) . S.unions $ (last q grammar . (++ alpha) . fmap Terminal) `S.map` S.insert [] (before q grammar y)
-    vj = toList . S.filter (not . null) . S.unions $ (first k grammar . (x ++) . fmap Terminal) `S.map` S.fromList [[], vi]
+    uj = toList . S.unions $ (last q grammar . (++ alpha) . fmap Terminal) `S.map` S.insert [] (before q grammar y)
+    vj = toList . S.unions $ (first k grammar . (x ++) . fmap Terminal) `S.map` S.fromList [[], vi]
     x = [L.head x_beta | not (L.null x_beta)]
     x_delta = x ++ delta
     solveShortestsPrefix' v = solveShortestsPrefix grammar v x_delta
@@ -298,7 +300,7 @@ addLlpItem q grammar items old_item
     deltas = symbols <$> findProductions grammar y
     newItems delta = S.fromList [newItem y | y <- u']
       where
-        u' = toList . S.filter (not . null) . S.unions $ (last q grammar . (++ delta) . fmap Terminal) `S.map` S.insert [] (before q grammar y)
+        u' = toList . S.unions $ (last q grammar . (++ delta) . fmap Terminal) `S.map` S.insert [] (before q grammar y)
         newItem z =
           Item
             { dotProduction = DotProduction y delta [],
@@ -335,12 +337,11 @@ solveLlpItems q k grammar =
       safeLast [] = Nothing
       safeLast x = Just $ L.last x
 
-llpCollection :: (Ord t, Ord nt, Show t, Show nt) => Int -> Int -> Grammar nt t -> Set (Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t)))
+llpCollection :: (Ord t, Ord nt) => Int -> Int -> Grammar (AugmentedNonterminal nt) (AugmentedTerminal t) -> Set (Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t)))
 llpCollection q k grammar = S.filter (not . null) $ auxiliary S.empty d_init (toList d_init)
   where
-    augmented_grammar = augmentGrammar grammar
-    d_init = S.singleton $ initD q augmented_grammar
-    solveLlpItems' = solveLlpItems q k augmented_grammar
+    d_init = S.singleton $ initD q grammar
+    solveLlpItems' = solveLlpItems q k grammar
     auxiliary _ items [] = items
     auxiliary visited items (x : xs)
       | x `S.member` visited = auxiliary visited items xs
@@ -351,14 +352,14 @@ llpCollection q k grammar = S.filter (not . null) $ auxiliary S.empty d_init (to
         new_items = S.union new_item items
         new_queue = xs ++ toList new_item
 
-psls :: (Ord t, Ord nt) => Set (Set (Item nt t)) -> M.Map ([t], [t]) [Symbol nt t]
-psls = M.fromList . mapMaybe auxiliary . toList . S.unions
+psls :: (Ord t, Ord nt) => Set (Set (Item nt t)) -> Map ([t], [t]) (Set [Symbol nt t])
+psls = M.unionsWith S.union . fmap auxiliary . toList . S.unions
   where
     auxiliary old_item
-      | null x || null y || null gamma = Nothing
-      | null alpha_z = Nothing
-      | isTerminal z = Just ((x, y), gamma)
-      | otherwise = Nothing
+      | null x || null y || null gamma = M.empty
+      | null alpha_z = M.empty
+      | isTerminal z = M.singleton (x, y) (S.singleton gamma)
+      | otherwise = M.empty
       where
         Item
           { dotProduction = DotProduction _ alpha_z _,
@@ -367,3 +368,30 @@ psls = M.fromList . mapMaybe auxiliary . toList . S.unions
             shortestPrefix = gamma
           } = old_item
         z = L.last alpha_z
+
+llpParsingTable :: (Ord nt, Ord t) =>
+  Int
+  -> Int
+  -> Grammar nt t
+  -> Map
+      ([AugmentedTerminal t], [AugmentedTerminal t])
+      ([Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)],
+       [Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)], [Int])
+llpParsingTable q k grammar = fmap fromJust . M.filter isJust $ M.mapWithKey auxiliary (S.findMax <$> psls_table)
+  where
+    augmented_grammar = augmentGrammar grammar
+    collection = llpCollection q k augmented_grammar
+    psls_table = psls collection
+    auxiliary (x, y) alpha = f <$> llkParse k augmented_grammar ([L.head y], alpha, [])
+      where f (epsilon, omega, pi) = (alpha, omega, pi)
+
+llpParse :: (Ord nt, Ord t, Show t) => Int -> Int -> Grammar nt t -> [[t]] -> [Int]
+llpParse q k grammar = thrd . foldl auxiliary ([], [RightTurnstile], [i]) . (++[[LeftTurnstile]]) . aug
+  where
+    aug = fmap (fmap AugmentedTerminal)
+    (Just i) = L.findIndex (\(Production nt _) -> nt == start grammar) (productions grammar)
+    thrd (_, _, p) = p
+    table = thrd <$> llpParsingTable q k grammar
+    auxiliary (_, curr, p) new = (curr, new, p ++ p')
+      where p' = table M.! (debug (curr, new))
+    
