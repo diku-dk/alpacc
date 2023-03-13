@@ -27,7 +27,6 @@ import Text.ParserCombinators.ReadP
 import Data.Map (Map (..))
 import qualified Data.Map as M
 import qualified Data.List as L
-import Data.ByteString (unpack)
 
 newtype T = T String deriving (Ord, Eq)
 

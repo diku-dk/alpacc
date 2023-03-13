@@ -24,7 +24,7 @@ import Data.List.Split (splitOn)
 import Data.Map (Map (..))
 import qualified Data.Map as M
 import Data.Maybe
-import Data.Sequence (Seq (..), (><))
+import Data.Sequence (Seq (..), (><), (<|), (|>))
 import qualified Data.Sequence as SQ
 import Data.Set (Set (..))
 import qualified Data.Set as S
@@ -356,7 +356,7 @@ psls :: (Ord t, Ord nt) => Set (Set (Item nt t)) -> Map ([t], [t]) (Set [Symbol 
 psls = M.unionsWith S.union . fmap auxiliary . toList . S.unions
   where
     auxiliary old_item
-      | null x || null y || null gamma = M.empty
+      | null gamma = M.empty
       | null alpha_z = M.empty
       | isTerminal z = M.singleton (x, y) (S.singleton gamma)
       | otherwise = M.empty
@@ -369,29 +369,71 @@ psls = M.unionsWith S.union . fmap auxiliary . toList . S.unions
           } = old_item
         z = L.last alpha_z
 
-llpParsingTable :: (Ord nt, Ord t) =>
-  Int
-  -> Int
-  -> Grammar nt t
-  -> Map
-      ([AugmentedTerminal t], [AugmentedTerminal t])
-      ([Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)],
-       [Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)], [Int])
-llpParsingTable q k grammar = fmap fromJust . M.filter isJust $ M.mapWithKey auxiliary (S.findMax <$> psls_table)
+llkParse' :: (Ord nt, Ord t) => Int -> Grammar nt t -> [t] -> [Symbol nt t] -> Maybe ([t], [Symbol nt t], [Int])
+llkParse' k grammar a b = auxiliary (a,  b, [])
+  where
+    table = llkTable k grammar
+    production_map = M.fromList . zip [0 ..] $ productions grammar
+    auxiliary ([], stack, parsed) = Just ([], stack, reverse parsed)
+    auxiliary (input, [], parsed) = Just (input, [], reverse parsed)
+    auxiliary (x : xs, (Terminal y) : ys, parsed)
+      | x == y = Just ([], ys, reverse parsed)
+      | otherwise = Nothing
+    auxiliary (input, (Nonterminal y) : ys, parsed)
+      | L.null keys = Nothing
+      | isNothing maybeTuple = Nothing
+      | otherwise = auxiliary (input, production ++ ys, index : parsed)
+      where
+        keys =
+          L.filter (`M.member` table)
+            . fmap (y,)
+            . takeWhile (not . L.null)
+            . iterate init
+            $ take k input
+
+        maybeTuple = do
+          index <- L.last keys `M.lookup` table
+          production <- index `M.lookup` production_map
+          return (index, symbols production)
+
+        Just (index, production) = maybeTuple
+
+-- llpParsingTable :: (Ord nt, Ord t) =>
+--   Int
+--   -> Int
+--   -> Grammar nt t
+--   -> Map
+--       ([AugmentedTerminal t], [AugmentedTerminal t])
+--       ([Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)],
+--        [Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)], [Int])
+llpParsingTable q k grammar = fromJust <$> M.mapWithKey auxiliary (S.findMax <$> psls_table)
   where
     augmented_grammar = augmentGrammar grammar
     collection = llpCollection q k augmented_grammar
     psls_table = psls collection
-    auxiliary (x, y) alpha = f <$> llkParse k augmented_grammar ([L.head y], alpha, [])
+    auxiliary (x, y) alpha = f <$> llkParse' k augmented_grammar y alpha
       where f (epsilon, omega, pi) = (alpha, omega, pi)
 
-llpParse :: (Ord nt, Ord t, Show t) => Int -> Int -> Grammar nt t -> [[t]] -> [Int]
-llpParse q k grammar = thrd . foldl auxiliary ([], [RightTurnstile], [i]) . (++[[LeftTurnstile]]) . aug
+substrings :: Int -> Int -> [a] -> [([a], [a])]
+substrings q k = toList . auxiliary SQ.empty SQ.empty . SQ.fromList
   where
-    aug = fmap (fmap AugmentedTerminal)
+    auxiliary es _ SQ.Empty = es
+    auxiliary es ys (x :<| xs) = auxiliary (es :|>substring) (ys :|> x) xs
+      where
+        backwards = takeR q ys
+        forwards = SQ.take (k - 1) xs
+        substring = (toList backwards, toList $ x <| forwards)
+        takeR i seq = SQ.drop (n - i) seq
+          where n = SQ.length seq
+
+-- llpParse :: (Ord nt, Ord t, Show t) => Int -> Int -> Grammar nt t -> [t] -> [Int]
+llpParse q k grammar = concatMap auxiliary . substrings q k . (RightTurnstile:) . (++[LeftTurnstile]) . aug
+  where
+    aug = fmap AugmentedTerminal
     (Just i) = L.findIndex (\(Production nt _) -> nt == start grammar) (productions grammar)
     thrd (_, _, p) = p
     table = thrd <$> llpParsingTable q k grammar
-    auxiliary (_, curr, p) new = (curr, new, p ++ p')
-      where p' = table M.! (debug (curr, new))
-    
+    auxiliary ([], RightTurnstile:_) = [0]
+    auxiliary (back, forw) = p
+      where p = L.head $ mapMaybe (`M.lookup` table) [(a, b) | a <- helper back, b <- helper forw]
+            helper = takeWhile (not . null) . iterate init
