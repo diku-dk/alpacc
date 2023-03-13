@@ -20,16 +20,16 @@ printLlpItems set = do
   mapM_ print set
   putStrLn ""
 
-example :: [[String]]
-example = L.singleton . L.singleton <$> "a+[a+a]"
+example :: [String]
+example = L.singleton <$> "a+[a+a]"
 
 main :: IO ()
 main = do
   contents <- getContents
   let grammar = unpackNTTGrammar (read contents :: Grammar NT T)
   let augmented_grammar = augmentGrammar grammar
-  let collection = llpCollection 1 1 augmented_grammar
-  let llp_parsing_table = llpParsingTable 2 2 augmented_grammar
+  let collection = llpCollection 2 2 augmented_grammar
+  let llp_parsing_table = llpParsingTable 2 2 grammar
   mapM_ printLlpItems collection
-  mapM_ print . M.toList $ psls collection
-  print $ llpParse 1 1 grammar example
+  mapM_ print . M.toList . M.filter (1 `elem`) $ (\(_, _, c) -> c) <$> llp_parsing_table
+  print $ llpParse 2 2 grammar example
