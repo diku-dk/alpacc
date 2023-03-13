@@ -398,14 +398,14 @@ llkParse' k grammar a b = auxiliary (a,  b, [])
 
         Just (index, production) = maybeTuple
 
--- llpParsingTable :: (Ord nt, Ord t) =>
---   Int
---   -> Int
---   -> Grammar nt t
---   -> Map
---       ([AugmentedTerminal t], [AugmentedTerminal t])
---       ([Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)],
---        [Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)], [Int])
+llpParsingTable :: (Ord nt, Ord t) =>
+  Int
+  -> Int
+  -> Grammar nt t
+  -> Map
+      ([AugmentedTerminal t], [AugmentedTerminal t])
+      ([Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)],
+       [Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)], [Int])
 llpParsingTable q k grammar = fromJust <$> M.mapWithKey auxiliary (S.findMax <$> psls_table)
   where
     augmented_grammar = augmentGrammar grammar
@@ -426,7 +426,7 @@ substrings q k = toList . auxiliary SQ.empty SQ.empty . SQ.fromList
         takeR i seq = SQ.drop (n - i) seq
           where n = SQ.length seq
 
--- llpParse :: (Ord nt, Ord t, Show t) => Int -> Int -> Grammar nt t -> [t] -> [Int]
+llpParse :: (Ord nt, Ord t) => Int -> Int -> Grammar nt t -> [t] -> [Int]
 llpParse q k grammar = concatMap auxiliary . substrings q k . (RightTurnstile:) . (++[LeftTurnstile]) . aug
   where
     aug = fmap AugmentedTerminal
