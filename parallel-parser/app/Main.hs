@@ -1,6 +1,5 @@
 module Main where
 
-
 import ParallelParser.Grammar
 import ParallelParser.Parser
 import qualified Data.Map as M
@@ -13,6 +12,8 @@ import Data.Sequence
 import Data.Maybe
 import Debug.Trace (traceShow)
 import Data.Foldable
+import System.IO.Unsafe
+
 
 debug x = traceShow ("DEBUG: " ++ show x) x
 

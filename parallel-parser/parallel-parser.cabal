@@ -9,7 +9,7 @@ homepage:
 
 -- A URL where users can report bugs.
 -- bug-reports:
-license:            NONE
+license:
 author:             William Due
 maintainer:         williamhenrichdue@gmail.com
 
@@ -19,52 +19,61 @@ category:           Language
 extra-source-files: CHANGELOG.md
 
 library
-    exposed-modules:
-        ParallelParser.Grammar,
-        ParallelParser.Parser
-    default-extensions:
-        FlexibleContexts, 
-        FlexibleInstances,
-        OverloadedStrings,
-        DeriveGeneric,
-        TupleSections
+  exposed-modules:
+    ParallelParser.Grammar
+    ParallelParser.Parser
 
-    -- Modules included in this library but not exported.
-    -- other-modules:
+  default-extensions:
+    DeriveGeneric
+    FlexibleContexts
+    FlexibleInstances
+    OverloadedStrings
+    TupleSections
+    QuasiQuotes
 
-    -- LANGUAGE extensions used by modules in this package.
-    -- other-extensions:
-    build-depends:    base, containers, split, text, composition, split
-    hs-source-dirs:   src
-    default-language: Haskell2010
+  build-depends:
+    , base
+    , composition
+    , containers
+    , split
+    , text
+    , raw-strings-qq
+
+  hs-source-dirs:     src
+  default-language:   Haskell2010
 
 executable parallel-parser
-    main-is:                Main.hs
-    default-extensions:       
-        FlexibleContexts, 
-        FlexibleInstances,
-        OverloadedStrings,
-        DeriveGeneric,
-        TupleSections
+  main-is:            Main.hs
+  default-extensions:
+    DeriveGeneric
+    FlexibleContexts
+    FlexibleInstances
+    OverloadedStrings
+    TupleSections
+    QuasiQuotes
 
-    -- Modules included in this executable, other than Main.
-    -- other-modules:
+  build-depends:
+    , base
+    , composition
+    , containers
+    , parallel-parser
+    , raw-strings-qq
 
-    -- LANGUAGE extensions used by modules in this package.
-    -- other-extensions:
-    build-depends:
-        parallel-parser,
-        base,
-        composition,
-        containers
-
-    hs-source-dirs:   app
-    default-language: Haskell2010
+  hs-source-dirs:     app
+  default-language:   Haskell2010
 
 test-suite test-parallel-parser
-    other-modules:    LL, LLP
-    default-language: Haskell2010
-    type:             exitcode-stdio-1.0
-    hs-source-dirs:   test
-    main-is:          Main.hs
-    build-depends:    parallel-parser, base, HUnit, containers, composition
+  other-modules:
+    LL
+    LLP
+
+  default-language: Haskell2010
+  type:             exitcode-stdio-1.0
+  hs-source-dirs:   test
+  main-is:          Main.hs
+  build-depends:
+    , base
+    , composition
+    , containers
+    , HUnit
+    , parallel-parser
