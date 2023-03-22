@@ -12,7 +12,6 @@ import Data.Sequence
 import Data.Maybe
 import Debug.Trace (traceShow)
 import Data.Foldable
-import System.IO.Unsafe
 
 
 debug x = traceShow ("DEBUG: " ++ show x) x
@@ -28,9 +27,10 @@ main :: IO ()
 main = do
   contents <- getContents
   let grammar = unpackNTTGrammar (read contents :: Grammar NT T)
-  let augmented_grammar = augmentGrammar grammar
-  let collection = llpCollection 2 2 augmented_grammar
-  let llp_parsing_table = llpParsingTable 2 2 grammar
-  mapM_ printLlpItems collection
-  mapM_ print . M.toList . M.filter (1 `elem`) $ (\(_, _, c) -> c) <$> llp_parsing_table
-  print $ llpParse 2 2 grammar example
+  -- let augmented_grammar = augmentGrammar grammar
+  -- let collection = llpCollection 2 2 augmented_grammar
+  -- let llp_parsing_table = llpParsingTable 2 2 grammar
+  -- mapM_ printLlpItems collection
+  -- mapM_ print . M.toList $ llp_parsing_table
+  -- print $ llpParse 2 2 grammar example
+  putStrLn $ futharkKeyGeneration 1 1 grammar

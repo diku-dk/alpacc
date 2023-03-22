@@ -11,7 +11,8 @@ module ParallelParser.Parser
     llkParse,
     psls,
     llpParsingTable,
-    llpParse
+    llpParse,
+    futharkKeyGeneration,
   )
 where
 
@@ -24,14 +25,15 @@ import Data.List.Split (splitOn)
 import Data.Map (Map (..))
 import qualified Data.Map as M
 import Data.Maybe
-import Data.Sequence (Seq (..), (><), (<|), (|>))
+import Data.Sequence (Seq (..), (<|), (><), (|>))
 import qualified Data.Sequence as SQ
 import Data.Set (Set (..))
 import qualified Data.Set as S
 import Debug.Trace (traceShow)
 import ParallelParser.Grammar
-import Text.RawString.QQ
+import Data.String.Interpolate ( i )
 import Prelude hiding (last)
+import Control.Arrow (Arrow(arr))
 
 debug x = traceShow ("DEBUG: " ++ show x) x
 
@@ -257,6 +259,34 @@ isTerminalPrefix grammar t = bfs S.empty . SQ.singleton
       where
         new_visited = S.insert top visited
 
+leftExpansions :: (Ord t, Ord nt) => Grammar nt t -> [Symbol nt t] -> SQ.Seq [Symbol nt t]
+leftExpansions grammar = expand SQ.empty . SQ.fromList
+  where
+    production_map = fmap (fmap SQ.fromList) . toProductionsMap $ productions grammar
+    expand _ SQ.Empty = SQ.Empty
+    expand ys ((Terminal x) :<| xs) = expand (ys :|> Terminal x) xs
+    expand ys ((Nonterminal x) :<| xs) = ps
+      where
+        smallExpand e = ys >< e >< xs
+        ps = SQ.fromList $ toList . smallExpand <$> (production_map M.! x)
+
+allStarts :: (Ord nt, Ord t) => Int -> Grammar nt t -> [[t]]
+allStarts k grammar = bfs S.empty (SQ.singleton . L.singleton . toNonterminal $ start grammar)
+  where
+    toNonterminal :: nt -> Symbol nt t
+    toNonterminal = Nonterminal 
+    unpackT (Terminal t) = t
+    expansions' = leftExpansions grammar
+    bfs _ SQ.Empty = []
+    bfs visited (top :<| queue)
+      | top `S.member` visited = bfs new_visited queue
+      | null top = bfs new_visited queue
+      | all isTerminal k_terms = (unpackT <$> k_terms) : bfs new_visited queue
+      | otherwise = bfs new_visited (queue >< expansions' top)
+      where
+        k_terms = take k top
+        new_visited = S.insert top visited
+
 solveShortestsPrefix :: (Ord t, Ord nt) => Grammar nt t -> t -> [Symbol nt t] -> [Symbol nt t]
 solveShortestsPrefix grammar t = solveShortestsPrefix'
   where
@@ -333,10 +363,10 @@ solveLlpItems q k grammar =
     . L.groupBy ((==) `on` auxiliary)
     . L.sortOn auxiliary
     . toList
-    where
-      auxiliary = safeLast . (\(DotProduction _ xs _) -> xs) . dotProduction
-      safeLast [] = Nothing
-      safeLast x = Just $ L.last x
+  where
+    auxiliary = safeLast . (\(DotProduction _ xs _) -> xs) . dotProduction
+    safeLast [] = Nothing
+    safeLast x = Just $ L.last x
 
 llpCollection :: (Ord t, Ord nt) => Int -> Int -> Grammar (AugmentedNonterminal nt) (AugmentedTerminal t) -> Set (Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t)))
 llpCollection q k grammar = S.filter (not . null) $ auxiliary S.empty d_init (toList d_init)
@@ -371,7 +401,7 @@ psls = M.unionsWith S.union . fmap auxiliary . toList . S.unions
         z = L.last alpha_z
 
 llkParse' :: (Ord nt, Ord t) => Int -> Grammar nt t -> [t] -> [Symbol nt t] -> Maybe ([t], [Symbol nt t], [Int])
-llkParse' k grammar a b = auxiliary (a,  b, [])
+llkParse' k grammar a b = auxiliary (a, b, [])
   where
     table = llkTable k grammar
     production_map = M.fromList . zip [0 ..] $ productions grammar
@@ -399,62 +429,100 @@ llkParse' k grammar a b = auxiliary (a,  b, [])
 
         Just (index, production) = maybeTuple
 
-llpParsingTable :: (Ord nt, Ord t) =>
-  Int
-  -> Int
-  -> Grammar nt t
-  -> Map
-      ([AugmentedTerminal t], [AugmentedTerminal t])
-      ([Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)],
-       [Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)], [Int])
-llpParsingTable q k grammar = fromJust <$> M.mapWithKey auxiliary (S.findMax <$> psls_table)
+llpParsingTable ::
+  (Ord nt, Ord t) =>
+  Int ->
+  Int ->
+  Grammar nt t ->
+  Map ([AugmentedTerminal t], [AugmentedTerminal t]) [Int]
+llpParsingTable q k grammar = M.union starts $ fromJust <$> M.mapWithKey auxiliary (S.findMax <$> psls_table)
   where
     augmented_grammar = augmentGrammar grammar
+    starts = M.fromList . map ((,[0]) . ([],)) $ allStarts k augmented_grammar
     collection = llpCollection q k augmented_grammar
     psls_table = psls collection
     auxiliary (x, y) alpha = f <$> llkParse' k augmented_grammar y alpha
-      where f (epsilon, omega, pi) = (alpha, omega, pi)
+      where
+        f (epsilon, omega, pi) = pi
 
 substrings :: Int -> Int -> [a] -> [([a], [a])]
 substrings q k = toList . auxiliary SQ.empty SQ.empty . SQ.fromList
   where
     auxiliary es _ SQ.Empty = es
-    auxiliary es ys (x :<| xs) = auxiliary (es :|>substring) (ys :|> x) xs
+    auxiliary es ys (x :<| xs) = auxiliary (es :|> substring) (ys :|> x) xs
       where
         backwards = takeR q ys
         forwards = SQ.take (k - 1) xs
         substring = (toList backwards, toList $ x <| forwards)
         takeR i seq = SQ.drop (n - i) seq
-          where n = SQ.length seq
+          where
+            n = SQ.length seq
 
 llpParse :: (Ord nt, Ord t) => Int -> Int -> Grammar nt t -> [t] -> [Int]
-llpParse q k grammar = concatMap auxiliary . substrings q k . (RightTurnstile:) . (++[LeftTurnstile]) . aug
+llpParse q k grammar = concatMap auxiliary . substrings q k . (RightTurnstile :) . (++ [LeftTurnstile]) . aug
   where
     aug = fmap AugmentedTerminal
     (Just i) = L.findIndex (\(Production nt _) -> nt == start grammar) (productions grammar)
-    thrd (_, _, p) = p
-    table = thrd <$> llpParsingTable q k grammar
-    auxiliary ([], RightTurnstile:_) = [0]
+    table = llpParsingTable q k grammar
+    auxiliary ([], RightTurnstile : _) = [0]
     auxiliary (back, forw) = p
-      where p = L.head $ mapMaybe (`M.lookup` table) [(a, b) | a <- helper back, b <- helper forw]
-            helper = takeWhile (not . null) . iterate init
+      where
+        p = L.head $ mapMaybe (`M.lookup` table) [(a, b) | a <- helper back, b <- helper forw]
+        helper = takeWhile (not . null) . iterate init
 
+lpad p m xs = replicate (m - length ys) p ++ ys
+  where ys = take m xs
 
-futharkKeyGeneration :: String
-futharkKeyGeneration = [r|
-def chunks (n : i64) (size : i64) (arr : []i64) =
-    iota n |> map (\i -> copy arr[i:i + size] :> [size]i64)
+rpad p m xs = ys ++ replicate (m - length ys) p
+  where ys = take m xs
 
-def lookahead_chunks [n] (size : i64) (arr : [n]i64) =
-    let arr' = arr ++ replicate size 0
-    in chunks n size arr'
+futharkKeyGeneration :: (Ord nt, Ord t) => Int -> Int -> Grammar nt t -> String
+futharkKeyGeneration q k grammar =
+  [i|
+def lookbkack_array_to_tuple [n] (arr : [n]u32) =
+  #{toTupleArray "arr" q}
 
-def lookback_chunks [n] (size : i64) (arr : [n]i64) =
-    let arr' = replicate size 0 ++ arr
-    in chunks n size arr'
+def lookahead_array_to_tuple [n] (arr : [n]u32) =
+  #{toTupleArray "arr" k}
 
-def keys [n] (q : i64) (k : i64) (arr : [n]i64) =
-    let lookback = lookback_chunks q arr
-    let lookahead = lookahead_chunks k arr
-    in zip lookback lookahead
+def lookback_chunks [n] (arr : [n]u32) =
+  let arr' = replicate #{q} u32.highest ++ arr
+  in iota n |> map (\\i -> arr'[i:i + #{q}] |> lookbkack_array_to_tuple)
+
+def lookahead_chunks [n] (arr : [n]u32) =
+  let arr' = arr ++ replicate #{k} u32.highest
+  in iota n |> map (\\i -> arr'[i:i + #{k}] |> lookahead_array_to_tuple)
+
+def keys [n] (arr : [n]u32) =
+  let lookback = lookback_chunks arr
+  let lookahead = lookahead_chunks arr
+  in zip lookback lookahead
+
+def key_to_productions (key : (#{lookback_type}, #{lookahead_type})) =
+  match key
+  #{cases_printed}
+  case _ -> #{last_case}
+
+def parse [n] (arr : [n]u32) =
+  let arr' = [0] ++ arr ++ [1]
+  in keys arr'
+  |> map key_to_productions
+  |> flatten
+  |> filter (!=u32.highest)
 |]
+  where
+    toTuple = ('(':) . (++")") . L.intercalate ", " 
+    toTupleArray name n = toTuple $ map (((name ++ "[") ++) . (++"]") . show) [0..n - 1]
+    lookback_type = toTuple $ replicate q "u32"
+    lookahead_type = toTuple $ replicate k "u32"
+    table = llpParsingTable q k grammar
+    max_size = maximum $ length <$> table
+    augmented_grammar = augmentGrammar grammar
+    backPad = lpad "4294967295" q
+    frontPad = rpad "4294967295" k
+    terminal_map = M.fromList . flip zip (show <$> [0..]) $ terminals augmented_grammar
+    convert = map (terminal_map M.!)
+    padded_table = ('[':) . (++"]") . L.intercalate ", " . lpad "u32.highest" max_size . map show <$> M.mapKeys (\(a, b) -> (backPad $ convert a, frontPad $ convert b)) table
+    cases_printed = L.intercalate "\n  " $ (\(k, v) -> "case " ++ printKey k ++ " -> " ++ v) <$> M.toList padded_table
+    printKey (b, f) = [i|((#{L.intercalate ", " b}), (#{L.intercalate ", " f}))|]
+    last_case = (++"]") . ('[':) . L.intercalate ", " $ replicate max_size "u32.highest"

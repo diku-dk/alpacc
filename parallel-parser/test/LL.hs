@@ -1,7 +1,7 @@
 module LL (tests) where
 
-import qualified Data.Set as Set
 import qualified Data.List as List
+import qualified Data.Set as Set
 import ParallelParser.Grammar
 import ParallelParser.Parser
 import Test.HUnit
@@ -136,10 +136,10 @@ ll1ParseFailTestCase = TestCase $ assertEqual "LL(1) parsing test" result expect
 
 tests =
   TestLabel "LL(k) tests" $
-  TestList
-    [ nullableTestCase,
-      firstSmallTestCase,
-      followSmallTestCase,
-      followLargeTestCase,
-      ll1ParseTestCase
-    ]
+    TestList
+      [ nullableTestCase,
+        firstSmallTestCase,
+        followSmallTestCase,
+        followLargeTestCase,
+        ll1ParseTestCase
+      ]
