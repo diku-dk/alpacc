@@ -3,7 +3,7 @@ module LL (tests) where
 import qualified Data.List as List
 import qualified Data.Set as Set
 import ParallelParser.Grammar
-import ParallelParser.Parser
+import ParallelParser.LL
 import Test.HUnit
 
 grammar =

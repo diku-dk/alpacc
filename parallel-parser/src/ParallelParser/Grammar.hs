@@ -19,25 +19,31 @@ module ParallelParser.Grammar
 where
 
 import Data.Bifunctor (Bifunctor (bimap, first, second))
-import Data.Char as C
 import Data.Composition
-import qualified Data.List as L
+import qualified Data.List as List
 import Data.Map (Map (..))
-import qualified Data.Map as M
+import qualified Data.Map as Map hiding (Map (..))
 import Data.Maybe
 import Debug.Trace (traceShow)
 import Text.ParserCombinators.ReadP
 
 newtype T = T String deriving (Ord, Eq)
 
-data AugmentedTerminal t = AugmentedTerminal t | RightTurnstile | LeftTurnstile deriving (Ord, Eq)
+data AugmentedTerminal t
+  = AugmentedTerminal t
+  | RightTurnstile
+  | LeftTurnstile
+  deriving (Ord, Eq)
 
 instance Show t => Show (AugmentedTerminal t) where
   show RightTurnstile = "⊢"
   show LeftTurnstile = "⊣"
   show (AugmentedTerminal t) = show t
 
-data AugmentedNonterminal nt = AugmentedNonterminal nt | Start deriving (Ord, Eq)
+data AugmentedNonterminal nt
+  = AugmentedNonterminal nt
+  | Start
+  deriving (Ord, Eq)
 
 instance Show nt => Show (AugmentedNonterminal nt) where
   show (AugmentedNonterminal nt) = show nt
@@ -57,7 +63,10 @@ instance Show NT where
 instance Read NT where
   readsPrec _ a = [(NT a, "")]
 
-data Symbol nt t = Nonterminal nt | Terminal t deriving (Ord, Eq, Show, Read, Functor)
+data Symbol nt t
+  = Nonterminal nt
+  | Terminal t
+  deriving (Ord, Eq, Show, Read, Functor)
 
 instance Bifunctor Symbol where
   first f (Nonterminal nt) = Nonterminal $ f nt
@@ -65,7 +74,9 @@ instance Bifunctor Symbol where
   second _ (Nonterminal nt) = Nonterminal nt
   second f (Terminal t) = Terminal $ f t
 
-data Production nt t = Production nt [Symbol nt t] deriving (Ord, Eq, Show, Read, Functor)
+data Production nt t
+  = Production nt [Symbol nt t]
+  deriving (Ord, Eq, Show, Read, Functor)
 
 instance Bifunctor Production where
   first f (Production nt s) = Production (f nt) (first f <$> s)
@@ -106,7 +117,9 @@ sepBySkip :: ReadP a -> ReadP sep -> ReadP [a]
 sepBySkip a sep' = skipSpacesAround $ sepBy a sep'
 
 set :: ReadP [String]
-set = between (char '{') (char '}') (sepBySkip (munch1 (`notElem` [',', '}'])) sep)
+set = between (char '{') (char '}') (sepBySkip munch1_non_set sep)
+  where
+    munch1_non_set = munch1 (`notElem` [',', '}'])
 
 toSymbol :: (Read nt, Read t) => [String] -> [String] -> String -> Symbol nt t
 toSymbol ts nts symbol
@@ -150,22 +163,32 @@ instance (Read nt, Read t) => Read (Grammar nt t) where
   readsPrec _ = readP_to_S pGrammar
 
 findProductions :: (Eq b) => Grammar b t -> b -> [Production b t]
-findProductions grammar nt = filter ((== nt) . nonterminal) $ productions grammar
+findProductions grammar nt = filterNt $ productions grammar
+  where
+    filterNt = filter ((== nt) . nonterminal)
 
 reverseGrammar :: Grammar nt t -> Grammar nt t
-reverseGrammar grammar = grammar {productions = reverseProduction <$> productions grammar}
+reverseGrammar grammar =
+  grammar {productions = reverseProduction <$> productions grammar}
   where
     reverseProduction (Production nt s) = Production nt (reverse s)
 
-augmentGrammar :: Grammar nt t -> Grammar (AugmentedNonterminal nt) (AugmentedTerminal t)
+augmentGrammar ::
+  Grammar nt t ->
+  Grammar (AugmentedNonterminal nt) (AugmentedTerminal t)
 augmentGrammar grammar =
   grammar
     { start = Start,
-      terminals = RightTurnstile : LeftTurnstile : (AugmentedTerminal <$> terminals grammar),
-      nonterminals = Start : (AugmentedNonterminal <$> nonterminals grammar),
-      productions = Production Start symbols' : (augmentProduction <$> productions grammar)
+      terminals = terminals',
+      nonterminals = nonterminals',
+      productions = productions'
     }
   where
+    augmented_productions = augmentProduction <$> productions grammar
+    productions' = Production Start symbols' : augmented_productions
+    nonterminals' = Start : (AugmentedNonterminal <$> nonterminals grammar)
+    augmented_terminals = AugmentedTerminal <$> terminals grammar
+    terminals' = RightTurnstile : LeftTurnstile : augmented_terminals
     start' = Nonterminal . AugmentedNonterminal $ start grammar
     symbols' = [Terminal RightTurnstile, start', Terminal LeftTurnstile]
     augmentProduction = bimap AugmentedNonterminal AugmentedTerminal
@@ -177,9 +200,13 @@ isTerminal (Nonterminal _) = False
 isNonterminal :: Symbol nt t -> Bool
 isNonterminal = not . isTerminal
 
-toProductionsMap :: (Ord nt, Ord t) => [Production nt t] -> Map nt [[Symbol nt t]]
-toProductionsMap = M.fromList . fmap toPair . L.groupBy nonterminalEq . L.sort
+toProductionsMap ::
+  (Ord nt, Ord t) =>
+  [Production nt t] ->
+  Map nt [[Symbol nt t]]
+toProductionsMap = Map.fromList . fmap toPair . groupSort
   where
+    groupSort = List.groupBy nonterminalEq . List.sort
     nonterminalEq a b = nonterminal a == nonterminal b
     toPair a = (nonterminal $ head a, symbols <$> a)
 
