@@ -1,14 +1,11 @@
 module LLP (tests) where
 
-import Data.Composition
 import Data.Foldable (Foldable (toList))
-import Data.Function
-import qualified Data.IntMap as S
 import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import ParallelParser.Grammar
-import ParallelParser.Parser
+import ParallelParser.LLP
 import Test.HUnit
 
 grammar :: Grammar String String

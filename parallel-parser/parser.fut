@@ -35,8 +35,10 @@ def key_to_productions (key : ((u32), (u32))) =
   case _ -> [u32.highest, u32.highest, u32.highest]
 
 def parse [n] (arr : [n]u32) =
-  let arr' = [0] ++ arr ++ [1]
+  let arr' = [0] ++ (map (+2) arr) ++ [1]
   in keys arr'
   |> map key_to_productions
   |> flatten
   |> filter (!=u32.highest)
+  |> tail
+  |> map (\a -> a - 1)

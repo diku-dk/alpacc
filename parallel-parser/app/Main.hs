@@ -1,7 +1,7 @@
 module Main where
 
 import ParallelParser.Grammar
-import ParallelParser.Parser
+import ParallelParser.Generator
 import qualified Data.Map as M
 import Prelude hiding (last)
 import Text.ParserCombinators.ReadP
@@ -12,7 +12,6 @@ import Data.Sequence
 import Data.Maybe
 import Debug.Trace (traceShow)
 import Data.Foldable
-
 
 debug x = traceShow ("DEBUG: " ++ show x) x
 
@@ -27,10 +26,6 @@ main :: IO ()
 main = do
   contents <- getContents
   let grammar = unpackNTTGrammar (read contents :: Grammar NT T)
-  -- let augmented_grammar = augmentGrammar grammar
-  -- let collection = llpCollection 2 2 augmented_grammar
-  -- let llp_parsing_table = llpParsingTable 2 2 grammar
-  -- mapM_ printLlpItems collection
-  -- mapM_ print . M.toList $ llp_parsing_table
-  -- print $ llpParse 2 2 grammar example
-  putStrLn $ futharkKeyGeneration 1 1 grammar
+  let q = 1
+  let k = 1
+  putStrLn $ futharkKeyGeneration q k grammar
