@@ -9,6 +9,7 @@ import qualified Data.List as L
 import qualified Data.List as List
 import Data.Map (Map (..))
 import qualified Data.Map as Map
+import Data.Maybe
 import Data.String.Interpolate (i)
 import Data.Tuple.Extra
 import ParallelParser.Grammar
@@ -77,9 +78,12 @@ futharkTable q k grammar max_size = cases . prods . keys
     prods = fmap (futharkProductions max_size)
     keys = Map.mapKeys (uncurry (futharkTableKey q k grammar))
 
-futharkKeyGeneration :: (Ord nt, Ord t) => Int -> Int -> Grammar nt t -> String
-futharkKeyGeneration q k grammar =
-  [i|def lookbkack_array_to_tuple [n] (arr : [n]u32) =
+futharkKeyGeneration :: (Ord nt, Ord t, Show nt, Show t) => Int -> Int -> Grammar nt t -> Maybe String
+futharkKeyGeneration q k grammar
+  | any_is_nothing = Nothing
+  | otherwise =
+      Just
+        [i|def lookbkack_array_to_tuple [n] (arr : [n]u32) =
   #{toTupleIndexArray "arr" q}
 
 def lookahead_array_to_tuple [n] (arr : [n]u32) =
@@ -114,13 +118,20 @@ def parse [n] (arr : [n]u32) =
 
 |]
   where
+    any_is_nothing =
+      isNothing maybe_start_terminal
+        || isNothing maybe_end_terminal
+        || isNothing maybe_table
+    Just start_terminal = maybe_start_terminal
+    Just end_terminal = maybe_end_terminal
+    Just table = maybe_table
+    maybe_start_terminal = List.elemIndex RightTurnstile terminals'
+    maybe_end_terminal = List.elemIndex LeftTurnstile terminals'
+    maybe_table = llpParsingTable q k augmented_grammar
     augmented_grammar = augmentGrammar grammar
     terminals' = terminals augmented_grammar
-    Just start_terminal = List.elemIndex RightTurnstile terminals'
-    Just end_terminal = List.elemIndex LeftTurnstile terminals'
     lookback_type = toTuple $ replicate q "u32"
     lookahead_type = toTuple $ replicate k "u32"
-    Just table = llpParsingTable q k augmented_grammar
     max_size = maximum $ length <$> table
     futhark_table = futharkTable q k augmented_grammar max_size table
     last_case = toArray $ replicate max_size "u32.highest"

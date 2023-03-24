@@ -58,11 +58,15 @@ executable parallel-parser
     QuasiQuotes
     DeriveFunctor
     ExtendedDefaultRules
+    
 
   build-depends:
     , base
     , containers
     , parallel-parser
+    , optparse-applicative
+    , interpolate
+    , filepath
 
   hs-source-dirs:     app
   default-language:   Haskell2010
