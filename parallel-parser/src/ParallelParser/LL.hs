@@ -17,7 +17,6 @@ import Data.Maybe
 import Data.Set (Set (..))
 import qualified Data.Set as Set
 import Data.Tuple.Extra (dupe)
-import Debug.Trace (traceShow)
 import ParallelParser.Grammar
 import Prelude hiding (last)
 

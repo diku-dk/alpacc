@@ -22,6 +22,10 @@ import qualified Data.Set as Set hiding (Set (..))
 import ParallelParser.Grammar
 import ParallelParser.LL
 import Prelude hiding (last)
+import Debug.Trace (traceShow)
+
+
+debug x = traceShow x x
 
 data DotProduction nt t
   = DotProduction nt [Symbol nt t] [Symbol nt t]
@@ -319,14 +323,14 @@ llkTableParse k grammar a b = auxiliary (a, b, [])
             $ take k input
 
         maybeTuple = do
-          index <- List.last keys `Map.lookup` table
+          index <- List.head keys `Map.lookup` table
           production <- index `Map.lookup` production_map
           return (index, symbols production)
 
         Just (index, production) = maybeTuple
 
 llpParsingTable ::
-  (Ord nt, Ord t) =>
+  (Ord nt, Ord t, Show nt, Show t) =>
   Int ->
   Int ->
   Grammar (AugmentedNonterminal nt) (AugmentedTerminal t) ->
@@ -357,7 +361,7 @@ substrings q k = toList . auxiliary Seq.empty Seq.empty . Seq.fromList
           where
             n = Seq.length seq
 
-llpParse :: (Ord nt, Ord t) => Int -> Int -> Grammar nt t -> [t] -> [Int]
+llpParse :: (Ord nt, Ord t, Show nt, Show t) => Int -> Int -> Grammar nt t -> [t] -> [Int]
 llpParse q k grammar = concatMap auxiliary . substrings q k . addStoppers . aug
   where
     addStoppers = (RightTurnstile :) . (++ [LeftTurnstile])

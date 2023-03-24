@@ -17,5 +17,10 @@ Their order matters in this program since the indexes are used to indentify the 
 An example of something to parse is setting $q = 1$ and $k = 1$ and using `[0, 0, 1, 1, 1, 2, 2, 3]` (this corresponds to aabbbcc$) as inpput to `parse`.
 It should return `[0, 2, 2, 1, 4, 4, 4, 3]` as in the [sequential-parser](../sequential-parser).
 
+Next step:
+ - Make a CST.
+ - Start writing paper
+ - Make a small lexer.
+
 Sources:
 [1] Ladislav Vagner and Bořivoj Melichar. 2007. Parallel LL parsing. Acta informatica 44, 1 (2007), 1–21.
