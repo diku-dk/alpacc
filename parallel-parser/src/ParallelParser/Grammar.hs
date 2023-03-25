@@ -51,27 +51,9 @@ instance Show nt => Show (AugmentedNonterminal nt) where
   show (AugmentedNonterminal nt) = show nt
   show Start = "⊥"
 
-replaceEscapedChars :: String -> String
-replaceEscapedChars "" = ""
-replaceEscapedChars input@(x:xs)
-  | x == '\\' = start ++ replaceEscapedChars xs'
-  | otherwise = x : replaceEscapedChars xs
-  where
-    (start, xs') = auxiliary input
-    auxiliary ('\\':'\\':ys) = ("\\", ys)
-    auxiliary ('\\':',':ys) = (",", ys)
-    auxiliary ('\\':'}':ys) = ("}", ys)
-    auxiliary ('\\':'t':ys) = ("\t", ys)
-    auxiliary ('\\':'r':ys) = ("\r", ys)
-    auxiliary ('\\':'n':ys) = ("\n", ys)
-    auxiliary ('\\':'s':ys) = (" ", ys)
-    auxiliary ys = ("", ys)
-
 
 instance Read T where
-  readsPrec _ a 
-    | all (`notElem` [' ', '\n', '\r', '\t']) a = [(T (replaceEscapedChars a), "")]
-    | otherwise = error "The terminal may not contain a space."
+  readsPrec _ a = [(T a, "")]
 
 instance Show T where
   show (T a) = a
@@ -82,9 +64,7 @@ instance Show NT where
   show (NT a) = a
 
 instance Read NT where
-  readsPrec _ a
-    | all (`notElem` [' ', '\n', '\r', '\t']) a = [(NT (replaceEscapedChars a), "")]
-    | otherwise = error "The nonterminal may not contain a space."
+  readsPrec _ a = [(NT a, "")]
 
 data Symbol nt t
   = Nonterminal nt
@@ -145,16 +125,31 @@ toSymbol ts nts symbol
   | symbol `elem` ts = Terminal $ read symbol
   | otherwise = error $ show symbol ++ " is not a defined symbol."
 
-munchSetElement = concat <$> many1 helper
+replaceEscapedChars :: String -> String
+replaceEscapedChars "" = ""
+replaceEscapedChars input@(x:xs)
+  | x == '\\' = start ++ replaceEscapedChars xs'
+  | otherwise = x : replaceEscapedChars xs
   where
-    helper =  string "\\}" <++ string "\\," <++  munch1 (`notElem` [' ', ',', '}', '\n', '\r', '\t'])
+    (start, xs') = auxiliary input
+    auxiliary ('\\':'\\':ys) = ("\\", ys)
+    auxiliary ('\\':',':ys) = (",", ys)
+    auxiliary ('\\':'}':ys) = ("}", ys)
+    auxiliary ('\\':'t':ys) = ("\t", ys)
+    auxiliary ('\\':'r':ys) = ("\r", ys)
+    auxiliary ('\\':'n':ys) = ("\n", ys)
+    auxiliary ('\\':'s':ys) = (" ", ys)
+    auxiliary ys = ("", ys)
+
+setElement = replaceEscapedChars . concat <$> many1 escaped
+  where
+    escaped = string "\\}" <++ string "\\," <++ fmap List.singleton (satisfy (`notElem` [' ', ',', '}', '\n', '\r', '\t']))
 
 pGrammar :: (Read nt, Read t) => ReadP (Grammar nt t)
 pGrammar = tuple
   where
     set = sepBySkip setElement sep
     production_set ts nts = sepBySkip (production ts nts) sep
-    setElement = munchSetElement
     tupleElement = munch1 (`notElem` [' ', ',', ')', '\n', '\r', '\t'])
 
     production ts nts = do
