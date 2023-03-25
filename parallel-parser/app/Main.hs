@@ -62,6 +62,7 @@ main = do
   let Just program_path = stripExtension "cfg" grammar_path 
   contents <- readFile grammar_path
   let grammar = unpackNTTGrammar (read contents :: Grammar NT T)
+  print grammar
   let maybe_program = futharkKeyGeneration q k grammar
   case maybe_program of
     Nothing -> putStrLn [i|The given Grammar may not be LLP(#{q}, #{k})|]
