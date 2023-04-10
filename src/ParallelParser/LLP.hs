@@ -42,7 +42,7 @@ data Item nt t = Item
   }
   deriving (Eq, Ord, Show)
 
-initD :: (Ord nt, Ord t) => Int -> Grammar nt t -> Set (Item nt t)
+initD :: (Show t, Show nt, Ord nt, Ord t) => Int -> Grammar nt t -> Set (Item nt t)
 initD q grammar
   | null last' = Set.singleton (auxiliary [])
   | otherwise = auxiliary `Set.map` last'
@@ -109,7 +109,7 @@ leftExpansions grammar = expand Seq.empty . Seq.fromList
         smallExpand e = ys >< e >< xs
         ps = Seq.fromList $ toList . smallExpand <$> (production_map Map.! x)
 
-allStarts :: (Ord nt, Ord t) => Int -> Grammar nt t -> [[t]]
+allStarts :: (Show t, Show nt, Ord nt, Ord t) => Int -> Grammar nt t -> [[t]]
 allStarts k grammar = bfs Set.empty (Seq.singleton $ List.singleton start')
   where
     start' = Nonterminal $ start grammar
@@ -126,7 +126,7 @@ allStarts k grammar = bfs Set.empty (Seq.singleton $ List.singleton start')
         new_visited = Set.insert top visited
 
 solveShortestsPrefix ::
-  (Ord t, Ord nt) =>
+  (Show t, Show nt, Ord t, Ord nt) =>
   Grammar nt t ->
   t ->
   [Symbol nt t] ->
@@ -141,7 +141,7 @@ solveShortestsPrefix grammar t = solveShortestsPrefix'
     safeHead (x : xs) = x
 
 newLlpItems ::
-  (Ord t, Ord nt) =>
+  (Show t, Show nt, Ord t, Ord nt) =>
   Int ->
   Int ->
   Grammar nt t ->
@@ -170,7 +170,7 @@ newLlpItems q k grammar vi delta dot_production = product'
     (DotProduction y alpha x_beta) = dot_production
 
 addLlpItem ::
-  (Ord t, Ord nt) =>
+  (Show t, Show nt, Ord t, Ord nt) =>
   Int ->
   Grammar nt t ->
   p ->
@@ -204,7 +204,7 @@ addLlpItem q grammar items old_item
             }
 
 addLlpItems ::
-  (Ord t, Ord nt) =>
+  (Show t, Show nt, Ord t, Ord nt) =>
   Int ->
   Grammar nt t ->
   Set (Item nt t) ->
@@ -220,7 +220,7 @@ moveDot (DotProduction nt s s') = Just $ DotProduction nt (init s) moved
     moved = List.last s : s'
 
 nextLlpItems ::
-  (Ord t, Ord nt) =>
+  (Show t, Show nt, Ord t, Ord nt) =>
   Int ->
   Int ->
   Grammar nt t ->
@@ -234,7 +234,7 @@ nextLlpItems q k grammar llp_item = newLlpItem' <$> moveDot dot_production
     delta = shortestPrefix llp_item
 
 solveLlpItems ::
-  (Ord t, Ord nt) =>
+  (Show t, Show nt, Ord t, Ord nt) =>
   Int ->
   Int ->
   Grammar nt t ->
@@ -253,7 +253,7 @@ solveLlpItems q k grammar =
     safeLast x = Just $ List.last x
 
 llpCollection ::
-  (Ord t, Ord nt) =>
+  (Show t, Show nt, Ord t, Ord nt) =>
   Int ->
   Int ->
   Grammar (AugmentedNonterminal nt) (AugmentedTerminal t) ->
@@ -294,16 +294,16 @@ psls = Map.unionsWith Set.union . fmap auxiliary . toList . Set.unions
           } = old_item
         z = List.last alpha_z
 
-llkTableParse ::
-  (Ord nt, Ord t) =>
+llTableParse ::
+  (Show t, Show nt, Ord nt, Ord t) =>
   Int ->
   Grammar nt t ->
   [t] ->
   [Symbol nt t] ->
   Maybe ([t], [Symbol nt t], [Int])
-llkTableParse k grammar a b = auxiliary (a, b, [])
+llTableParse k grammar a b = auxiliary (a, b, [])
   where
-    table = llkTable k grammar
+    table = llTable k grammar
     production_map = Map.fromList . zip [0 ..] $ productions grammar
     auxiliary ([], stack, parsed) = Just ([], stack, reverse parsed)
     auxiliary (input, [], parsed) = Just (input, [], reverse parsed)
@@ -329,6 +329,7 @@ llkTableParse k grammar a b = auxiliary (a, b, [])
 
         Just (index, production) = maybeTuple
 
+
 llpParsingTable ::
   (Ord nt, Ord t, Show nt, Show t) =>
   Int ->
@@ -344,7 +345,8 @@ llpParsingTable q k grammar
     starts = Map.fromList . map ((,[0]) . ([],)) $ allStarts k grammar
     collection = llpCollection q k grammar
     psls_table = psls collection
-    auxiliary (x, y) alpha = f <$> llkTableParse k grammar y alpha
+    llTableParse' = llTableParse k grammar
+    auxiliary (x, y) alpha = f <$> llTableParse' y alpha
       where
         f (epsilon, omega, pi) = pi
 

@@ -105,7 +105,7 @@ def keys [n] (arr : [n]u32) =
 def key_to_productions (key : (#{lookback_type}, #{lookahead_type})) =
   match key
   #{futhark_table}
-  case _ -> #{last_case}
+  case _ -> assert false #{last_case}
 
 def parse [n] (arr : [n]u32) =
   let arr' = [#{start_terminal}] ++ (map (+2) arr) ++ [#{end_terminal}]

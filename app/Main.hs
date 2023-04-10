@@ -14,7 +14,7 @@ import Data.Foldable
 import Options.Applicative
 import Data.Semigroup ((<>))
 import Data.String.Interpolate (i)
-import System.FilePath.Posix (stripExtension)
+import System.FilePath.Posix (stripExtension, takeFileName)
 
 data Parametars = Parametars
   { path      :: String
@@ -59,10 +59,9 @@ main = do
   let grammar_path = path options
   let q = lookback options
   let k = lookahead options
-  let Just program_path = stripExtension "cfg" grammar_path 
+  let Just program_path = stripExtension "cg" $ takeFileName grammar_path 
   contents <- readFile grammar_path
   let grammar = unpackNTTGrammar (read contents :: Grammar NT T)
-  print grammar
   let maybe_program = futharkKeyGeneration q k grammar
   case maybe_program of
     Nothing -> putStrLn [i|The given Grammar may not be LLP(#{q}, #{k})|]
