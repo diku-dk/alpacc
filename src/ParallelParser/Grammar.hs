@@ -139,6 +139,7 @@ replaceEscapedChars input@(x:xs)
     auxiliary ('\\':'r':ys) = ("\r", ys)
     auxiliary ('\\':'n':ys) = ("\n", ys)
     auxiliary ('\\':'s':ys) = (" ", ys)
+    auxiliary ('\\':ys) = ("", ys)
     auxiliary ys = ("", ys)
 
 setElement = replaceEscapedChars . concat <$> many1 escaped
@@ -238,3 +239,11 @@ unpackNTTGrammar grammar =
   where
     unpackT (T s) = s
     unpackNT (NT s) = s
+
+-- removeLeftRecursion :: (Eq nt, Eq t) => Grammar nt t -> Grammar nt t
+-- removeLeftRecursion grammar = grammar
+--   where
+--     productions' = productions grammar
+--     auxiliary (Production nt (Nonterminal nt'):_)
+--       | nt == nt' =
+--       | otherwise =
