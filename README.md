@@ -8,7 +8,7 @@ This will create a source file with a parser written in [Futhark](https://futhar
 The `parse` function in the parser takes an array of indexes that corresponds to the indexes of the terminals in the `.cg` file where 0 is the starting index.
 `parse` then returns a list of indexes that corresponds to the indexes of the productions.
 
-To see examples of how to define a context-free grammar look in the `.in` files.
+To see examples of how to define a context-free grammar look in the `.cg` files.
 It should be a quadrouple $(S, T, N, P)$ where $S$ is the starting nonterminal, $T$ is the set of terminals, $N$ is the set of nonterminals and $P$ is the set of productions.
 Even though they are mentioned as sets they are not utilized as sets in this program.
 Their order matters in this program since the indexes are used to indentify the productions and symbols.
@@ -31,6 +31,7 @@ Next step:
  - Start writing paper
  - Make a small lexer.
  - remove left recursion
+ - [closure algorithm](https://zerobone.net/blog/cs/non-productive-cfg-rules/)
 
 Sources:
 [1] Ladislav Vagner and Bořivoj Melichar. 2007. Parallel LL parsing. Acta informatica 44, 1 (2007), 1–21.

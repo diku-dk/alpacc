@@ -19,16 +19,20 @@ def keys [n] (arr : [n]u32) =
 
 def key_to_productions (key : ((u32), (u32))) =
   match key
-  case ((0), (2)) -> [1, 6, 12]
-  case ((0), (7)) -> [1, 6, 11]
-  case ((2), (1)) -> [u32.highest, u32.highest, u32.highest]
-  case ((2), (8)) -> [u32.highest, u32.highest, u32.highest]
-  case ((4294967295), (0)) -> [u32.highest, u32.highest, 0]
-  case ((7), (2)) -> [1, 6, 12]
-  case ((7), (7)) -> [1, 6, 11]
-  case ((8), (1)) -> [u32.highest, u32.highest, u32.highest]
-  case ((8), (8)) -> [u32.highest, u32.highest, u32.highest]
-  case _ -> assert false [u32.highest, u32.highest, u32.highest]
+  case ((0), (2)) -> [1, 5]
+  case ((0), (5)) -> [1, 4]
+  case ((2), (2)) -> [1, 5]
+  case ((2), (5)) -> [1, 4]
+  case ((3), (1)) -> [u32.highest, 3]
+  case ((3), (3)) -> [u32.highest, 3]
+  case ((3), (4)) -> [u32.highest, 2]
+  case ((4), (2)) -> [u32.highest, 5]
+  case ((4), (5)) -> [u32.highest, 4]
+  case ((4294967295), (0)) -> [u32.highest, 0]
+  case ((5), (1)) -> [u32.highest, 3]
+  case ((5), (3)) -> [u32.highest, 3]
+  case ((5), (4)) -> [u32.highest, 2]
+  case _ -> assert false [u32.highest, u32.highest]
 
 def parse [n] (arr : [n]u32) =
   let arr' = [0] ++ (map (+2) arr) ++ [1]
