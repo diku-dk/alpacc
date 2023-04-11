@@ -3,11 +3,11 @@
     {num, +, /, -, *, (, )},
     {Exp, Exp2, Exp3},
     {
-        Exp -> Exp2 + Exp,
-        Exp -> Exp2 - Exp,
+        Exp -> Exp + Exp2,
+        Exp -> Exp - Exp2,
         Exp -> Exp2,
-        Exp2 -> Exp3 * Exp2,
-        Exp2 -> Exp3 / Exp2,
+        Exp2 -> Exp2 * Exp3,
+        Exp2 -> Exp2 / Exp3,
         Exp2 -> Exp3,
         Exp3 -> num,
         Exp3 -> ( Exp )

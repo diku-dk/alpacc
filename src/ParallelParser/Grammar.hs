@@ -15,6 +15,7 @@ module ParallelParser.Grammar
     isNonterminal,
     toProductionsMap,
     unpackNTTGrammar,
+    eliminateLeftRecursion
   )
 where
 
@@ -24,6 +25,9 @@ import qualified Data.List as List
 import Data.Map (Map (..))
 import qualified Data.Map as Map hiding (Map (..))
 import Data.Maybe
+import Data.Set (Set (..))
+import qualified Data.Set as Set
+import Data.Tuple.Extra (both)
 import Debug.Trace (traceShow)
 import Text.ParserCombinators.ReadP
 
@@ -50,7 +54,6 @@ data AugmentedNonterminal nt
 instance Show nt => Show (AugmentedNonterminal nt) where
   show (AugmentedNonterminal nt) = show nt
   show Start = "⊥"
-
 
 instance Read T where
   readsPrec _ a = [(T a, "")]
@@ -127,19 +130,19 @@ toSymbol ts nts symbol
 
 replaceEscapedChars :: String -> String
 replaceEscapedChars "" = ""
-replaceEscapedChars input@(x:xs)
+replaceEscapedChars input@(x : xs)
   | x == '\\' = start ++ replaceEscapedChars xs'
   | otherwise = x : replaceEscapedChars xs
   where
     (start, xs') = auxiliary input
-    auxiliary ('\\':'\\':ys) = ("\\", ys)
-    auxiliary ('\\':',':ys) = (",", ys)
-    auxiliary ('\\':'}':ys) = ("}", ys)
-    auxiliary ('\\':'t':ys) = ("\t", ys)
-    auxiliary ('\\':'r':ys) = ("\r", ys)
-    auxiliary ('\\':'n':ys) = ("\n", ys)
-    auxiliary ('\\':'s':ys) = (" ", ys)
-    auxiliary ('\\':ys) = ("", ys)
+    auxiliary ('\\' : '\\' : ys) = ("\\", ys)
+    auxiliary ('\\' : ',' : ys) = (",", ys)
+    auxiliary ('\\' : '}' : ys) = ("}", ys)
+    auxiliary ('\\' : 't' : ys) = ("\t", ys)
+    auxiliary ('\\' : 'r' : ys) = ("\r", ys)
+    auxiliary ('\\' : 'n' : ys) = ("\n", ys)
+    auxiliary ('\\' : 's' : ys) = (" ", ys)
+    auxiliary ('\\' : ys) = ("", ys)
     auxiliary ys = ("", ys)
 
 setElement = replaceEscapedChars . concat <$> many1 escaped
@@ -240,10 +243,35 @@ unpackNTTGrammar grammar =
     unpackT (T s) = s
     unpackNT (NT s) = s
 
--- removeLeftRecursion :: (Eq nt, Eq t) => Grammar nt t -> Grammar nt t
--- removeLeftRecursion grammar = grammar
---   where
---     productions' = productions grammar
---     auxiliary (Production nt (Nonterminal nt'):_)
---       | nt == nt' =
---       | otherwise =
+newNonterminal :: Set [Char] -> [Char] -> (Set [Char], [Char])
+newNonterminal nts nt
+  | nt `Set.member` nts = newNonterminal nts (nt ++ "'")
+  | otherwise = (Set.insert nt nts, nt)
+
+isLeftRecursive :: Eq nt => Production nt s -> Bool
+isLeftRecursive (Production nt ((Nonterminal nt') : _)) = nt == nt'
+isLeftRecursive _ = False
+
+appendProduction :: Production nt t -> [Symbol nt t] -> Production nt t
+appendProduction (Production nt s) s' = Production nt (s ++ s')
+
+prependProduction :: Production nt t -> [Symbol nt t] -> Production nt t
+prependProduction (Production nt s) s' = Production nt (s' ++ s) 
+
+eliminateLeftRecursion grammar = new_grammar
+  where
+    new_grammar = grammar { nonterminals = Set.toList new_nts,
+                            productions = Set.toList new_prods}
+    productions' = productions grammar
+    nonterminals' = Set.fromList $ nonterminals grammar
+    (new_nts, new_prods) = auxiliary nonterminals' Set.empty productions'
+    auxiliary nts prods [] = (nts, prods)
+    auxiliary nts prods (prod:ps)
+      | isLeftRecursive prod = auxiliary nts' prods' ps
+      | otherwise = auxiliary nts (Set.insert prod prods) ps
+      where
+        prods' = Set.unions [new_beta_prods, Set.fromList [Production nt' (alpha ++ [Nonterminal nt]), Production nt' []], prods]
+        Production nt (_ : alpha) = prod
+        (nts', nt') = newNonterminal nts nt
+        betaProds = Set.filter (not . isLeftRecursive) . Set.filter ((== nt) . nonterminal)
+        new_beta_prods = Set.map (`appendProduction` [Nonterminal nt']) $ betaProds prods

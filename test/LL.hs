@@ -122,14 +122,14 @@ followLargeTestCase = TestCase $ assertEqual "Large Follow(1) test" result expec
 
 ll1ParseTestCase = TestCase $ assertEqual "LL(1) parsing test" result expected
   where
-    llkParse' = llkParse 1 extendedGrammar
+    llkParse' = llParse 1 extendedGrammar
     input = List.singleton <$> "aabbbcc$"
     result = llkParse' (input, [Nonterminal $ start extendedGrammar], [])
     expected = Just ([], [], [0, 2, 2, 1, 4, 4, 4, 3])
 
 ll1ParseFailTestCase = TestCase $ assertEqual "LL(1) parsing test" result expected
   where
-    llkParse' = llkParse 1 extendedGrammar
+    llkParse' = llParse 1 extendedGrammar
     input = List.singleton <$> "ab$"
     result = llkParse' (input, [Nonterminal $ start extendedGrammar], [])
     expected = Nothing
