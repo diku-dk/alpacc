@@ -14,8 +14,7 @@ module ParallelParser.Grammar
     isTerminal,
     isNonterminal,
     toProductionsMap,
-    unpackNTTGrammar,
-    eliminateLeftRecursion
+    unpackNTTGrammar
   )
 where
 
@@ -243,35 +242,4 @@ unpackNTTGrammar grammar =
     unpackT (T s) = s
     unpackNT (NT s) = s
 
-newNonterminal :: Set [Char] -> [Char] -> (Set [Char], [Char])
-newNonterminal nts nt
-  | nt `Set.member` nts = newNonterminal nts (nt ++ "'")
-  | otherwise = (Set.insert nt nts, nt)
 
-isLeftRecursive :: Eq nt => Production nt s -> Bool
-isLeftRecursive (Production nt ((Nonterminal nt') : _)) = nt == nt'
-isLeftRecursive _ = False
-
-appendProduction :: Production nt t -> [Symbol nt t] -> Production nt t
-appendProduction (Production nt s) s' = Production nt (s ++ s')
-
-prependProduction :: Production nt t -> [Symbol nt t] -> Production nt t
-prependProduction (Production nt s) s' = Production nt (s' ++ s) 
-
-eliminateLeftRecursion grammar = new_grammar
-  where
-    new_grammar = grammar { nonterminals = Set.toList new_nts,
-                            productions = Set.toList new_prods}
-    productions' = productions grammar
-    nonterminals' = Set.fromList $ nonterminals grammar
-    (new_nts, new_prods) = auxiliary nonterminals' Set.empty productions'
-    auxiliary nts prods [] = (nts, prods)
-    auxiliary nts prods (prod:ps)
-      | isLeftRecursive prod = auxiliary nts' prods' ps
-      | otherwise = auxiliary nts (Set.insert prod prods) ps
-      where
-        prods' = Set.unions [new_beta_prods, Set.fromList [Production nt' (alpha ++ [Nonterminal nt]), Production nt' []], prods]
-        Production nt (_ : alpha) = prod
-        (nts', nt') = newNonterminal nts nt
-        betaProds = Set.filter (not . isLeftRecursive) . Set.filter ((== nt) . nonterminal)
-        new_beta_prods = Set.map (`appendProduction` [Nonterminal nt']) $ betaProds prods
