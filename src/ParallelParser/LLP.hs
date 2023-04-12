@@ -86,13 +86,13 @@ isTerminalPrefix grammar t = bfs Set.empty . Seq.singleton
     derivations' = derivations grammar
     bfs _ Empty = False
     bfs visited (top :<| queue)
-      | debug top `Set.member` visited = bfs new_visited queue
-      | null top = bfs new_visited queue
-      | Terminal (debug t) == head top = True
-      | isTerminal $ head top = bfs new_visited queue
+      | null top = bfs visited queue
+      | head_top `Set.member` visited = bfs new_visited queue
+      | Terminal t == head_top = True
       | otherwise = bfs new_visited (queue >< derivations' top)
       where
-        new_visited = Set.insert top visited
+        head_top = head top
+        new_visited = Set.insert head_top visited
 
 leftDerivations ::
   (Ord t, Ord nt, Show nt, Show t) =>
