@@ -6,7 +6,7 @@ module ParallelParser.LL
     before,
     fixedPointIterate,
     llTable,
-    llParse,
+    llParse
   )
 where
 
@@ -17,18 +17,19 @@ import Data.Maybe
 import Data.Set (Set (..))
 import qualified Data.Set as Set
 import Data.Tuple.Extra (dupe)
+import Debug.Trace (traceShow)
 import ParallelParser.Grammar
 import Prelude hiding (last)
-import Debug.Trace (traceShow)
 
 debug x = traceShow x x
-fixedPointIterate :: (Show b, Eq b) => (b -> b -> Bool) -> (b -> b) -> b -> b
+
+fixedPointIterate :: Eq b => (b -> b -> Bool) -> (b -> b) -> b -> b
 fixedPointIterate cmp f = fst . head . dropWhile (uncurry cmp) . iterateFunction
   where
     iterateFunction = drop 1 . iterate swapApply . dupe
     swapApply (n, _) = (f n, n)
 
-nullables :: (Show t, Show nt, Ord nt, Ord t) => Grammar nt t -> Map nt Bool
+nullables :: (Ord nt, Ord t) => Grammar nt t -> Map nt Bool
 nullables grammar = fixedPointIterate (/=) nullableNtProd init_nullable_map
   where
     nullableNtProd = nullableNt productions_map
@@ -40,13 +41,13 @@ nullables grammar = fixedPointIterate (/=) nullableNtProd init_nullable_map
       where
         nullableNt' = any . all $ nullable' nullable_map
 
-nullableOne :: (Show t, Show nt, Ord nt, Ord t) => Grammar nt t -> Symbol nt t -> Bool
+nullableOne :: (Ord nt, Ord t) => Grammar nt t -> Symbol nt t -> Bool
 nullableOne _ (Terminal t) = False
 nullableOne grammar (Nonterminal nt) = nullable_map Map.! nt
   where
     nullable_map = nullables grammar
 
-nullable :: (Show t, Show nt, Ord nt, Ord t) => Grammar nt t -> [Symbol nt t] -> Bool
+nullable :: (Ord nt, Ord t) => Grammar nt t -> [Symbol nt t] -> Bool
 nullable grammar = all nullableOne'
   where
     nullableOne' = nullableOne grammar
@@ -69,7 +70,7 @@ truncatedProduct k a b = Set.fromList token_product
     b_list = Set.toList b
 
 firstAB ::
-  (Show t, Show nt, Ord nt, Ord t) =>
+  (Ord nt, Ord t) =>
   Int ->
   Grammar nt t ->
   Map nt (Set [t]) ->
@@ -82,7 +83,7 @@ firstAB k grammar first_map = foldl truncatedProductSymbol init . kNullables
     kNullables = takeWhileNMore k nullableOne'
     nullableOne' = nullableOne grammar
 
-firsts :: (Show t, Show nt, Ord nt, Ord t) => Int -> Grammar nt t -> Map nt (Set [t])
+firsts :: (Ord nt, Ord t) => Int -> Grammar nt t -> Map nt (Set [t])
 firsts k grammar = fixedPointIterate (/=) firstNtProd init_first_map
   where
     init = Set.singleton []
@@ -92,7 +93,7 @@ firsts k grammar = fixedPointIterate (/=) firstNtProd init_first_map
     productions_map = toProductionsMap $ productions grammar
     firstNt prods first_map = fmap (firstAB' first_map) prods
 
-first :: (Show t, Show nt, Ord nt, Ord t) => Int -> Grammar nt t -> [Symbol nt t] -> Set [t]
+first :: (Ord nt, Ord t) => Int -> Grammar nt t -> [Symbol nt t] -> Set [t]
 first k grammar = Set.filter (not . null) . firstAB k grammar first_map
   where
     first_map = firsts k grammar
@@ -113,7 +114,7 @@ instance (Show nt, Show t) => Show (Constraint nt t) where
       seq = List.intercalate ", " (show <$> Set.toList ts)
   show (NTConstraint nt nt') = show nt ++ " ⊆ " ++ show nt'
 
-constraints :: (Show t, Show nt, Ord nt, Ord t) => Int -> Grammar nt t -> [Set (Constraint nt t)]
+constraints :: (Ord nt, Ord t) => Int -> Grammar nt t -> [Set (Constraint nt t)]
 constraints k grammar = helper <$> productions grammar
   where
     nullable' = nullable grammar
@@ -131,7 +132,7 @@ constraints k grammar = helper <$> productions grammar
             nt_constraint =
               Set.fromList [NTConstraint nt nt' | nt /= nt' && right_nullable]
 
-follows :: (Show t, Show nt, Ord nt, Ord t) => Int -> Grammar nt t -> Map nt (Set [t])
+follows :: (Ord nt, Ord t) => Int -> Grammar nt t -> Map nt (Set [t])
 follows k grammar = fixedPointIterate (/=) f init_follow_map
   where
     constraints' = Set.unions $ constraints k grammar
@@ -142,22 +143,22 @@ follows k grammar = fixedPointIterate (/=) f init_follow_map
       where
         res = m Map.! nt
 
-follow :: (Show t, Show nt, Ord nt, Ord t) => Int -> Grammar nt t -> nt -> Set [t]
+follow :: (Ord nt, Ord t) => Int -> Grammar nt t -> nt -> Set [t]
 follow k grammar = (follows' Map.!)
   where
     follows' = follows k grammar
 
-last :: (Show t, Show nt, Ord nt, Ord t) => Int -> Grammar nt t -> [Symbol nt t] -> Set [t]
+last :: (Ord nt, Ord t) => Int -> Grammar nt t -> [Symbol nt t] -> Set [t]
 last q grammar = Set.map reverse . lasts . reverse
   where
     lasts = first q $ reverseGrammar grammar
 
-before :: (Show t, Show nt, Ord nt, Ord t) => Int -> Grammar nt t -> nt -> Set [t]
+before :: (Ord nt, Ord t) => Int -> Grammar nt t -> nt -> Set [t]
 before q grammar = Set.map reverse . (befores Map.!)
   where
     befores = follows q $ reverseGrammar grammar
 
-firstTable :: (Show t, Show nt, Ord nt, Ord t) => Int -> Grammar nt t -> Map (nt, [t]) Int
+firstTable :: (Ord nt, Ord t) => Int -> Grammar nt t -> Map (nt, [t]) Int
 firstTable k grammar = Map.unions $ auxiliary <$> zip prods [0 ..]
   where
     prods = productions grammar
@@ -167,7 +168,7 @@ firstTable k grammar = Map.unions $ auxiliary <$> zip prods [0 ..]
         ts = Set.toList $ first' a
 
 nullableFollowTable ::
-  (Show t, Show nt, Ord nt, Ord t) =>
+  (Ord nt, Ord t) =>
   Int ->
   Grammar nt t ->
   Map (nt, [t]) Int
@@ -182,14 +183,14 @@ nullableFollowTable k grammar = Map.unions $ auxiliary <$> zip [0 ..] prods
         nts = Set.toList $ follow' nt
         is_nullable = nullable' a
 
-llTable :: (Show t, Show nt, Ord nt, Ord t) => Int -> Grammar nt t -> Map (nt, [t]) Int
+llTable :: (Ord nt, Ord t) => Int -> Grammar nt t -> Map (nt, [t]) Int
 llTable k grammar = Map.union first_table nullable_follow_table
   where
     first_table = firstTable k grammar
     nullable_follow_table = nullableFollowTable k grammar
 
 llParse ::
-  (Show t, Show nt, Ord nt, Ord t) =>
+  (Ord nt, Ord t) =>
   Int ->
   Grammar nt t ->
   ([t], [Symbol nt t], [Int]) ->

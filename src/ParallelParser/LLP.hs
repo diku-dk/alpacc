@@ -6,6 +6,7 @@ module ParallelParser.LLP
     psls,
     llpParsingTable,
     llpParse,
+    leftRecursiveNonterminals,
   )
 where
 
@@ -42,7 +43,7 @@ data Item nt t = Item
   }
   deriving (Eq, Ord, Show)
 
-initD :: (Show t, Show nt, Ord nt, Ord t) => Int -> Grammar nt t -> Set (Item nt t)
+initD :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> Set (Item nt t)
 initD q grammar
   | null last' = Set.singleton (auxiliary [])
   | otherwise = auxiliary `Set.map` last'
@@ -57,76 +58,76 @@ initD q grammar
           shortestPrefix = []
         }
 
-expansions ::
-  (Ord t, Ord nt) =>
+derivations ::
+  (Ord t, Ord nt, Show nt, Show t) =>
   Grammar nt t ->
   [Symbol nt t] ->
   Seq [Symbol nt t]
-expansions grammar = expand Seq.empty Seq.empty . Seq.fromList
+derivations grammar = derive Seq.empty Seq.empty . Seq.fromList
   where
     toSeq = fmap (fmap Seq.fromList)
     production_map = toSeq . toProductionsMap $ productions grammar
-    expand es _ Empty = es
-    expand es ys ((Terminal x) :<| xs) = expand es (ys :|> Terminal x) xs
-    expand es ys ((Nonterminal x) :<| xs) = expand es' (ys :|> Nonterminal x) xs
+    derive es _ Empty = es
+    derive es ys ((Terminal x) :<| xs) = derive es (ys :|> Terminal x) xs
+    derive es ys ((Nonterminal x) :<| xs) = derive es' (ys :|> Nonterminal x) xs
       where
         es' = es >< ps
-        smallExpand e = ys >< e >< xs
-        ps = Seq.fromList $ toList . smallExpand <$> (production_map Map.! x)
+        smallDerive e = ys >< e >< xs
+        ps = Seq.fromList $ toList . smallDerive <$> (production_map Map.! x)
 
 isTerminalPrefix ::
-  (Ord t, Ord nt) =>
+  (Ord t, Ord nt, Show nt, Show t) =>
   Grammar nt t ->
   t ->
   [Symbol nt t] ->
   Bool
 isTerminalPrefix grammar t = bfs Set.empty . Seq.singleton
   where
-    expansions' = expansions grammar
+    derivations' = derivations grammar
     bfs _ Empty = False
     bfs visited (top :<| queue)
-      | top `Set.member` visited = bfs new_visited queue
+      | debug top `Set.member` visited = bfs new_visited queue
       | null top = bfs new_visited queue
-      | Terminal t == head top = True
+      | Terminal (debug t) == head top = True
       | isTerminal $ head top = bfs new_visited queue
-      | otherwise = bfs new_visited (queue >< expansions' top)
+      | otherwise = bfs new_visited (queue >< derivations' top)
       where
         new_visited = Set.insert top visited
 
-leftExpansions ::
-  (Ord t, Ord nt) =>
+leftDerivations ::
+  (Ord t, Ord nt, Show nt, Show t) =>
   Grammar nt t ->
   [Symbol nt t] ->
   Seq [Symbol nt t]
-leftExpansions grammar = expand Seq.empty . Seq.fromList
+leftDerivations grammar = derive Seq.empty . Seq.fromList
   where
     toSequences = fmap (fmap Seq.fromList)
     production_map = toSequences . toProductionsMap $ productions grammar
-    expand _ Empty = Empty
-    expand ys ((Terminal x) :<| xs) = expand (ys :|> Terminal x) xs
-    expand ys ((Nonterminal x) :<| xs) = ps
+    derive _ Empty = Empty
+    derive ys ((Terminal x) :<| xs) = derive (ys :|> Terminal x) xs
+    derive ys ((Nonterminal x) :<| xs) = ps
       where
-        smallExpand e = ys >< e >< xs
-        ps = Seq.fromList $ toList . smallExpand <$> (production_map Map.! x)
+        smallDerive e = ys >< e >< xs
+        ps = Seq.fromList $ toList . smallDerive <$> (production_map Map.! x)
 
-allStarts :: (Show t, Show nt, Ord nt, Ord t) => Int -> Grammar nt t -> [[t]]
+allStarts :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> [[t]]
 allStarts k grammar = bfs Set.empty (Seq.singleton $ List.singleton start')
   where
     start' = Nonterminal $ start grammar
     unpackT (Terminal t) = t
-    expansions' = leftExpansions grammar
+    leftDerivations' = leftDerivations grammar
     bfs _ Empty = []
     bfs visited (top :<| queue)
       | top `Set.member` visited = bfs new_visited queue
       | null top = bfs new_visited queue
       | all isTerminal k_terms = (unpackT <$> k_terms) : bfs new_visited queue
-      | otherwise = bfs new_visited (queue >< expansions' top)
+      | otherwise = bfs new_visited (queue >< leftDerivations' top)
       where
         k_terms = take k top
         new_visited = Set.insert top visited
 
 solveShortestsPrefix ::
-  (Show t, Show nt, Ord t, Ord nt) =>
+  (Ord t, Ord nt, Show nt, Show t) =>
   Grammar nt t ->
   t ->
   [Symbol nt t] ->
@@ -141,7 +142,7 @@ solveShortestsPrefix grammar t = solveShortestsPrefix'
     safeHead (x : xs) = x
 
 newLlpItems ::
-  (Show t, Show nt, Ord t, Ord nt) =>
+  (Ord t, Ord nt, Show nt, Show t) =>
   Int ->
   Int ->
   Grammar nt t ->
@@ -170,7 +171,7 @@ newLlpItems q k grammar vi delta dot_production = product'
     (DotProduction y alpha x_beta) = dot_production
 
 addLlpItem ::
-  (Show t, Show nt, Ord t, Ord nt) =>
+  (Ord t, Ord nt, Show nt, Show t) =>
   Int ->
   Grammar nt t ->
   p ->
@@ -204,7 +205,7 @@ addLlpItem q grammar items old_item
             }
 
 addLlpItems ::
-  (Show t, Show nt, Ord t, Ord nt) =>
+  (Ord t, Ord nt, Show nt, Show t) =>
   Int ->
   Grammar nt t ->
   Set (Item nt t) ->
@@ -220,7 +221,7 @@ moveDot (DotProduction nt s s') = Just $ DotProduction nt (init s) moved
     moved = List.last s : s'
 
 nextLlpItems ::
-  (Show t, Show nt, Ord t, Ord nt) =>
+  (Ord t, Ord nt, Show nt, Show t) =>
   Int ->
   Int ->
   Grammar nt t ->
@@ -234,7 +235,7 @@ nextLlpItems q k grammar llp_item = newLlpItem' <$> moveDot dot_production
     delta = shortestPrefix llp_item
 
 solveLlpItems ::
-  (Show t, Show nt, Ord t, Ord nt) =>
+  (Ord t, Ord nt, Show nt, Show t) =>
   Int ->
   Int ->
   Grammar nt t ->
@@ -253,7 +254,7 @@ solveLlpItems q k grammar =
     safeLast x = Just $ List.last x
 
 llpCollection ::
-  (Show t, Show nt, Ord t, Ord nt) =>
+  (Ord t, Ord nt, Show nt, Show t) =>
   Int ->
   Int ->
   Grammar (AugmentedNonterminal nt) (AugmentedTerminal t) ->
@@ -275,7 +276,7 @@ llpCollection q k grammar = removeNull $ auxiliary Set.empty d_init d_init_list
         new_queue = xs ++ toList new_item
 
 psls ::
-  (Ord t, Ord nt) =>
+  (Ord t, Ord nt, Show nt, Show t) =>
   Set (Set (Item nt t)) ->
   Map ([t], [t]) (Set [Symbol nt t])
 psls = Map.unionsWith Set.union . fmap auxiliary . toList . Set.unions
@@ -295,7 +296,7 @@ psls = Map.unionsWith Set.union . fmap auxiliary . toList . Set.unions
         z = List.last alpha_z
 
 llTableParse ::
-  (Show t, Show nt, Ord nt, Ord t) =>
+  (Ord nt, Ord t, Show nt, Show t) =>
   Int ->
   Grammar nt t ->
   [t] ->
@@ -350,8 +351,8 @@ llpParsingTable q k grammar
       where
         f (epsilon, omega, pi) = pi
 
-substrings :: Int -> Int -> [a] -> [([a], [a])]
-substrings q k = toList . auxiliary Seq.empty Seq.empty . Seq.fromList
+pairs :: Int -> Int -> [a] -> [([a], [a])]
+pairs q k = toList . auxiliary Seq.empty Seq.empty . Seq.fromList
   where
     auxiliary es _ Empty = es
     auxiliary es ys (x :<| xs) = auxiliary (es :|> substring) (ys :|> x) xs
@@ -364,7 +365,7 @@ substrings q k = toList . auxiliary Seq.empty Seq.empty . Seq.fromList
             n = Seq.length seq
 
 llpParse :: (Ord nt, Ord t, Show nt, Show t) => Int -> Int -> Grammar nt t -> [t] -> [Int]
-llpParse q k grammar = concatMap auxiliary . substrings q k . addStoppers . aug
+llpParse q k grammar = concatMap auxiliary . pairs q k . addStoppers . aug
   where
     addStoppers = (RightTurnstile :) . (++ [LeftTurnstile])
     aug = fmap AugmentedTerminal
@@ -376,3 +377,22 @@ llpParse q k grammar = concatMap auxiliary . substrings q k . addStoppers . aug
         pairs = [(a, b) | a <- helper back, b <- helper forw]
         p = List.head $ mapMaybe (`Map.lookup` table) pairs
         helper = takeWhile (not . null) . iterate init
+
+leftRecursiveNonterminals :: (Ord nt, Ord t, Show nt, Show t) => Grammar nt t -> [nt]
+leftRecursiveNonterminals grammar = mapMaybe (auxiliary . Nonterminal) nonterminals'
+  where
+    nonterminals' = nonterminals grammar
+    leftDerivations' = leftDerivations grammar
+    auxiliary nt = bfs Set.empty init_queue
+      where
+        init_queue = leftDerivations' [nt]
+        bfs _ Empty = Nothing
+        bfs visited (top :<| queue)
+          | top `Set.member` visited = bfs new_visited queue
+          | null top = bfs new_visited queue
+          | isTerminal head_top = bfs new_visited queue
+          | nt == head_top = Just . (\(Nonterminal a) -> a) $ nt
+          | otherwise = bfs new_visited (queue >< leftDerivations' top)
+          where
+            head_top = head top
+            new_visited = Set.insert top visited
