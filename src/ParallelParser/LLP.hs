@@ -155,9 +155,10 @@ newLlpItems q k grammar vi delta dot_production = product'
     product' = Set.fromList [newItem u v | u <- uj, v <- vj]
     last' = last q grammar . (++ alpha) . fmap Terminal
     first' = first k grammar . (x ++) . fmap Terminal
-    before' = Set.insert [] (before q grammar y)
-    uj = toList . Set.unions $ last' `Set.map` before'
-    vj = toList . Set.unions $ first' `Set.map` Set.fromList [[], vi]
+    before' = before q grammar y
+    insertEpsilon x = if null x then [[]] else x
+    uj = insertEpsilon . toList . Set.unions $ last' `Set.map` before'
+    vj = toList . Set.unions $ first' `Set.map` Set.singleton vi
     x = [List.head x_beta | not (List.null x_beta)]
     x_delta = x ++ delta
     solveShortestsPrefix' v = solveShortestsPrefix grammar v x_delta
@@ -194,8 +195,9 @@ addLlpItem q grammar items old_item
     newItems delta = Set.fromList [newItem y | y <- u']
       where
         last' = last q grammar . (++ delta) . fmap Terminal
-        before' = Set.insert [] (before q grammar y)
-        u' = toList . Set.unions $ last' `Set.map` before'
+        before' = before q grammar y
+        insertEpsilon x = if null x then [[]] else x
+        u' =  insertEpsilon . toList . Set.unions $ last' `Set.map` before'
         newItem z =
           Item
             { dotProduction = DotProduction y delta [],
@@ -371,12 +373,7 @@ llpParse q k grammar = concatMap auxiliary . pairs q k . addStoppers . aug
     aug = fmap AugmentedTerminal
     augmented_grammar = augmentGrammar grammar
     Just table = llpParsingTable q k augmented_grammar
-    auxiliary ([], RightTurnstile : _) = [0]
-    auxiliary (back, forw) = p
-      where
-        pairs = [(a, b) | a <- helper back, b <- helper forw]
-        p = List.head $ mapMaybe (`Map.lookup` table) pairs
-        helper = takeWhile (not . null) . iterate init
+    auxiliary = (Map.!) table
 
 leftRecursiveNonterminals :: (Ord nt, Ord t, Show nt, Show t) => Grammar nt t -> [nt]
 leftRecursiveNonterminals grammar = mapMaybe (auxiliary . Nonterminal) nonterminals'
