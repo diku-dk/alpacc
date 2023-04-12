@@ -7,6 +7,9 @@ import qualified Data.Set as Set
 import ParallelParser.Grammar
 import ParallelParser.LLP
 import Test.HUnit
+import Debug.Trace (traceShow)
+
+debug x = traceShow x x
 
 grammar :: Grammar String String
 grammar =
@@ -497,10 +500,18 @@ pslsTestCase = TestCase $ assertEqual "PSLS table test" expected result
     collection' = llpCollection 1 1 augmentedGrammar
     result = psls collection'
 
+llpParsingTestCase = TestCase $ assertBool "k, q = 1..k can parse LLP(1, 1)." result
+  where
+    input = map List.singleton "a+[a+a]"
+    result = all (==expected) [debug $ parser q k | q <- [1..5], k <- [1..5]]
+    expected = [0, 1, 4, 2, 5, 1, 4, 2, 4, 3, 3]
+    parser q k = llpParse q k grammar input
+
 tests =
   TestLabel "LLP(q, k) tests" $
     TestList
       [ augmentGrammarTestCase,
         pslsTestCase,
-        collectionTestCase
+        collectionTestCase,
+        llpParsingTestCase
       ]

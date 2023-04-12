@@ -17,6 +17,8 @@ import Data.Semigroup ((<>))
 import Data.String.Interpolate (i)
 import System.FilePath.Posix (stripExtension, takeFileName)
 import qualified Data.List as List
+import ParallelParser.LL (before, follow, first, last)
+import Prelude hiding (last)
 
 data Parametars = Parametars
   { path      :: String
@@ -68,7 +70,7 @@ main = do
   let maybe_program = futharkKeyGeneration q k grammar
   let left_recursive_pairs = leftRecursiveNonterminals grammar 
   let trouble_makers = List.intercalate ", " left_recursive_pairs
-  print trouble_makers
+  print $ last 4 grammar [Nonterminal "E'"]
   if [] /= left_recursive_pairs
   then
     putStrLn [i|The given grammar contains left recursion due to the following nonterminals #{trouble_makers}.|]
