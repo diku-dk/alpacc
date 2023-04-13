@@ -20,11 +20,10 @@ import Data.Sequence (Seq (..), (<|), (><), (|>))
 import qualified Data.Sequence as Seq hiding (Seq (..), (<|), (><), (|>))
 import Data.Set (Set (..))
 import qualified Data.Set as Set hiding (Set (..))
+import Debug.Trace (traceShow)
 import ParallelParser.Grammar
 import ParallelParser.LL
 import Prelude hiding (last)
-import Debug.Trace (traceShow)
-
 
 debug x = traceShow x x
 
@@ -87,12 +86,18 @@ isTerminalPrefix grammar t = bfs Set.empty . Seq.singleton
     bfs _ Empty = False
     bfs visited (top :<| queue)
       | null top = bfs visited queue
-      | head_top `Set.member` visited = bfs new_visited queue
+      | top `Set.member` visited = bfs visited queue
+      | [head_top] `Set.member` visited = bfs visited queue
       | Terminal t == head_top = True
+      | isTerminal $ head top = bfs new_visited queue
       | otherwise = bfs new_visited (queue >< derivations' top)
       where
         head_top = head top
-        new_visited = Set.insert head_top visited
+        new_visited =
+          if isNonterminal $ head top
+            then Set.insert [head_top] new_visited'
+            else new_visited'
+        new_visited' = Set.insert top visited
 
 leftDerivations ::
   (Ord t, Ord nt, Show nt, Show t) =>
@@ -155,10 +160,9 @@ newLlpItems q k grammar vi delta dot_production = product'
     product' = Set.fromList [newItem u v | u <- uj, v <- vj]
     last' = last q grammar . (++ alpha) . fmap Terminal
     first' = first k grammar . (x ++) . fmap Terminal
-    before' = before q grammar y
-    insertEpsilon x = if null x then [[]] else x
-    uj = insertEpsilon . toList . Set.unions $ last' `Set.map` before'
-    vj = toList . Set.unions $ first' `Set.map` Set.singleton vi
+    before' = Set.insert [] (before q grammar y)
+    uj = toList . Set.unions $ last' `Set.map` before'
+    vj = toList . Set.unions $ first' `Set.map` Set.fromList [[], vi]
     x = [List.head x_beta | not (List.null x_beta)]
     x_delta = x ++ delta
     solveShortestsPrefix' v = solveShortestsPrefix grammar v x_delta
@@ -195,9 +199,8 @@ addLlpItem q grammar items old_item
     newItems delta = Set.fromList [newItem y | y <- u']
       where
         last' = last q grammar . (++ delta) . fmap Terminal
-        before' = before q grammar y
-        insertEpsilon x = if null x then [[]] else x
-        u' =  insertEpsilon . toList . Set.unions $ last' `Set.map` before'
+        before' = Set.insert [] (before q grammar y)
+        u' = toList . Set.unions $ last' `Set.map` before'
         newItem z =
           Item
             { dotProduction = DotProduction y delta [],
@@ -332,7 +335,6 @@ llTableParse k grammar a b = auxiliary (a, b, [])
 
         Just (index, production) = maybeTuple
 
-
 llpParsingTable ::
   (Ord nt, Ord t, Show nt, Show t) =>
   Int ->
@@ -373,7 +375,7 @@ llpParse q k grammar = concatMap auxiliary . pairs q k . addStoppers . aug
     aug = fmap AugmentedTerminal
     augmented_grammar = augmentGrammar grammar
     Just table = llpParsingTable q k augmented_grammar
-    auxiliary = (Map.!) table
+    auxiliary = (table Map.!)
 
 leftRecursiveNonterminals :: (Ord nt, Ord t, Show nt, Show t) => Grammar nt t -> [nt]
 leftRecursiveNonterminals grammar = mapMaybe (auxiliary . Nonterminal) nonterminals'
