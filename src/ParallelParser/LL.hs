@@ -86,10 +86,9 @@ firstAB k grammar first_map = foldl truncatedProductSymbol init . kNullables
 firsts :: (Ord nt, Ord t) => Int -> Grammar nt t -> Map nt (Set [t])
 firsts k grammar = fixedPointIterate (/=) firstNtProd init_first_map
   where
-    init = Set.singleton []
     firstNtProd = firstNt productions_map
     firstAB' first_map = Set.unions . fmap (firstAB k grammar first_map)
-    init_first_map = Map.fromList . map (,init) $ nonterminals grammar
+    init_first_map = Map.fromList . map (,Set.empty) $ nonterminals grammar
     productions_map = toProductionsMap $ productions grammar
     firstNt prods first_map = fmap (firstAB' first_map) prods
 

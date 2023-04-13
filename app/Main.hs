@@ -70,7 +70,6 @@ main = do
   let maybe_program = futharkKeyGeneration q k grammar
   let left_recursive_pairs = leftRecursiveNonterminals grammar 
   let trouble_makers = List.intercalate ", " left_recursive_pairs
-  print $ last 4 grammar [Nonterminal "E'"]
   if [] /= left_recursive_pairs
   then
     putStrLn [i|The given grammar contains left recursion due to the following nonterminals #{trouble_makers}.|]
