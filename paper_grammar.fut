@@ -19,6 +19,8 @@ def keys [n] (arr : [n]u32) =
 
 def key_to_productions (key : ((u32), (u32))) =
   match key
+  case ((0), (2)) -> [1, 5]
+  case ((0), (5)) -> [1, 4]
   case ((2), (2)) -> [1, 5]
   case ((2), (5)) -> [1, 4]
   case ((3), (1)) -> [u32.highest, 3]
@@ -27,8 +29,6 @@ def key_to_productions (key : ((u32), (u32))) =
   case ((4), (2)) -> [u32.highest, 5]
   case ((4), (5)) -> [u32.highest, 4]
   case ((4294967295), (0)) -> [u32.highest, 0]
-  case ((4294967295), (2)) -> [1, 5]
-  case ((4294967295), (5)) -> [1, 4]
   case ((5), (1)) -> [u32.highest, 3]
   case ((5), (3)) -> [u32.highest, 3]
   case ((5), (4)) -> [u32.highest, 2]

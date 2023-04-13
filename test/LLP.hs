@@ -503,7 +503,7 @@ pslsTestCase = TestCase $ assertEqual "PSLS table test" expected result
 llpParsingTestCase = TestCase $ assertBool "k, q = 1..k can parse LLP(1, 1)." result
   where
     input = map List.singleton "a+[a+a]"
-    result = all (==expected) [debug $ parser q k | q <- [1..5], k <- [1..5]]
+    result = all (==expected) [parser q k | q <- [1..5], k <- [1..5]]
     expected = [0, 1, 4, 2, 5, 1, 4, 2, 4, 3, 3]
     parser q k = llpParse q k grammar input
 
