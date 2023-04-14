@@ -20,6 +20,8 @@ import Data.Tuple.Extra (dupe)
 import Debug.Trace (traceShow)
 import ParallelParser.Grammar
 import Prelude hiding (last)
+import Data.Function (on)
+import Data.Composition
 
 debug x = traceShow x x
 
@@ -93,7 +95,7 @@ firsts k grammar = fixedPointIterate (/=) firstNtProd init_first_map
     firstNt prods first_map = fmap (firstAB' first_map) prods
 
 first :: (Ord nt, Ord t) => Int -> Grammar nt t -> [Symbol nt t] -> Set [t]
-first k grammar = Set.filter (not . null) . firstAB k grammar first_map
+first k grammar = firstAB k grammar first_map
   where
     first_map = firsts k grammar
 
@@ -136,9 +138,11 @@ follows k grammar = fixedPointIterate (/=) f init_follow_map
   where
     constraints' = Set.unions $ constraints k grammar
     init_follow_map = Map.fromList . map (,Set.empty) $ nonterminals grammar
-    f a = foldl (flip addConstraint) a constraints'
-    addConstraint (TConstraint t nt) m = Map.adjust (`Set.union` t) nt m
-    addConstraint (NTConstraint nt nt') m = Map.adjust (`Set.union` res) nt' m
+    f a = foldl addConstraint a constraints'
+    -- This is very janky but I think
+    prod = if k == 1 then Set.union else truncatedProduct k
+    addConstraint m (TConstraint t nt) = Map.adjust (prod t) nt m
+    addConstraint m (NTConstraint nt nt') = Map.adjust (prod res) nt' m
       where
         res = m Map.! nt
 

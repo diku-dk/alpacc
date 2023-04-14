@@ -28,10 +28,9 @@ It should return `[0, 2, 2, 1, 4, 4, 4, 3]` as in the [sequential-parser](https:
 
 Next step:
  - Make a CST.
- - Start writing paper
+ - Start writing paper.
  - Make a small lexer.
- - remove left recursion
- - [closure algorithm](https://zerobone.net/blog/cs/non-productive-cfg-rules/)
+ - [closure algorithm](https://zerobone.net/blog/cs/non-productive-cfg-rules/).
 
 Sources:
 [1] Ladislav Vagner and Bořivoj Melichar. 2007. Parallel LL parsing. Acta informatica 44, 1 (2007), 1–21.

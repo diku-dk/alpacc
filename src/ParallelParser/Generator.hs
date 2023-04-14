@@ -14,6 +14,8 @@ import Data.String.Interpolate (i)
 import Data.Tuple.Extra
 import ParallelParser.Grammar
 import ParallelParser.LLP
+import Debug.Trace (traceShow)
+debug x = traceShow x x
 
 lpad :: a -> Int -> [a] -> [a]
 lpad p m xs = replicate (m - length ys) p ++ ys
@@ -115,7 +117,6 @@ def parse [n] (arr : [n]u32) =
   |> filter (!=u32.highest)
   |> tail
   |> map (\\a -> a - 1)
-
 |]
   where
     any_is_nothing =
@@ -127,8 +128,8 @@ def parse [n] (arr : [n]u32) =
     Just table = maybe_table
     maybe_start_terminal = List.elemIndex RightTurnstile terminals'
     maybe_end_terminal = List.elemIndex LeftTurnstile terminals'
+    augmented_grammar = augmentGrammar q k grammar
     maybe_table = llpParsingTable q k augmented_grammar
-    augmented_grammar = augmentGrammar grammar
     terminals' = terminals augmented_grammar
     lookback_type = toTuple $ replicate q "u32"
     lookahead_type = toTuple $ replicate k "u32"

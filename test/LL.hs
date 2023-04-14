@@ -5,6 +5,9 @@ import qualified Data.Set as Set
 import ParallelParser.Grammar
 import ParallelParser.LL
 import Test.HUnit
+import Debug.Trace (traceShow)
+
+debug x = traceShow x x
 
 grammar =
   Grammar
@@ -65,20 +68,20 @@ bookGrammar =
         ]
     }
 
-nullableTestCase = TestCase $ assertEqual "Nullable test" result expected
+nullableTestCase = TestCase $ assertEqual "Nullable test" expected result
   where
     nullable' = nullable grammar
     result = nullable' . symbols <$> productions grammar
     expected = [True, False, True, False]
 
-firstSmallTestCase = TestCase $ assertEqual "Small First(1) test" result expected
+firstSmallTestCase = TestCase $ assertEqual "Small First(1) test" expected result
   where
     first' = first 1 grammar
     result = first' . symbols <$> productions grammar
     expected =
-      [ Set.fromList [["b"]],
+      [ Set.fromList [[], ["b"]],
         Set.fromList [["a"]],
-        Set.empty,
+        Set.singleton [],
         Set.fromList [["b"]]
       ]
 
@@ -98,36 +101,36 @@ firstLargeTestCase = TestCase $ assertEqual "Large First(1) test" result expecte
         Set.fromList [["b"]]
       ]
 
-followSmallTestCase = TestCase $ assertEqual "Small Follow(1) test" result expected
+followSmallTestCase = TestCase $ assertEqual "Small Follow(1) test" expected result
   where
     follow' = follow 1 followExtendedGrammar
-    result = follow' <$> nonterminals followExtendedGrammar
+    result =  follow' <$> nonterminals followExtendedGrammar
     expected =
       [ Set.fromList [],
-        Set.fromList [["$"], ["c"], ["b"]],
+        Set.fromList [[], ["$"], ["c"], ["b"]],
         Set.fromList [["$"], ["c"]]
       ]
 
-followLargeTestCase = TestCase $ assertEqual "Large Follow(1) test" result expected
+followLargeTestCase = TestCase $ assertEqual "Large Follow(1) test" expected result
   where
     follow' = follow 1 bookGrammar
     result = follow' <$> nonterminals bookGrammar
     expected =
       [ Set.fromList [],
         Set.fromList [["$"]],
-        Set.fromList [["a"], ["b"], ["$"]],
-        Set.fromList [["a"], ["b"], ["$"]],
-        Set.fromList [["a"], ["b"], ["$"]]
+        Set.fromList [[], ["a"], ["b"], ["$"]],
+        Set.fromList [[], ["a"], ["b"], ["$"]],
+        Set.fromList [[], ["a"], ["b"], ["$"]]
       ]
 
-ll1ParseTestCase = TestCase $ assertEqual "LL(1) parsing test" result expected
+ll1ParseTestCase = TestCase $ assertEqual "LL(1) parsing test" expected result
   where
     llkParse' = llParse 1 extendedGrammar
     input = List.singleton <$> "aabbbcc$"
     result = llkParse' (input, [Nonterminal $ start extendedGrammar], [])
     expected = Just ([], [], [0, 2, 2, 1, 4, 4, 4, 3])
 
-ll1ParseFailTestCase = TestCase $ assertEqual "LL(1) parsing test" result expected
+ll1ParseFailTestCase = TestCase $ assertEqual "LL(1) parsing test" expected result
   where
     llkParse' = llParse 1 extendedGrammar
     input = List.singleton <$> "ab$"
