@@ -15,9 +15,8 @@ jobs:
         id: setup
         with:
           ghc-version: '9.2.5'
-          # Defaults, added for clarity:
           cabal-version: '3.10.1.0'
-          cabal-update: false
+          cabal-update: true
 
       - name: Installed versions of GHC and Cabal
         shell: bash
