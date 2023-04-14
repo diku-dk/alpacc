@@ -194,9 +194,11 @@ reverseGrammar grammar =
     reverseProduction (Production nt s) = Production nt (reverse s)
 
 augmentGrammar ::
+  Int ->
+  Int ->
   Grammar nt t ->
   Grammar (AugmentedNonterminal nt) (AugmentedTerminal t)
-augmentGrammar grammar =
+augmentGrammar q k grammar =
   grammar
     { start = Start,
       terminals = terminals',
@@ -210,7 +212,7 @@ augmentGrammar grammar =
     augmented_terminals = AugmentedTerminal <$> terminals grammar
     terminals' = RightTurnstile : LeftTurnstile : augmented_terminals
     start' = Nonterminal . AugmentedNonterminal $ start grammar
-    symbols' = [Terminal RightTurnstile, start', Terminal LeftTurnstile]
+    symbols' = replicate q (Terminal RightTurnstile) ++ [start'] ++ replicate k (Terminal LeftTurnstile)
     augmentProduction = bimap AugmentedNonterminal AugmentedTerminal
 
 isTerminal :: Symbol nt t -> Bool

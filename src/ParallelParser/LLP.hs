@@ -7,6 +7,7 @@ module ParallelParser.LLP
     llpParsingTable,
     llpParse,
     leftRecursiveNonterminals,
+    llTableParse
   )
 where
 
@@ -162,7 +163,7 @@ newLlpItems q k grammar vi delta dot_production = product'
     first' = first k grammar . (x ++) . fmap Terminal
     before' = Set.insert [] (before q grammar y)
     uj = toList . Set.unions $ last' `Set.map` before'
-    vj = toList . Set.unions $ first' `Set.map` Set.fromList [[], vi]
+    vj = toList . Set.unions $ first' `Set.map` Set.singleton vi
     x = [List.head x_beta | not (List.null x_beta)]
     x_delta = x ++ delta
     solveShortestsPrefix' v = solveShortestsPrefix grammar v x_delta
@@ -171,7 +172,7 @@ newLlpItems q k grammar vi delta dot_production = product'
         { dotProduction = dot_production,
           suffix = u,
           prefix = v,
-          shortestPrefix = solveShortestsPrefix' $ head v
+          shortestPrefix = if null v then [] else solveShortestsPrefix' $ head v
         }
     (DotProduction y alpha x_beta) = dot_production
 
@@ -324,6 +325,7 @@ llTableParse k grammar a b = auxiliary (a, b, [])
         keys =
           List.filter (`Map.member` table)
             . fmap (y,)
+            . (++[[]])
             . takeWhile (not . List.null)
             . iterate init
             $ take k input
@@ -371,11 +373,16 @@ pairs q k = toList . auxiliary Seq.empty Seq.empty . Seq.fromList
 llpParse :: (Ord nt, Ord t, Show nt, Show t) => Int -> Int -> Grammar nt t -> [t] -> [Int]
 llpParse q k grammar = concatMap auxiliary . pairs q k . addStoppers . aug
   where
-    addStoppers = (RightTurnstile :) . (++ [LeftTurnstile])
+    addStoppers = (replicate q RightTurnstile ++) . (++ replicate k LeftTurnstile)
     aug = fmap AugmentedTerminal
-    augmented_grammar = augmentGrammar grammar
+    augmented_grammar = augmentGrammar q k grammar
     Just table = llpParsingTable q k augmented_grammar
-    auxiliary = (table Map.!)
+    auxiliary (back, forw) = p
+      where
+        pairs = [(a, b) | a <- tails back, b <- inits forw]
+        p = List.head $ mapMaybe (`Map.lookup` table) pairs
+        inits = (++[[]]) . takeWhile (not . null) . iterate init
+        tails = (++[[]]) . takeWhile (not . null) . iterate tail
 
 leftRecursiveNonterminals :: (Ord nt, Ord t, Show nt, Show t) => Grammar nt t -> [nt]
 leftRecursiveNonterminals grammar = mapMaybe (auxiliary . Nonterminal) nonterminals'

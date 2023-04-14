@@ -17,14 +17,13 @@ import Data.Semigroup ((<>))
 import Data.String.Interpolate (i)
 import System.FilePath.Posix (stripExtension, takeFileName)
 import qualified Data.List as List
-import ParallelParser.LL (before, follow, first, last)
+import ParallelParser.LL (before, follow, first, last, llTable)
 import Prelude hiding (last)
 
 data Parametars = Parametars
   { path      :: String
   , lookback  :: Int
   , lookahead :: Int }
-
 
 parametars :: Parser Parametars
 parametars = Parametars
@@ -57,6 +56,9 @@ writeFutharkProgram program_path program = do
   writeFile (program_path ++ ".fut") program 
   putStrLn ("The parser " ++ program_path ++ ".fut was created.")
 
+auxiliary llTableParse' (x, y) alpha = f <$> llTableParse' y alpha
+  where
+    f (epsilon, omega, pi) = pi
 
 main :: IO ()
 main = do
@@ -68,9 +70,15 @@ main = do
   contents <- readFile grammar_path
   let grammar = unpackNTTGrammar (read contents :: Grammar NT T)
   let maybe_program = futharkKeyGeneration q k grammar
-  let left_recursive_pairs = leftRecursiveNonterminals grammar 
-  let trouble_makers = List.intercalate ", " left_recursive_pairs
-  if [] /= left_recursive_pairs
+  let left_recursive_nonterminals = leftRecursiveNonterminals grammar 
+  let trouble_makers = List.intercalate ", " left_recursive_nonterminals
+
+  let augmented_grammar = augmentGrammar q k grammar
+  let collection = llpCollection q k augmented_grammar
+  let psls_table = psls collection
+  mapM_ print . M.toList $ psls_table
+  putStrLn "Missing parses:"
+  if [] /= left_recursive_nonterminals
   then
     putStrLn [i|The given grammar contains left recursion due to the following nonterminals #{trouble_makers}.|]
   else

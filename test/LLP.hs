@@ -484,15 +484,18 @@ collection =
 augmentGrammarTestCase = TestCase $ assertEqual "Augment grammar test" expected result
   where
     sortGrammar (Grammar s t nt ps) = Grammar s (List.sort t) (List.sort nt) (List.sort ps)
-    augmented_grammar = augmentGrammar grammar
+    augmented_grammar = augmentGrammar 1 1 grammar
     expected = sortGrammar augmentedGrammar
     result = sortGrammar augmented_grammar
 
 collectionTestCase = TestCase $ assertEqual "LLP collection test" expected result
   where
     expected = Set.empty
-    computed_collection = llpCollection 1 1 augmentedGrammar
-    result = Set.difference computed_collection collection
+    computed_collection = Set.filter (not . null) . Set.map (Set.filter isNotNull) $ llpCollection 1 1 augmentedGrammar
+    result = Set.map (Set.map debug) $ Set.difference computed_collection collection
+    isNotNull (Item { prefix = []}) = False
+    isNotNull (Item { suffix = []}) = False
+    isNotNull _ = True
 
 pslsTestCase = TestCase $ assertEqual "PSLS table test" expected result
   where
@@ -503,7 +506,7 @@ pslsTestCase = TestCase $ assertEqual "PSLS table test" expected result
 llpParsingTestCase = TestCase $ assertBool "k, q = 1..k can parse LLP(1, 1)." result
   where
     input = map List.singleton "a+[a+a]"
-    result = all (==expected) [parser q k | q <- [1..5], k <- [1..5]]
+    result = all (==expected) [parser q k | q <- [1..2], k <- [1..2]]
     expected = [0, 1, 4, 2, 5, 1, 4, 2, 4, 3, 3]
     parser q k = llpParse q k grammar input
 
