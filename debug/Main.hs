@@ -43,18 +43,11 @@ parametars = Parametars
     <> value 1
     <> metavar "INT" )
 
-
 opts :: ParserInfo Parametars
 opts = info (parametars <**> helper)
   ( fullDesc
   <> progDesc "Creates a parallel parser in Futhark using FILE."
   <> header "ParallelParser" )
-
-
-writeFutharkProgram :: String -> String -> IO ()
-writeFutharkProgram program_path program = do
-  writeFile (program_path ++ ".fut") program 
-  putStrLn ("The parser " ++ program_path ++ ".fut was created.")
 
 auxiliary llTableParse' (x, y) alpha = f <$> llTableParse' y alpha
   where
@@ -83,13 +76,13 @@ main = do
   let Just program_path = stripExtension "cg" $ takeFileName grammar_path 
   contents <- readFile grammar_path
   let grammar = unpackNTTGrammar (read contents :: Grammar NT T)
-  let maybe_program = futharkKeyGeneration q k grammar
   let left_recursive_nonterminals = leftRecursiveNonterminals grammar 
   let trouble_makers = List.intercalate ", " left_recursive_nonterminals
   let augmented_grammar = augmentGrammar q k grammar
   let Just table = llpParsingTable q k augmented_grammar
-  let first' = first 3 augmented_grammar [Nonterminal $ AugmentedNonterminal "E"]
-  let follow' = follow 3 augmented_grammar $ AugmentedNonterminal "E"
+  let nt = "E"
+  let first' = first q augmented_grammar [Nonterminal $ AugmentedNonterminal nt]
+  let follow' = follow k augmented_grammar $ AugmentedNonterminal nt
   let collection = llpCollection q k augmented_grammar
   let psls_table = psls collection
   let unwrapped = (\[a] -> a) . S.toList <$> psls_table
@@ -101,14 +94,7 @@ main = do
   mapM_ print $ M.toList table
   putStrLn "Missing parses"
   mapM_ print . M.toList . M.filterWithKey ((isNothing . ).  auxiliary llTableParse') $  unwrapped
-  putStrLn "first"
+  putStrLn $ "first(" ++ nt ++ ")"
   print first'
-  putStrLn "follow"
+  putStrLn $ "follow(" ++ nt ++ ")"
   print follow'
-  if [] /= left_recursive_nonterminals
-  then
-    putStrLn [i|The given grammar contains left recursion due to the following nonterminals #{trouble_makers}.|]
-  else
-    case maybe_program of
-      Nothing -> putStrLn [i|The given Grammar may not be LLP(#{q}, #{k}).|]
-      Just program -> writeFutharkProgram program_path program

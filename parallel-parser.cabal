@@ -18,13 +18,8 @@ maintainer:         williamhenrichdue@gmail.com
 category:           Language
 extra-source-files: CHANGELOG.md
 
-library
-  exposed-modules:
-    ParallelParser.Grammar
-    ParallelParser.LL
-    ParallelParser.LLP
-    ParallelParser.Generator
-
+common common
+  default-language: Haskell2010
   default-extensions:
     DeriveGeneric
     FlexibleContexts
@@ -34,6 +29,14 @@ library
     QuasiQuotes
     DeriveFunctor
     ExtendedDefaultRules
+
+library
+  import: common
+  exposed-modules:
+    ParallelParser.Grammar
+    ParallelParser.LL
+    ParallelParser.LLP
+    ParallelParser.Generator
 
   build-depends:
     , base
@@ -48,17 +51,8 @@ library
   default-language:   Haskell2010
 
 executable parallel-parser
+  import:             common 
   main-is:            Main.hs
-  default-extensions:
-    DeriveGeneric
-    FlexibleContexts
-    FlexibleInstances
-    OverloadedStrings
-    TupleSections
-    QuasiQuotes
-    DeriveFunctor
-    ExtendedDefaultRules
-    
 
   build-depends:
     , base
@@ -69,14 +63,28 @@ executable parallel-parser
     , filepath
 
   hs-source-dirs:     app
+
+executable debug
+  import:             common
+  main-is:            Main.hs
+
+  build-depends:
+    , base
+    , containers
+    , parallel-parser
+    , optparse-applicative
+    , interpolate
+    , filepath
+
+  hs-source-dirs:     debug
   default-language:   Haskell2010
 
 test-suite test-parallel-parser
+  import:           common
   other-modules:
     LL
     LLP
 
-  default-language: Haskell2010
   type:             exitcode-stdio-1.0
   hs-source-dirs:   test
   main-is:          Main.hs

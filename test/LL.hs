@@ -104,9 +104,9 @@ firstLargeTestCase = TestCase $ assertEqual "Large First(1) test" result expecte
 followSmallTestCase = TestCase $ assertEqual "Small Follow(1) test" expected result
   where
     follow' = follow 1 followExtendedGrammar
-    result =  follow' <$> nonterminals followExtendedGrammar
+    result = follow' <$> nonterminals followExtendedGrammar
     expected =
-      [ Set.fromList [],
+      [ Set.fromList [["$"]],
         Set.fromList [[], ["$"], ["c"], ["b"]],
         Set.fromList [["$"], ["c"]]
       ]
@@ -116,7 +116,7 @@ followLargeTestCase = TestCase $ assertEqual "Large Follow(1) test" expected res
     follow' = follow 1 bookGrammar
     result = follow' <$> nonterminals bookGrammar
     expected =
-      [ Set.fromList [],
+      [ Set.fromList [["$"]],
         Set.fromList [["$"]],
         Set.fromList [[], ["a"], ["b"], ["$"]],
         Set.fromList [[], ["a"], ["b"], ["$"]],
