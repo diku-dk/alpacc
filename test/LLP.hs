@@ -89,7 +89,8 @@ pslsTable =
       (([augT "a"], [augT "]"]), Set.fromList [[augNT' "E'", augT' "]"]]),
       (([augT "a"], [LeftTurnstile]), Set.fromList [[augNT' "E'", leftTurnstile']]),
       (([RightTurnstile], [augT "["]), Set.fromList [[augNT' "E"]]),
-      (([RightTurnstile], [augT "a"]), Set.fromList [[augNT' "E"]])
+      (([RightTurnstile], [augT "a"]), Set.fromList [[augNT' "E"]]),
+      (([LeftTurnstile], []), Set.fromList [[]])
     ]
 
 collection :: Set.Set (Set.Set (Item (AugmentedNonterminal String) (AugmentedTerminal String)))
@@ -492,7 +493,7 @@ collectionTestCase = TestCase $ assertEqual "LLP collection test" expected resul
   where
     expected = Set.empty
     computed_collection = Set.filter (not . null) . Set.map (Set.filter isNotNull) $ llpCollection 1 1 augmentedGrammar
-    result = Set.map (Set.map debug) $ Set.difference computed_collection collection
+    result = Set.difference computed_collection collection
     isNotNull (Item { prefix = []}) = False
     isNotNull (Item { suffix = []}) = False
     isNotNull _ = True
@@ -506,7 +507,7 @@ pslsTestCase = TestCase $ assertEqual "PSLS table test" expected result
 llpParsingTestCase = TestCase $ assertBool "k, q = 1..k can parse LLP(1, 1)." result
   where
     input = map List.singleton "a+[a+a]"
-    result = all (==expected) [parser q k | q <- [1..2], k <- [1..2]]
+    result = all (==expected) [parser q k | q <- [1..5], k <- [1..5]]
     expected = [0, 1, 4, 2, 5, 1, 4, 2, 4, 3, 3]
     parser q k = llpParse q k grammar input
 

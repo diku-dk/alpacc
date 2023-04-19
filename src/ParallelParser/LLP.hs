@@ -160,10 +160,10 @@ newLlpItems q k grammar vi delta dot_production = product'
   where
     product' = Set.fromList [newItem u v | u <- uj, v <- vj]
     last' = last q grammar . (++ alpha) . fmap Terminal
-    first' = first k grammar . (x ++) . fmap Terminal
-    before' = Set.insert [] (before q grammar y)
+    first' = toList . first k grammar . (x ++) . fmap Terminal
+    before' = before q grammar y
     uj = toList . Set.unions $ last' `Set.map` before'
-    vj = toList . Set.unions $ first' `Set.map` Set.singleton vi
+    vj = first' vi
     x = [List.head x_beta | not (List.null x_beta)]
     x_delta = x ++ delta
     solveShortestsPrefix' v = solveShortestsPrefix grammar v x_delta
@@ -172,7 +172,7 @@ newLlpItems q k grammar vi delta dot_production = product'
         { dotProduction = dot_production,
           suffix = u,
           prefix = v,
-          shortestPrefix = if null v then [] else solveShortestsPrefix' $ head v
+          shortestPrefix = solveShortestsPrefix' $ head v
         }
     (DotProduction y alpha x_beta) = dot_production
 
@@ -200,7 +200,7 @@ addLlpItem q grammar items old_item
     newItems delta = Set.fromList [newItem y | y <- u']
       where
         last' = last q grammar . (++ delta) . fmap Terminal
-        before' = Set.insert [] (before q grammar y)
+        before' = before q grammar y
         u' = toList . Set.unions $ last' `Set.map` before'
         newItem z =
           Item
@@ -288,7 +288,6 @@ psls ::
 psls = Map.unionsWith Set.union . fmap auxiliary . toList . Set.unions
   where
     auxiliary old_item
-      | null gamma = Map.empty
       | null alpha_z = Map.empty
       | isTerminal z = Map.singleton (x, y) (Set.singleton gamma)
       | otherwise = Map.empty
@@ -325,7 +324,6 @@ llTableParse k grammar a b = auxiliary (a, b, [])
         keys =
           List.filter (`Map.member` table)
             . fmap (y,)
-            . (++[[]])
             . takeWhile (not . List.null)
             . iterate init
             $ take k input
@@ -377,12 +375,12 @@ llpParse q k grammar = concatMap auxiliary . pairs q k . addStoppers . aug
     aug = fmap AugmentedTerminal
     augmented_grammar = augmentGrammar q k grammar
     Just table = llpParsingTable q k augmented_grammar
-    auxiliary (back, forw) = p
-      where
-        pairs = [(a, b) | a <- tails back, b <- inits forw]
-        p = List.head $ mapMaybe (`Map.lookup` table) pairs
-        inits = (++[[]]) . takeWhile (not . null) . iterate init
-        tails = (++[[]]) . takeWhile (not . null) . iterate tail
+    auxiliary = (table Map.!) . debug
+      -- where
+      --   pairs = [(a, b) | a <- tails back, b <- inits forw]
+      --   p = List.head $ mapMaybe (`Map.lookup` table) pairs
+      --   inits = (++[[]]) . takeWhile (not . null) . iterate init
+      --   tails = (++[[]]) . takeWhile (not . null) . iterate tail
 
 leftRecursiveNonterminals :: (Ord nt, Ord t, Show nt, Show t) => Grammar nt t -> [nt]
 leftRecursiveNonterminals grammar = mapMaybe (auxiliary . Nonterminal) nonterminals'
@@ -394,11 +392,16 @@ leftRecursiveNonterminals grammar = mapMaybe (auxiliary . Nonterminal) nontermin
         init_queue = leftDerivations' [nt]
         bfs _ Empty = Nothing
         bfs visited (top :<| queue)
+          | null top = bfs visited queue
           | top `Set.member` visited = bfs new_visited queue
-          | null top = bfs new_visited queue
+          | [head_top] `Set.member` visited = bfs visited queue
           | isTerminal head_top = bfs new_visited queue
           | nt == head_top = Just . (\(Nonterminal a) -> a) $ nt
           | otherwise = bfs new_visited (queue >< leftDerivations' top)
           where
             head_top = head top
-            new_visited = Set.insert top visited
+            new_visited =
+              if isNonterminal $ head top
+                then Set.insert [head_top] new_visited'
+                else new_visited'
+            new_visited' = Set.insert top visited

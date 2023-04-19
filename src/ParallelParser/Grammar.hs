@@ -4,6 +4,8 @@ module ParallelParser.Grammar
     Production (..),
     AugmentedNonterminal (..),
     AugmentedTerminal (..),
+    ExtendedNonterminal (..),
+    ExtendedTerminal (..),
     T (..),
     NT (..),
     symbols,
@@ -14,7 +16,10 @@ module ParallelParser.Grammar
     isTerminal,
     isNonterminal,
     toProductionsMap,
-    unpackNTTGrammar
+    unpackNTTGrammar,
+    unextendNT,
+    unextendT,
+    extendGrammar
   )
 where
 
@@ -192,6 +197,53 @@ reverseGrammar grammar =
   grammar {productions = reverseProduction <$> productions grammar}
   where
     reverseProduction (Production nt s) = Production nt (reverse s)
+
+data ExtendedTerminal t
+  = ExtendedTerminal t
+  | End
+  deriving (Ord, Eq)
+
+instance Show t => Show (ExtendedTerminal t) where
+  show End = "End"
+  show (ExtendedTerminal t) = show t
+
+data ExtendedNonterminal nt
+  = ExtendedNonterminal nt
+  | ExtendedStart
+  deriving (Ord, Eq)
+
+instance Show nt => Show (ExtendedNonterminal nt) where
+  show ExtendedStart = "Start"
+  show (ExtendedNonterminal t) = show t
+
+unextendNT :: ExtendedNonterminal nt -> nt
+unextendNT (ExtendedNonterminal nt) = nt
+
+unextendT :: ExtendedTerminal t -> t
+unextendT (ExtendedTerminal t) = t
+
+extendGrammar ::
+  Int ->
+  Grammar nt t ->
+  (Grammar (ExtendedNonterminal nt) (ExtendedTerminal t),
+   [ExtendedTerminal t])
+extendGrammar k grammar =
+  (grammar
+    { start = ExtendedStart,
+      terminals = terminals',
+      nonterminals = nonterminals',
+      productions = productions'
+    }, padding)
+  where
+    extended_productions = augmentProduction <$> productions grammar
+    productions' = Production ExtendedStart symbols' : extended_productions
+    nonterminals' = ExtendedStart : (ExtendedNonterminal <$> nonterminals grammar)
+    extended_terminals = ExtendedTerminal <$> terminals grammar
+    terminals' = End : extended_terminals
+    start' = Nonterminal . ExtendedNonterminal $ start grammar
+    symbols' = start' : (Terminal <$> padding)
+    padding = replicate k End
+    augmentProduction = bimap ExtendedNonterminal ExtendedTerminal
 
 augmentGrammar ::
   Int ->
