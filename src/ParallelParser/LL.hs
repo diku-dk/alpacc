@@ -334,12 +334,12 @@ llTable k grammar = Map.union first_table follow_table
     first' = first k grammar
     firstEntry (i, Production nt a) = Map.fromList [((nt, y), i) | y <- ts]
       where
-        ts = filter (not . null) . Set.toList $ first' a
+        ts = Set.toList $ first' a
     follow' = follow k grammar
     followEntry (i, Production nt a) =
       Map.fromList [((nt, y), i) | is_nullable, y <- nts]
       where
-        nts = filter (not . null) . Set.toList $ follow' nt
+        nts = Set.toList $ follow' nt
         is_nullable = [] `Set.member` first' a
 
 llParse ::
