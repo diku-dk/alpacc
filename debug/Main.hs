@@ -53,20 +53,6 @@ auxiliary llTableParse' (x, y) alpha = f <$> llTableParse' y alpha
   where
     f (epsilon, omega, pi) = pi
 
-extendedGrammar =
-  Grammar
-    { start = "T'",
-      terminals = ["$", "a", "b", "c"],
-      nonterminals = ["T'", "R", "T"],
-      productions =
-        [ Production "T'" [Nonterminal "T", Terminal "$"],
-          Production "T" [Nonterminal "R"],
-          Production "T" [Terminal "a", Nonterminal "T", Terminal "c"],
-          Production "R" [],
-          Production "R" [Terminal "b", Nonterminal "R"]
-        ]
-    }
-
 main :: IO ()
 main = do
   options <- execParser opts
@@ -80,20 +66,20 @@ main = do
   let trouble_makers = List.intercalate ", " left_recursive_nonterminals
   let augmented_grammar = augmentGrammar q k grammar
   let Just table = llpParsingTable q k augmented_grammar
-  let nt = "E"
-  let first' = first q augmented_grammar [Nonterminal $ AugmentedNonterminal nt]
-  let follow' = follow k augmented_grammar $ AugmentedNonterminal nt
   let collection = llpCollection q k augmented_grammar
   let psls_table = psls collection
   let unwrapped = (\[a] -> a) . S.toList <$> psls_table
   let llTableParse' = llTableParse k augmented_grammar
-  let ll_table = llTable k extendedGrammar
-  putStrLn "LL Table"
-  mapM_ print . M.toList $ ll_table
+  let ll_table = llTable k grammar
+  let nt = "T"
+  let first' = first q augmented_grammar [Nonterminal $ AugmentedNonterminal nt]
+  let follow' = follow k augmented_grammar $ AugmentedNonterminal nt
   putStrLn "LLP Table"
   mapM_ print $ M.toList table
   putStrLn "Missing parses"
   mapM_ print . M.toList . M.filterWithKey ((isNothing . ).  auxiliary llTableParse') $  unwrapped
+  putStrLn "LL Table"
+  mapM_ print . M.toList $ ll_table
   putStrLn $ "first(" ++ nt ++ ")"
   print first'
   putStrLn $ "follow(" ++ nt ++ ")"
