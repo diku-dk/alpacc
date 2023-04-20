@@ -238,19 +238,19 @@ follows k grammar = fixedPointIterate (/=) f init_follow_map
     f follow_map = Map.unionsWith Set.union $ map (auxiliary follow_map) all_right_productions
     all_right_productions = concatMap rightProductons $ productions grammar
     rightProductons (Production aj symbols') = (aj,) <$> rightSymbols symbols'
-    auxiliary follow_map' (aj, (ai, w')) = Map.adjust (Set.union sub_set) ai follow_map'
+    auxiliary follow_map' (aj, (ai, w')) = Map.adjust (Set.union follow_prod) ai current_follow_map
       where
         sub_set =
           Set.unions
             [ first_set,
               follow_epsilon,
-              follow_w',
-              follow_prod
+              follow_w'
             ]
         first_set = first' w'
+        current_follow_map = Map.adjust (Set.union sub_set) ai follow_map'
         follow_epsilon = if [] `elem` first_set then follow_map' Map.! aj else Set.empty
         follow_w' = if null w' then follow_map' Map.! aj else Set.empty
-        follow_prod = truncatedProduct k first_set (follow_map' Map.! aj)
+        follow_prod = truncatedProduct k first_set (current_follow_map Map.! aj)
 
 -- follows k grammar = unextend $ fixedPointIterate (/=) f init_follow_map
 --   where
