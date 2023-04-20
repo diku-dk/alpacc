@@ -56,24 +56,6 @@ writeFutharkProgram program_path program = do
   writeFile (program_path ++ ".fut") program 
   putStrLn ("The parser " ++ program_path ++ ".fut was created.")
 
-auxiliary llTableParse' (x, y) alpha = f <$> llTableParse' y alpha
-  where
-    f (epsilon, omega, pi) = pi
-
-extendedGrammar =
-  Grammar
-    { start = "T'",
-      terminals = ["$", "a", "b", "c"],
-      nonterminals = ["T'", "R", "T"],
-      productions =
-        [ Production "T'" [Nonterminal "T", Terminal "$"],
-          Production "T" [Nonterminal "R"],
-          Production "T" [Terminal "a", Nonterminal "T", Terminal "c"],
-          Production "R" [],
-          Production "R" [Terminal "b", Nonterminal "R"]
-        ]
-    }
-
 main :: IO ()
 main = do
   options <- execParser opts
@@ -86,25 +68,6 @@ main = do
   let maybe_program = futharkKeyGeneration q k grammar
   let left_recursive_nonterminals = leftRecursiveNonterminals grammar 
   let trouble_makers = List.intercalate ", " left_recursive_nonterminals
-  let augmented_grammar = augmentGrammar q k grammar
-  let Just table = llpParsingTable q k augmented_grammar
-  let first' = first 3 augmented_grammar [Nonterminal $ AugmentedNonterminal "E"]
-  let follow' = follow 3 augmented_grammar $ AugmentedNonterminal "E"
-  let collection = llpCollection q k augmented_grammar
-  let psls_table = psls collection
-  let unwrapped = (\[a] -> a) . S.toList <$> psls_table
-  let llTableParse' = llTableParse k augmented_grammar
-  let ll_table = llTable k extendedGrammar
-  putStrLn "LL Table"
-  mapM_ print . M.toList $ ll_table
-  putStrLn "LLP Table"
-  mapM_ print $ M.toList table
-  putStrLn "Missing parses"
-  mapM_ print . M.toList . M.filterWithKey ((isNothing . ).  auxiliary llTableParse') $  unwrapped
-  putStrLn "first"
-  print first'
-  putStrLn "follow"
-  print follow'
   if [] /= left_recursive_nonterminals
   then
     putStrLn [i|The given grammar contains left recursion due to the following nonterminals #{trouble_makers}.|]
