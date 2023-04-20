@@ -25,6 +25,7 @@ import Debug.Trace (traceShow)
 import ParallelParser.Grammar
 import ParallelParser.LL
 import Prelude hiding (last)
+import Data.Bifunctor (Bifunctor (bimap))
 
 debug x = traceShow x x
 
@@ -335,6 +336,21 @@ llTableParse k grammar a b = auxiliary (a, b, [])
 
         Just (index, production) = maybeTuple
 
+dropWhileMinusOne = auxiliary Nothing
+  where
+    auxiliary Nothing _ [] = []
+    auxiliary (Just last) _ [] = [last]
+    auxiliary last predicate (x:xs)
+      | predicate x = auxiliary (Just x) predicate xs
+      | isJust last = fromJust last:x:xs
+      | otherwise = x:xs
+
+removeAllPaddingButOne ::
+  (Eq t, Ord t) =>
+  Map ([AugmentedTerminal t], [AugmentedTerminal t]) [Int] ->
+  Map ([AugmentedTerminal t], [AugmentedTerminal t]) [Int]
+removeAllPaddingButOne = Map.mapKeys (bimap (dropWhileMinusOne (RightTurnstile==)) (List.reverse . dropWhileMinusOne (LeftTurnstile==) . List.reverse))
+
 llpParsingTable ::
   (Ord nt, Ord t, Show nt, Show t) =>
   Int ->
@@ -374,7 +390,7 @@ llpParse q k grammar = concatMap auxiliary . pairs q k . addStoppers . aug
     addStoppers = (replicate q RightTurnstile ++) . (++ replicate k LeftTurnstile)
     aug = fmap AugmentedTerminal
     augmented_grammar = augmentGrammar q k grammar
-    Just table = llpParsingTable q k augmented_grammar
+    Just table = debug <$> llpParsingTable q k augmented_grammar
     auxiliary = (table Map.!) . debug
       -- where
       --   pairs = [(a, b) | a <- tails back, b <- inits forw]
