@@ -26,6 +26,13 @@ import ParallelParser.Grammar
 import ParallelParser.LL
 import Prelude hiding (last)
 import Data.Bifunctor (Bifunctor (bimap))
+import Control.Parallel.Strategies
+
+pmap :: NFData b => (a -> b) -> [a] -> [b]
+pmap f ls =
+        let bs = map f ls
+            cs = bs `using` parList rdeepseq
+        in cs
 
 debug x = traceShow x x
 
