@@ -20,6 +20,7 @@ import qualified Data.List as List
 import ParallelParser.LL (before, follow, first, last, llTable)
 import Prelude hiding (last)
 import Data.Bifunctor (Bifunctor (bimap))
+import Control.Parallel.Strategies
 
 data Parametars = Parametars
   { path      :: String
@@ -53,7 +54,6 @@ opts = info (parametars <**> helper)
 auxiliary llTableParse' (x, y) alpha = f <$> llTableParse' y alpha
   where
     f (epsilon, omega, pi) = pi
-
 
 main :: IO ()
 main = do

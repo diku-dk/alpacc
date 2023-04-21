@@ -46,6 +46,7 @@ library
     , text
     , interpolate
     , extra
+    , parallel
 
   hs-source-dirs:     src
   default-language:   Haskell2010
@@ -75,6 +76,7 @@ executable debug
     , optparse-applicative
     , interpolate
     , filepath
+    , parallel
 
   hs-source-dirs:     debug
   default-language:   Haskell2010

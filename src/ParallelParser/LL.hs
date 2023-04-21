@@ -84,6 +84,7 @@ splitWhen = auxiliary []
 alphaBeta = auxiliary []
   where
     auxiliary taken [] = []
+    auxiliary taken [x] = []
     auxiliary taken (x:xs) = (new_taken, xs) : auxiliary new_taken xs
       where
         new_taken = taken ++ [x]
@@ -124,9 +125,11 @@ first' k first_map wi = new_set
   where
     new_set
       | null wi = Set.singleton []
-      | isTerminal a = truncatedProduct k terminal_set (first' k first_map w')
-      | isNonterminal a = truncatedProduct k nonterminal_set (first' k nt_first_map w')
+      | isTerminal a = terminal_set `Set.union` alpha_betas wi
+      | isNonterminal a = nonterminal_set `Set.union` nt_alpha_betas wi
       where
+        alpha_betas = Set.unions . fmap (uncurry (truncatedProduct k) . both (first' k first_map)) . alphaBeta
+        nt_alpha_betas = Set.unions . fmap (uncurry (truncatedProduct k) . both (first' k nt_first_map)) . alphaBeta
         a = head wi
         w' = tail wi
         Nonterminal nt = a
@@ -139,7 +142,7 @@ first' k first_map wi = new_set
             not_null_set = Set.filter (not . null) first_set
             first_set = first_map Map.! nt
 
-firsts :: (Ord nt, Ord t) => Int -> Grammar nt t -> Map nt (Set [t])
+firsts :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> Map nt (Set [t])
 firsts k grammar = fixedPointIterate (/=) f init_first_map
   where
     init_first_map = Map.fromList . map (,Set.empty) $ nonterminals grammar
@@ -154,7 +157,7 @@ takeWhileOneMore predicate (x:xs)
   | predicate x = x : takeWhileOneMore predicate xs
   | otherwise = [x]
 
-first :: (Ord nt, Ord t) => Int -> Grammar nt t -> [Symbol nt t] -> Set [t]
+first :: (Ord nt, Ord t,  Show nt, Show t) => Int -> Grammar nt t -> [Symbol nt t] -> Set [t]
 first k grammar = first' k first_map
   where
     first_map = firsts k grammar
@@ -180,7 +183,7 @@ instance (Show nt, Show t) => Show (Constraint nt t) where
       seq = List.intercalate ", " (show <$> Set.toList ts)
   show (NTConstraint nt nt') = show nt ++ " ⊆ " ++ show nt'
 
-constraints :: (Ord nt, Ord t) => Int -> Grammar nt t -> [Set (Constraint nt t)]
+constraints :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> [Set (Constraint nt t)]
 constraints k grammar = helper <$> productions grammar
   where
     nullable' = nullable grammar
@@ -298,7 +301,7 @@ follow k grammar = (follows' Map.!)
   where
     follows' = follows k grammar
 
-last :: (Ord nt, Ord t) => Int -> Grammar nt t -> [Symbol nt t] -> Set [t]
+last :: (Ord nt, Ord t,  Show nt, Show t) => Int -> Grammar nt t -> [Symbol nt t] -> Set [t]
 last q grammar = Set.map reverse . lasts . reverse
   where
     lasts = first q $ reverseGrammar grammar
