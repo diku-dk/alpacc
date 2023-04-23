@@ -19,7 +19,7 @@ module ParallelParser.Grammar
     unpackNTTGrammar,
     unextendNT,
     unextendT,
-    extendGrammar
+    extendGrammar,
   )
 where
 
@@ -102,7 +102,9 @@ data Grammar nt t = Grammar
   { start :: nt,
     terminals :: [t],
     nonterminals :: [nt],
-    productions :: [Production nt t]
+    productions :: [Production nt t],
+    leftPadding :: Maybe t,
+    rightPadding :: Maybe t
   }
   deriving (Ord, Eq, Show)
 
@@ -181,7 +183,9 @@ pGrammar = tuple
           { start = read s,
             terminals = read <$> ts,
             nonterminals = read <$> nts,
-            productions = ps
+            productions = ps,
+            leftPadding = Nothing,
+            rightPadding = Nothing
           }
 
 instance (Read nt, Read t) => Read (Grammar nt t) where
@@ -225,15 +229,16 @@ unextendT (ExtendedTerminal t) = t
 extendGrammar ::
   Int ->
   Grammar nt t ->
-  (Grammar (ExtendedNonterminal nt) (ExtendedTerminal t),
-   [ExtendedTerminal t])
+  Grammar (ExtendedNonterminal nt) (ExtendedTerminal t)
 extendGrammar k grammar =
-  (grammar
+  Grammar
     { start = ExtendedStart,
       terminals = terminals',
       nonterminals = nonterminals',
-      productions = productions'
-    }, padding)
+      productions = productions',
+      rightPadding = Just End,
+      leftPadding = Nothing
+    }
   where
     extended_productions = augmentProduction <$> productions grammar
     productions' = Production ExtendedStart symbols' : extended_productions
@@ -255,7 +260,9 @@ augmentGrammar q k grammar =
     { start = Start,
       terminals = terminals',
       nonterminals = nonterminals',
-      productions = productions'
+      productions = productions',
+      leftPadding = Just RightTurnstile,
+      rightPadding = Just LeftTurnstile
     }
   where
     augmented_productions = augmentProduction <$> productions grammar
@@ -264,7 +271,9 @@ augmentGrammar q k grammar =
     augmented_terminals = AugmentedTerminal <$> terminals grammar
     terminals' = RightTurnstile : LeftTurnstile : augmented_terminals
     start' = Nonterminal . AugmentedNonterminal $ start grammar
-    symbols' = replicate q (Terminal RightTurnstile) ++ [start'] ++ replicate k (Terminal LeftTurnstile)
+    leftPad = replicate q (Terminal RightTurnstile)
+    rightPad = replicate k (Terminal LeftTurnstile)
+    symbols' = leftPad ++ [start'] ++ rightPad
     augmentProduction = bimap AugmentedNonterminal AugmentedTerminal
 
 isTerminal :: Symbol nt t -> Bool
@@ -290,10 +299,10 @@ unpackNTTGrammar grammar =
     { start = unpackNT $ start grammar,
       terminals = unpackT <$> terminals grammar,
       nonterminals = unpackNT <$> nonterminals grammar,
-      productions = bimap unpackNT unpackT <$> productions grammar
+      productions = bimap unpackNT unpackT <$> productions grammar,
+      leftPadding = unpackT <$> leftPadding grammar,
+      rightPadding = unpackT <$> rightPadding grammar
     }
   where
     unpackT (T s) = s
     unpackNT (NT s) = s
-
-
