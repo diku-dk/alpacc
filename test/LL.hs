@@ -6,6 +6,7 @@ import ParallelParser.Grammar
 import ParallelParser.LL
 import Test.HUnit
 import Debug.Trace (traceShow)
+import Text.ParserCombinators.ReadP (string)
 
 debug x = traceShow x x
 
@@ -81,7 +82,7 @@ firstSmallTestCase = TestCase $ assertEqual "Small First(1) test" expected resul
     expected =
       [ Set.fromList [[], ["b"]],
         Set.fromList [["a"]],
-        Set.singleton [],
+        Set.fromList [[]],
         Set.fromList [["b"]]
       ]
 
@@ -137,6 +138,30 @@ ll1ParseFailTestCase = TestCase $ assertEqual "LL(1) parsing test" expected resu
     result = llkParse' (input, [Nonterminal $ start extendedGrammar], [])
     expected = Nothing
 
+first1TestCase = TestCase $ assertEqual "First k=1 set test" expected real
+  where
+    firstsTuples string = (naiveFirst 1 grammar string, first 1 grammar string)
+    strings = symbols <$> productions grammar
+    (expected, real) = unzip $ firstsTuples <$> strings 
+
+first2TestCase = TestCase $ assertEqual "First k=2 set test" expected real
+  where
+    firstsTuples string = (naiveFirst 2 grammar string, first 2 grammar string)
+    strings = symbols <$> productions grammar
+    (expected, real) = unzip $ firstsTuples <$> strings 
+
+first3TestCase = TestCase $ assertEqual "First k=3 set test" expected real
+  where
+    firstsTuples string = (naiveFirst 3 grammar string, first 3 grammar string)
+    strings = symbols <$> productions grammar
+    (expected, real) = unzip $ firstsTuples <$> strings 
+
+first4TestCase = TestCase $ assertEqual "First k=4 set test" expected real
+  where
+    firstsTuples string = (naiveFirst 4 grammar string, first 4 grammar string)
+    strings = symbols <$> productions grammar
+    (expected, real) = unzip $ firstsTuples <$> strings 
+
 tests =
   TestLabel "LL(k) tests" $
     TestList
@@ -144,5 +169,10 @@ tests =
         firstSmallTestCase,
         followSmallTestCase,
         followLargeTestCase,
-        ll1ParseTestCase
+        ll1ParseTestCase,
+        ll1ParseFailTestCase,
+        first1TestCase,
+        first2TestCase,
+        first3TestCase,
+        first4TestCase
       ]

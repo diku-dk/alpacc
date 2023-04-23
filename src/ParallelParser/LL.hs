@@ -8,7 +8,9 @@ module ParallelParser.LL
     llTable,
     llParse,
     firstTable,
-    nullableFollowTable
+    nullableFollowTable,
+    leftDerivations,
+    naiveFirst
   )
 where
 
@@ -22,10 +24,42 @@ import Data.Tuple.Extra (dupe, both)
 import ParallelParser.Grammar
 import Prelude hiding (last)
 import Data.Function
+import Data.Sequence (Seq (..), (<|), (><), (|>))
+import qualified Data.Sequence as Seq hiding (Seq (..), (<|), (><), (|>))
+import Data.Foldable
 import Debug.Trace (traceShow)
 
 debug x = traceShow x x
 
+leftDerivations ::
+  (Ord t, Ord nt, Show nt, Show t) =>
+  Grammar nt t ->
+  [Symbol nt t] ->
+  Seq [Symbol nt t]
+leftDerivations grammar = derive Seq.empty . Seq.fromList
+  where
+    toSequences = fmap (fmap Seq.fromList)
+    production_map = toSequences . toProductionsMap $ productions grammar
+    derive _ Empty = Empty
+    derive ys ((Terminal x) :<| xs) = derive (ys :|> Terminal x) xs
+    derive ys ((Nonterminal x) :<| xs) = ps
+      where
+        smallDerive e = ys >< e >< xs
+        ps = Seq.fromList $ toList . smallDerive <$> (production_map Map.! x)
+
+naiveFirst :: (Show nt, Show t, Ord nt, Ord t) => Int -> Grammar nt t -> [Symbol nt t] -> Set [t]
+naiveFirst k grammar = Set.fromList . bfs Set.empty . Seq.singleton
+  where
+    unpackT (Terminal t) = t
+    leftDerivations' = leftDerivations grammar
+    bfs _ Empty = []
+    bfs visited (top :<| queue)
+      | k_terms `Set.member` visited = bfs new_visited queue
+      | all isTerminal k_terms = (unpackT <$> k_terms) : bfs new_visited queue
+      | otherwise = bfs new_visited (queue >< leftDerivations' top)
+      where
+        k_terms = take k top
+        new_visited = Set.insert k_terms visited
 
 fixedPointIterate :: Eq b => (b -> b -> Bool) -> (b -> b) -> b -> b
 fixedPointIterate cmp f = fst . head . dropWhile (uncurry cmp) . iterateFunction
@@ -84,7 +118,6 @@ splitWhen = auxiliary []
 alphaBeta = auxiliary []
   where
     auxiliary taken [] = []
-    auxiliary taken [x] = []
     auxiliary taken (x:xs) = (new_taken, xs) : auxiliary new_taken xs
       where
         new_taken = taken ++ [x]
@@ -125,11 +158,11 @@ first' k first_map wi = new_set
   where
     new_set
       | null wi = Set.singleton []
-      | isTerminal a = terminal_set `Set.union` alpha_betas wi
-      | isNonterminal a = nonterminal_set `Set.union` nt_alpha_betas wi
+      | isTerminal a = terminal_set `Set.union` Set.unions (map (helper first_map) alpha_betas)
+      | isNonterminal a = terminal_set `Set.union` Set.unions (map (helper nt_first_map) alpha_betas)
       where
-        alpha_betas = Set.unions . fmap (uncurry (truncatedProduct k) . both (first' k first_map)) . alphaBeta
-        nt_alpha_betas = Set.unions . fmap (uncurry (truncatedProduct k) . both (first' k nt_first_map)) . alphaBeta
+        alpha_betas = alphaBeta wi
+        helper first_map' = uncurry (truncatedProduct k) . both (first' k first_map')
         a = head wi
         w' = tail wi
         Nonterminal nt = a
@@ -142,9 +175,10 @@ first' k first_map wi = new_set
             not_null_set = Set.filter (not . null) first_set
             first_set = first_map Map.! nt
 
-firsts :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> Map nt (Set [t])
+firsts :: (Ord nt, Ord t) => Int -> Grammar nt t -> Map nt (Set [t])
 firsts k grammar = fixedPointIterate (/=) f init_first_map
   where
+    firstOneF = firstOne grammar
     init_first_map = Map.fromList . map (,Set.empty) $ nonterminals grammar
     f first_map = Map.unionsWith Set.union $ map (auxiliary first_map) (productions grammar)
     auxiliary first_map (Production ai wi) = Map.adjust (Set.union new_set) ai first_map
@@ -157,7 +191,7 @@ takeWhileOneMore predicate (x:xs)
   | predicate x = x : takeWhileOneMore predicate xs
   | otherwise = [x]
 
-first :: (Ord nt, Ord t,  Show nt, Show t) => Int -> Grammar nt t -> [Symbol nt t] -> Set [t]
+first :: (Show nt, Show t, Ord nt, Ord t) => Int -> Grammar nt t -> [Symbol nt t] -> Set [t]
 first k grammar = first' k first_map
   where
     first_map = firsts k grammar
@@ -183,11 +217,11 @@ instance (Show nt, Show t) => Show (Constraint nt t) where
       seq = List.intercalate ", " (show <$> Set.toList ts)
   show (NTConstraint nt nt') = show nt ++ " ⊆ " ++ show nt'
 
-constraints :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> [Set (Constraint nt t)]
+constraints :: (Show nt, Show t, Ord t, Ord nt) => Int -> Grammar nt t -> [Set (Constraint nt t)]
 constraints k grammar = helper <$> productions grammar
   where
     nullable' = nullable grammar
-    first' = first k grammar
+    first' = naiveFirst k grammar
     helper (Production nt s) = Set.unions $ uncurry auxiliary <$> right_symbols
       where
         right_symbols = rightSymbols s
@@ -301,10 +335,10 @@ follow k grammar = (follows' Map.!)
   where
     follows' = follows k grammar
 
-last :: (Ord nt, Ord t,  Show nt, Show t) => Int -> Grammar nt t -> [Symbol nt t] -> Set [t]
+last :: (Show nt, Show a, Ord nt, Ord a) => Int -> Grammar nt a -> [Symbol nt a] -> Set [a]
 last q grammar = Set.map reverse . lasts . reverse
   where
-    lasts = first q $ reverseGrammar grammar
+    lasts = naiveFirst q $ reverseGrammar grammar
 
 before :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> nt -> Set [t]
 before q grammar = Set.map reverse . (befores Map.!)

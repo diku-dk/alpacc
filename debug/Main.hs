@@ -20,6 +20,7 @@ import qualified Data.List as List
 import ParallelParser.LL (before, follow, first, last, llTable)
 import Prelude hiding (last)
 import Data.Bifunctor (Bifunctor (bimap))
+import ParallelParser.LL
 import Control.Parallel.Strategies
 
 data Parametars = Parametars
@@ -79,17 +80,16 @@ main = do
   let follow' = follow k grammar nt
   let aug_first' = first k augmented_grammar [Nonterminal aug_nt]
   let aug_follow' = follow k augmented_grammar aug_nt
-  putStrLn "LLP Table"
-  mapM_ print $ M.toList table
-  putStrLn "Missing parses"
-  mapM_ print . M.toList . M.filterWithKey ((isNothing . ).  auxiliary llTableParse') $  unwrapped
-  putStrLn $ "Augmented first(" ++ show aug_nt ++ ")"
-  print aug_first'
-  putStrLn $ "Augmented follow(" ++ show aug_nt ++ ")"
-  print aug_follow'
-  putStrLn "LL Table"
-  mapM_ print . M.toList $ ll_table
+  -- putStrLn "LLP Table"
+  -- mapM_ print $ M.toList table
+  -- putStrLn "Missing parses"
+  -- mapM_ print . M.toList . M.filterWithKey ((isNothing . ).  auxiliary llTableParse') $  unwrapped
+  -- putStrLn $ "Augmented first(" ++ show aug_nt ++ ")"
+  -- print aug_first'
+  -- putStrLn $ "Augmented follow(" ++ show aug_nt ++ ")"
+  -- print aug_follow'
+  -- putStrLn "LL Table"
+  -- mapM_ print . M.toList $ ll_table
   putStrLn $ "first(" ++ nt ++ ")"
-  print first'
-  putStrLn $ "follow(" ++ nt ++ ")"
-  print follow'
+  let strings = symbols <$> productions grammar
+  mapM_ print $ naiveFirst k grammar <$> strings
