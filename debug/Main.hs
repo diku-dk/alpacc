@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 module Main where
 
 import ParallelParser.Grammar
@@ -68,7 +69,7 @@ main = do
   let left_recursive_nonterminals = leftRecursiveNonterminals grammar
   let trouble_makers = List.intercalate ", " left_recursive_nonterminals
   let augmented_grammar = augmentGrammar q k grammar
-  let Just table = llpParsingTable q k augmented_grammar
+  -- let Just table = llpParsingTable q k augmented_grammar
   let collection = llpCollection q k augmented_grammar
   let psls_table = psls collection
   let unwrapped = (\[a] -> a) . S.toList <$> psls_table
@@ -77,19 +78,15 @@ main = do
   let nt = "T"
   let aug_nt = AugmentedNonterminal "T"
   let first' = first k grammar [Nonterminal nt]
-  let follow' = follow k grammar nt
+  let follow' = follow k grammar
   let aug_first' = first k augmented_grammar [Nonterminal aug_nt]
   let aug_follow' = follow k augmented_grammar aug_nt
   -- putStrLn "LLP Table"
   -- mapM_ print $ M.toList table
-  -- putStrLn "Missing parses"
-  -- mapM_ print . M.toList . M.filterWithKey ((isNothing . ).  auxiliary llTableParse') $  unwrapped
-  -- putStrLn $ "Augmented first(" ++ show aug_nt ++ ")"
-  -- print aug_first'
-  -- putStrLn $ "Augmented follow(" ++ show aug_nt ++ ")"
-  -- print aug_follow'
-  -- putStrLn "LL Table"
-  -- mapM_ print . M.toList $ ll_table
-  putStrLn $ "first(" ++ nt ++ ")"
-  let strings = symbols <$> productions grammar
-  mapM_ print $ naiveFirst k grammar <$> strings
+  putStrLn "Missing parses"
+  mapM_ print . M.toList . M.filterWithKey ((isNothing . ).  auxiliary llTableParse') $  unwrapped
+  putStrLn "LL Table"
+  mapM_ print . M.toList $ ll_table
+  -- putStrLn $ "first(" ++ nt ++ ")"
+  -- let strings = symbols <$> productions grammar
+  -- mapM_ print $ naiveFirst k grammar <$> strings

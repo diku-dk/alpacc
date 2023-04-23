@@ -7,6 +7,7 @@ import qualified Data.Set as Set
 import ParallelParser.Grammar
 import ParallelParser.LLP
 import Test.HUnit
+import Data.String.Interpolate (i)
 import Debug.Trace (traceShow)
 
 debug x = traceShow x x
@@ -23,7 +24,9 @@ grammar =
           Production "E'" [],
           Production "T" [Terminal "a"],
           Production "T" [Terminal "[", Nonterminal "E", Terminal "]"]
-        ]
+        ],
+      leftPadding = Nothing,
+      rightPadding = Nothing
     }
 
 augmentedGrammar :: Grammar (AugmentedNonterminal String) (AugmentedTerminal String)
@@ -61,7 +64,9 @@ augmentedGrammar =
               Nonterminal (AugmentedNonterminal "E"),
               Terminal (AugmentedTerminal "]")
             ]
-        ]
+        ],
+      leftPadding = Just RightTurnstile,
+      rightPadding = Just LeftTurnstile
     }
 
 augT = AugmentedTerminal
@@ -484,7 +489,7 @@ collection =
 
 augmentGrammarTestCase = TestCase $ assertEqual "Augment grammar test" expected result
   where
-    sortGrammar (Grammar s t nt ps) = Grammar s (List.sort t) (List.sort nt) (List.sort ps)
+    sortGrammar (Grammar s t nt ps a b) = Grammar s (List.sort t) (List.sort nt) (List.sort ps) a b 
     augmented_grammar = augmentGrammar 1 1 grammar
     expected = sortGrammar augmentedGrammar
     result = sortGrammar augmented_grammar
@@ -504,18 +509,19 @@ pslsTestCase = TestCase $ assertEqual "PSLS table test" expected result
     collection' = llpCollection 1 1 augmentedGrammar
     result = psls collection'
 
-llpParsingTestCase = TestCase $ assertBool "k, q = 1..k can parse LLP(1, 1)." result
+llpqkParsingTestCase q k = TestCase $ assertEqual [i|LLP(#{q}, #{k}) parse test|] expected result
   where
     input = map List.singleton "a+[a+a]"
-    result = all (==expected) [parser q k | q <- [1..2], k <- [1..2]]
+    result = parser q k
     expected = [0, 1, 4, 2, 5, 1, 4, 2, 4, 3, 3]
     parser q k = llpParse q k grammar input
 
-tests =
+llpqkParsingTestCases = [llpqkParsingTestCase q k | q <- [1..2], k <- [1..2]]
+
+tests = 
   TestLabel "LLP(q, k) tests" $
-    TestList
-      [ -- augmentGrammarTestCase,
-        -- pslsTestCase,
-        -- collectionTestCase,
-        -- llpParsingTestCase
-      ]
+    TestList $
+      [ augmentGrammarTestCase,
+        pslsTestCase,
+        collectionTestCase
+      ] ++ llpqkParsingTestCases

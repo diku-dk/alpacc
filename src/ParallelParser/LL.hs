@@ -7,10 +7,9 @@ module ParallelParser.LL
     fixedPointIterate,
     llTable,
     llParse,
-    firstTable,
-    nullableFollowTable,
     leftDerivations,
-    naiveFirst
+    naiveFirst,
+    alphaBeta
   )
 where
 
@@ -27,9 +26,14 @@ import Data.Function
 import Data.Sequence (Seq (..), (<|), (><), (|>))
 import qualified Data.Sequence as Seq hiding (Seq (..), (<|), (><), (|>))
 import Data.Foldable
+import Data.Bifunctor (Bifunctor (second))
+import Data.Composition
 import Debug.Trace (traceShow)
 
 debug x = traceShow x x
+
+rightProductons :: Production nt t -> [(nt, (nt, [Symbol nt t]))]
+rightProductons (Production aj symbols') = (aj,) <$> rightSymbols symbols'
 
 leftDerivations ::
   (Ord t, Ord nt, Show nt, Show t) =>
@@ -90,16 +94,6 @@ nullable grammar = all nullableOne'
   where
     nullableOne' = nullableOne grammar
 
-takeWhileNMore :: Int -> (a -> Bool) -> [a] -> [a]
-takeWhileNMore _ _ [] = []
-takeWhileNMore n predicate (x : xs)
-  | predicate x = x : takeWhileNMore n predicate xs
-  | otherwise = x : take (n - 1) xs
-
--- firstOne :: Ord nt => Map nt (Set [t]) -> Symbol nt t -> Set [t]
--- firstOne first_map (Terminal t) = Set.singleton [t]
--- firstOne first_map (Nonterminal nt) = first_map Map.! nt
-
 truncatedProduct :: Ord t => Int -> Set [t] -> Set [t] -> Set [t]
 truncatedProduct k a b = Set.fromList token_product
   where
@@ -107,66 +101,39 @@ truncatedProduct k a b = Set.fromList token_product
     a_list = Set.toList a
     b_list = Set.toList b
 
-splitWhen :: (a -> Bool) -> [a] -> ([a], [a])
-splitWhen = auxiliary []
+alphaBeta :: [a] -> [([a], [a])]
+alphaBeta string
+  | null string = []
+  | otherwise = auxiliary [] string
   where
-    auxiliary taken _ [] = (taken, [])
-    auxiliary taken predicate not_taken@(x : xs)
-      | predicate x = auxiliary (x : taken) predicate xs
-      | otherwise = (taken, not_taken)
-
-alphaBeta = auxiliary []
-  where
-    auxiliary taken [] = []
+    auxiliary taken [x] = []
     auxiliary taken (x:xs) = (new_taken, xs) : auxiliary new_taken xs
       where
         new_taken = taken ++ [x]
 
-firstOne' first_map wi = new_set
+alphaBetaProducts :: (Ord nt, Ord t) => Int -> Map nt (Set [t]) -> [Symbol nt t] -> Set [t]
+alphaBetaProducts _ _ [] = error "Input string cannot be empty."
+alphaBetaProducts k first_map [Terminal t] = Set.singleton [t]
+alphaBetaProducts k first_map [Nonterminal nt] = first_map Map.! nt
+alphaBetaProducts k first_map string = Set.unions $ map subProducts alpha_betas
   where
-    new_set
-      | null wi = Set.singleton []
-      | isTerminal a = terminal_set
-      | isNonterminal a = nonterminal_set
-      where
-        a = head wi
-        w' = tail wi
-        terminal_set = Set.singleton [(\(Terminal x) -> x) a]
-        nonterminal_set
-          | any null first_set = not_null_set `Set.union` firstOne' first_map w'
-          | otherwise = first_set
-          where
-            not_null_set = Set.filter (not . null) first_set
-            nt = (\(Nonterminal n) -> n) a
-            first_set = first_map Map.! nt
+    alpha_betas = alphaBeta string
+    subProduct = alphaBetaProducts k first_map
+    subProducts = uncurry (truncatedProduct k) . both subProduct
 
-firstsOne' :: (Ord nt, Ord t) => Grammar nt t -> Map nt (Set [t])
-firstsOne' grammar = fixedPointIterate (/=) f init_first_map
-  where
-    init_first_map = Map.fromList . map (,Set.empty) $ nonterminals grammar
-    f first_map = Map.unionsWith Set.union $ map (auxiliary first_map) (productions grammar)
-    auxiliary first_map (Production ai wi) = Map.adjust (Set.union new_set) ai first_map
-      where
-        new_set = firstOne' first_map wi
-
-firstOne :: (Ord nt, Ord t) => Grammar nt t -> [Symbol nt t] -> Set [t]
-firstOne grammar = firstOne' first_map
-  where
-    first_map = firstsOne' grammar
-
+first' :: (Ord nt, Ord t) => Int -> Map nt (Set [t]) -> [Symbol nt t] -> Set [t]
 first' k first_map wi = new_set
   where
     new_set
       | null wi = Set.singleton []
-      | isTerminal a = terminal_set `Set.union` Set.unions (map (helper first_map) alpha_betas)
-      | isNonterminal a = terminal_set `Set.union` Set.unions (map (helper nt_first_map) alpha_betas)
+      | isTerminal a = alphaBetaProducts k first_map wi
+      | isNonterminal a = alphaBetaProducts k nt_first_map wi
       where
         alpha_betas = alphaBeta wi
-        helper first_map' = uncurry (truncatedProduct k) . both (first' k first_map')
+        nt_first_map = Map.adjust (Set.union nonterminal_set) nt first_map
         a = head wi
         w' = tail wi
         Nonterminal nt = a
-        nt_first_map = Map.adjust (Set.union nonterminal_set) nt first_map
         terminal_set = Set.singleton [(\(Terminal x) -> x) a]
         nonterminal_set
           | any null first_set = not_null_set `Set.union` first' k first_map w'
@@ -178,162 +145,59 @@ first' k first_map wi = new_set
 firsts :: (Ord nt, Ord t) => Int -> Grammar nt t -> Map nt (Set [t])
 firsts k grammar = fixedPointIterate (/=) f init_first_map
   where
-    firstOneF = firstOne grammar
     init_first_map = Map.fromList . map (,Set.empty) $ nonterminals grammar
     f first_map = Map.unionsWith Set.union $ map (auxiliary first_map) (productions grammar)
     auxiliary first_map (Production ai wi) = Map.adjust (Set.union new_set) ai first_map
       where
         new_set = first' k first_map wi
 
-takeWhileOneMore :: (a -> Bool) -> [a] -> [a]
-takeWhileOneMore _ [] = []
-takeWhileOneMore predicate (x:xs)
-  | predicate x = x : takeWhileOneMore predicate xs
-  | otherwise = [x]
-
 first :: (Show nt, Show t, Ord nt, Ord t) => Int -> Grammar nt t -> [Symbol nt t] -> Set [t]
 first k grammar = first' k first_map
   where
     first_map = firsts k grammar
-
--- first :: (Ord nt, Ord t) => Int -> Grammar nt t -> [Symbol nt t] -> Set [t]
--- first k grammar = Set.filter (not . null) . firstAB k grammar first_map
---   where
---     first_map = Set.filter (not . null) <$> firsts k grammar
 
 rightSymbols :: [Symbol nt t] -> [(nt, [Symbol nt t])]
 rightSymbols [] = []
 rightSymbols ((Terminal _) : xs) = rightSymbols xs
 rightSymbols ((Nonterminal x) : xs) = (x, xs) : rightSymbols xs
 
-data Constraint nt t
-  = TConstraint (Set [t]) nt
-  | NTConstraint nt nt
-  deriving (Eq, Ord)
-
-instance (Show nt, Show t) => Show (Constraint nt t) where
-  show (TConstraint ts nt) = "{" ++ seq ++ "} ⊆ " ++ show nt
-    where
-      seq = List.intercalate ", " (show <$> Set.toList ts)
-  show (NTConstraint nt nt') = show nt ++ " ⊆ " ++ show nt'
-
-constraints :: (Show nt, Show t, Ord t, Ord nt) => Int -> Grammar nt t -> [Set (Constraint nt t)]
-constraints k grammar = helper <$> productions grammar
+dropWhileMinusOne :: (a -> Bool) -> [a] -> [a]
+dropWhileMinusOne = auxiliary Nothing
   where
-    nullable' = nullable grammar
-    first' = naiveFirst k grammar
-    helper (Production nt s) = Set.unions $ uncurry auxiliary <$> right_symbols
-      where
-        right_symbols = rightSymbols s
-        auxiliary nt' right = tConstraint `Set.union` ntConstraint
-          where
-            first_set = first' right
-            right_nullable = nullable' right
-            unempty = not . Set.null
-            tConstraint =
-              Set.fromList [TConstraint first_set nt' | unempty first_set]
-            ntConstraint =
-              Set.fromList [NTConstraint nt nt' | nt /= nt' && right_nullable]
+    auxiliary Nothing _ [] = []
+    auxiliary (Just last) _ [] = [last]
+    auxiliary last predicate (x:xs)
+      | predicate x = auxiliary (Just x) predicate xs
+      | isJust last = fromJust last:x:xs
+      | otherwise = x:xs
 
--- follows k grammar = debug $ unextend $ fixedPointIterate (/=) f init_follow_map
---   where
---     unextend =
---       Map.mapKeys unextendNT
---         . fmap (Set.map (fmap unextendT . filter (/= End)) . Set.filter (not . all (== End)))
---         . Map.filterWithKey (\k a -> k /= start' || any (notElem End) a)
---     start' = start extended_grammar
---     (extended_grammar, stopper) = extendGrammar k grammar
---     first' = first k extended_grammar
---     [Production _ s] = findProductions extended_grammar (start extended_grammar)
---     nonterminals' = nonterminals extended_grammar
---     init_follow_map = Map.insert (start extended_grammar) (Set.singleton stopper) . Map.fromList . map (,Set.empty) $ nonterminals'
---     f = flip (foldl auxiliary) (productions extended_grammar)
---     auxiliary follow_map (Production aj symbols') = foldl helper follow_map right_symbols
---       where
---         right_symbols = rightSymbols symbols'
---         helper follow_map' (ai, w') = Map.adjust (Set.union new_set) ai follow_map'
---           where
---             new_set =
---               Set.unions
---                 [ first_set,
---                   follow_epsilon,
---                   follow_w',
---                   follow_prod
---                 ]
---             first_set = first' w'
---             follow_epsilon = if [] `elem` first_set then follow_map' Map.! aj else Set.empty
---             follow_w' = if null w' then follow_map' Map.! aj else Set.empty
---             follow_prod = truncatedProduct k first_set (follow_map' Map.! aj)
-
-follows :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> Map nt (Set [t])
-follows k grammar = fixedPointIterate (/=) f init_follow_map
+follows :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> Maybe t -> Map nt (Set [t])
+follows k grammar end = fixedPointIterate (/=) f init_follow_map
   where
     first' = first k grammar
-    [Production _ s] = findProductions grammar (start grammar)
-    stopper = Set.singleton . fmap (\(Terminal a) -> a) . reverse . takeWhile isTerminal $ reverse s
+    cleanPadding = Set.map $ if isJust end then dropWhileMinusOne (==fromJust end) else id
+    stopper = Set.singleton . concat . maybeToList $ replicate k <$> end
     init_follow_map = Map.insert (start grammar) stopper . Map.fromList . map (,Set.empty) $ nonterminals grammar
-    f follow_map = Map.unionsWith Set.union $ map (auxiliary follow_map) all_right_productions
-    all_right_productions = concatMap rightProductons $ productions grammar
-    rightProductons (Production aj symbols') = (aj,) <$> rightSymbols symbols'
+    f follow_map = Map.unionsWith Set.union $ map (auxiliary follow_map) right_productions
+    right_productions = concatMap rightProductons $ productions grammar
     auxiliary follow_map' (aj, (ai, w')) = Map.adjust (Set.union follow_prod) ai current_follow_map
       where
-        sub_set =
+        subset =
           Set.unions
             [ first_set,
               follow_epsilon,
               follow_w'
             ]
         first_set = first' w'
-        current_follow_map = Map.adjust (Set.union sub_set) ai follow_map'
+        current_follow_map = Map.adjust (Set.union subset) ai follow_map'
         follow_epsilon = if [] `elem` first_set then follow_map' Map.! aj else Set.empty
         follow_w' = if null w' then follow_map' Map.! aj else Set.empty
         follow_prod = truncatedProduct k first_set (current_follow_map Map.! aj)
 
--- follows k grammar = unextend $ fixedPointIterate (/=) f init_follow_map
---   where
---     unextend =
---       Map.mapKeys unextendNT
---         . fmap (Set.map (fmap unextendT . filter (/= End)) . Set.filter (not . all (== End)))
---         . Map.filterWithKey (\k a -> k /= start')
---     start' = start extended_grammar
---     (extended_grammar, stopper) = extendGrammar k grammar
---     first' = first k extended_grammar
---     [Production _ s] = findProductions extended_grammar (start extended_grammar)
---     nonterminals' = nonterminals extended_grammar
---     init_follow_map = Map.insert (start extended_grammar) (Set.singleton stopper) . Map.fromList . map (,Set.empty) $ nonterminals'
---     f = flip (foldl auxiliary) (productions extended_grammar)
---     auxiliary follow_map (Production aj symbols') = foldl helper follow_map right_symbols
---       where
---         right_symbols = rightSymbols symbols'
---         helper follow_map' (ai, w') = Map.adjust (Set.union new_set) ai follow_map'
---           where
---             new_set =
---               Set.unions
---                 [ first_set,
---                   follow_epsilon,
---                   follow_w',
---                   follow_prod
---                 ]
---             first_set = first' w'
---             follow_epsilon = if [] `elem` first_set then follow_map' Map.! aj else Set.empty
---             follow_w' = if null w' then follow_map' Map.! aj else Set.empty
---             follow_prod = truncatedProduct k first_set (follow_map' Map.! aj)
-
--- follows :: (Ord nt, Ord t) => Int -> Grammar nt t -> Map nt (Set [t])
--- follows k grammar = fixedPointIterate (/=) f init_follow_map
---   where
---     constraints' = Set.unions $ constraints k grammar
---     init_follow_map = Map.fromList . map (,Set.singleton []) $ nonterminals grammar
---     f a = foldl addConstraint a constraints'
---     addConstraint m (TConstraint t nt) = Map.adjust (Set.union t) nt m
---     addConstraint m (NTConstraint nt nt') = Map.adjust (truncatedProduct k res) nt' m
---       where
---         res = m Map.! nt
-
 follow :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> nt -> Set [t]
 follow k grammar = (follows' Map.!)
   where
-    follows' = follows k grammar
+    follows' = follows k grammar (rightPadding grammar)
 
 last :: (Show nt, Show a, Ord nt, Ord a) => Int -> Grammar nt a -> [Symbol nt a] -> Set [a]
 last q grammar = Set.map reverse . lasts . reverse
@@ -343,51 +207,20 @@ last q grammar = Set.map reverse . lasts . reverse
 before :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> nt -> Set [t]
 before q grammar = Set.map reverse . (befores Map.!)
   where
-    befores = follows q $ reverseGrammar grammar
-
-firstTable :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> Map (nt, [t]) Int
-firstTable k grammar = Map.unions $ auxiliary <$> zip prods [0 ..]
-  where
-    prods = productions grammar
-    first' = first k grammar
-    auxiliary (Production nt a, i) = Map.fromList [((nt, y), i) | y <- ts]
-      where
-        ts = Set.toList $ first' a
-
-nullableFollowTable ::
-  (Ord nt, Ord t, Show nt, Show t) =>
-  Int ->
-  Grammar nt t ->
-  Map (nt, [t]) Int
-nullableFollowTable k grammar = Map.unions $ auxiliary <$> zip [0 ..] prods
-  where
-    prods = productions grammar
-    follow' = follow k grammar
-    nullable' = nullable grammar
-    auxiliary (i, Production nt a) =
-      Map.fromList [((nt, y), i) | is_nullable, y <- nts]
-      where
-        nts = Set.toList $ follow' nt
-        is_nullable = nullable' a
-
--- llTable :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> Map (nt, [t]) Int
--- llTable k grammar = Map.union first_table nullable_follow_table
---   where
---     first_table = firstTable k grammar
---     nullable_follow_table = nullableFollowTable k grammar
+    befores = follows q (reverseGrammar grammar) (leftPadding grammar)
 
 llTable :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> Map (nt, [t]) Int
 llTable k grammar = Map.union first_table follow_table
   where
-    first_table = Map.unions $ firstEntry <$> zip [0 ..] prods
-    follow_table = Map.unions $ followEntry <$> zip [0 ..] prods
+    first_table = Map.unions $ zipWith firstEntry [0 ..] prods
+    follow_table = Map.unions $ zipWith followEntry [0 ..] prods
     prods = productions grammar
     first' = first k grammar
-    firstEntry (i, Production nt a) = Map.fromList [((nt, y), i) | y <- ts]
+    firstEntry i (Production nt a) = Map.fromList [((nt, y), i) | y <- ts]
       where
         ts = Set.toList $ first' a
     follow' = follow k grammar
-    followEntry (i, Production nt a) =
+    followEntry i (Production nt a) =
       Map.fromList [((nt, y), i) | is_nullable, y <- nts]
       where
         nts = Set.toList $ follow' nt
@@ -421,7 +254,7 @@ llParse k grammar = auxiliary
             $ take k input
 
         maybeTuple = do
-          index <- List.last keys `Map.lookup` table
+          index <- (y, take k input) `Map.lookup` table
           production <- index `Map.lookup` production_map
           return (index, symbols production)
 

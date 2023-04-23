@@ -25,7 +25,6 @@ import Debug.Trace (traceShow)
 import ParallelParser.Grammar
 import ParallelParser.LL
 import Prelude hiding (last)
-import Data.Bifunctor (Bifunctor (bimap))
 import Control.Parallel.Strategies
 
 pmap :: NFData b => (a -> b) -> [a] -> [b]
@@ -293,38 +292,39 @@ llTableParse k grammar a b = auxiliary (a, b, [])
       | x == y = Just ([], ys, reverse parsed)
       | otherwise = Nothing
     auxiliary (input, (Nonterminal y) : ys, parsed)
-      | List.null keys = Nothing
       | isNothing maybeTuple = Nothing
       | otherwise = auxiliary (input, production ++ ys, index : parsed)
       where
-        keys =
-          List.filter (`Map.member` table)
-            . fmap (y,)
-            . takeWhile (not . List.null)
-            . iterate init
-            $ take k input
-
         maybeTuple = do
-          index <- List.head keys `Map.lookup` table
+          index <- (y, take k input) `Map.lookup` table
           production <- index `Map.lookup` production_map
           return (index, symbols production)
 
         Just (index, production) = maybeTuple
 
-dropWhileMinusOne = auxiliary Nothing
-  where
-    auxiliary Nothing _ [] = []
-    auxiliary (Just last) _ [] = [last]
-    auxiliary last predicate (x:xs)
-      | predicate x = auxiliary (Just x) predicate xs
-      | isJust last = fromJust last:x:xs
-      | otherwise = x:xs
-
-removeAllPaddingButOne ::
-  (Eq t, Ord t) =>
-  Map ([AugmentedTerminal t], [AugmentedTerminal t]) [Int] ->
+allStarts ::
+  (Ord nt, Ord t, Show nt, Show t) =>
+  Int ->
+  Int ->
+  Grammar (AugmentedNonterminal nt) (AugmentedTerminal t) ->
   Map ([AugmentedTerminal t], [AugmentedTerminal t]) [Int]
-removeAllPaddingButOne = Map.mapKeys (bimap (dropWhileMinusOne (RightTurnstile==)) (List.reverse . dropWhileMinusOne (LeftTurnstile==) . List.reverse))
+allStarts q k grammar = zero_keys `Map.union` epsilon_keys
+  where
+    first' = naiveFirst k grammar
+    start' = start grammar
+    [Production nt s] = findProductions grammar start'
+    start_terminals = takeWhile isTerminal s
+    isHeadTerminal [a] = isTerminal a
+    isHeadTerminal _ = False
+    safeInit [] = []
+    safeInit a = init a
+    epsilon_symbols = safeInit . takeWhile (isHeadTerminal . fst) $ alphaBeta s
+    epsilon_keys = Map.fromList $ concatMap auxiliary epsilon_symbols
+    zero_symbols = toList $ first' s
+    zero_keys = Map.fromList $ (,[0]) . ([],) <$> zero_symbols
+    auxiliary (prev, next) = (,[]) . (prev',) <$> toList (first' next)
+      where
+        prev' = reverse . take q . reverse $ (\(Terminal t) -> t) <$> prev
 
 llpParsingTable ::
   (Ord nt, Ord t, Show nt, Show t) =>
@@ -338,8 +338,7 @@ llpParsingTable q k grammar
   where
     parsed = Map.mapWithKey auxiliary unwrapped
     unwrapped = (\[a] -> a) . Set.toList <$> psls_table
-    start' = Nonterminal $ start grammar
-    starts = Map.fromList . map ((,[0]) . ([],)) . toList $ naiveFirst k grammar [start']
+    starts = allStarts q k grammar
     collection = llpCollection q k grammar
     psls_table = psls collection
     llTableParse' = llTableParse k grammar
@@ -363,7 +362,7 @@ pairs q k = toList . auxiliary Seq.empty Seq.empty . Seq.fromList
 llpParse :: (Ord nt, Ord t, Show nt, Show t) => Int -> Int -> Grammar nt t -> [t] -> [Int]
 llpParse q k grammar = concatMap auxiliary . pairs q k . addStoppers . aug
   where
-    addStoppers = (replicate q RightTurnstile ++) . (++ replicate k LeftTurnstile)
+    addStoppers = (replicate 1 RightTurnstile ++) . (++ replicate 1 LeftTurnstile)
     aug = fmap AugmentedTerminal
     augmented_grammar = augmentGrammar q k grammar
     Just table = llpParsingTable q k augmented_grammar

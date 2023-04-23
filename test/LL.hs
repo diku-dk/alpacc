@@ -7,6 +7,7 @@ import ParallelParser.LL
 import Test.HUnit
 import Debug.Trace (traceShow)
 import Text.ParserCombinators.ReadP (string)
+import Data.String.Interpolate (i)
 
 debug x = traceShow x x
 
@@ -20,7 +21,9 @@ grammar =
           Production "T" [Terminal "a", Nonterminal "T", Terminal "c"],
           Production "R" [],
           Production "R" [Terminal "b", Nonterminal "R"]
-        ]
+        ],
+      leftPadding = Nothing,
+      rightPadding = Nothing
     }
 
 followExtendedGrammar =
@@ -34,7 +37,9 @@ followExtendedGrammar =
           Production "T" [Terminal "a", Nonterminal "T", Terminal "c"],
           Production "R" [],
           Production "R" [Nonterminal "R", Terminal "b", Nonterminal "R"]
-        ]
+        ],
+      leftPadding = Nothing,
+      rightPadding = Just "$"
     }
 
 extendedGrammar =
@@ -48,7 +53,9 @@ extendedGrammar =
           Production "T" [Terminal "a", Nonterminal "T", Terminal "c"],
           Production "R" [],
           Production "R" [Terminal "b", Nonterminal "R"]
-        ]
+        ],
+      leftPadding = Nothing,
+      rightPadding = Just "$"
     }
 
 bookGrammar =
@@ -66,7 +73,9 @@ bookGrammar =
           Production "B" [Nonterminal "C", Nonterminal "B", Nonterminal "C"],
           Production "C" [Terminal "a"],
           Production "C" [Terminal "b"]
-        ]
+        ],
+      leftPadding = Nothing,
+      rightPadding = Just "$"
     }
 
 nullableTestCase = TestCase $ assertEqual "Nullable test" expected result
@@ -108,7 +117,7 @@ followSmallTestCase = TestCase $ assertEqual "Small Follow(1) test" expected res
     result = follow' <$> nonterminals followExtendedGrammar
     expected =
       [ Set.fromList [["$"]],
-        Set.fromList [[], ["$"], ["c"], ["b"]],
+        Set.fromList [["$"], ["c"], ["b"], []],
         Set.fromList [["$"], ["c"]]
       ]
 
@@ -138,41 +147,30 @@ ll1ParseFailTestCase = TestCase $ assertEqual "LL(1) parsing test" expected resu
     result = llkParse' (input, [Nonterminal $ start extendedGrammar], [])
     expected = Nothing
 
-first1TestCase = TestCase $ assertEqual "First k=1 set test" expected real
+firstkTestCase k = TestCase $ assertEqual [i|First k=#{k} set test|] expected result
   where
-    firstsTuples string = (naiveFirst 1 grammar string, first 1 grammar string)
+    firstsTuples string = (naiveFirst k grammar string, first k grammar string)
     strings = symbols <$> productions grammar
-    (expected, real) = unzip $ firstsTuples <$> strings 
+    (expected, result) = unzip $ firstsTuples <$> strings
 
-first2TestCase = TestCase $ assertEqual "First k=2 set test" expected real
-  where
-    firstsTuples string = (naiveFirst 2 grammar string, first 2 grammar string)
-    strings = symbols <$> productions grammar
-    (expected, real) = unzip $ firstsTuples <$> strings 
+firstkTestCases = [firstkTestCase k | k <- [1..20]]
 
-first3TestCase = TestCase $ assertEqual "First k=3 set test" expected real
-  where
-    firstsTuples string = (naiveFirst 3 grammar string, first 3 grammar string)
-    strings = symbols <$> productions grammar
-    (expected, real) = unzip $ firstsTuples <$> strings 
-
-first4TestCase = TestCase $ assertEqual "First k=4 set test" expected real
-  where
-    firstsTuples string = (naiveFirst 4 grammar string, first 4 grammar string)
-    strings = symbols <$> productions grammar
-    (expected, real) = unzip $ firstsTuples <$> strings 
+-- followkTestCase k = TestCase $ assertEqual [i|Follow k=#{k} set test|] expected result
+--   where
+--     followsTuples string = (naiveFollow k grammar string, follow k grammar string)
+--     nonterminals' = nonterminals grammar
+--     (expected, result) = unzip $ followsTuples <$> nonterminals'
+-- 
+-- followkTestCases = [followkTestCase k | k <- [1..20]]
 
 tests =
   TestLabel "LL(k) tests" $
-    TestList
+    TestList $
       [ nullableTestCase,
         firstSmallTestCase,
         followSmallTestCase,
         followLargeTestCase,
         ll1ParseTestCase,
-        ll1ParseFailTestCase,
-        first1TestCase,
-        first2TestCase,
-        first3TestCase,
-        first4TestCase
-      ]
+        ll1ParseFailTestCase
+      ] ++ firstkTestCases
+      --  ++ followkTestCases
