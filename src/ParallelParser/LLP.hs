@@ -108,38 +108,6 @@ isTerminalPrefix grammar t = bfs Set.empty . Seq.singleton
             else new_visited'
         new_visited' = Set.insert top visited
 
-leftDerivations ::
-  (Ord t, Ord nt, Show nt, Show t) =>
-  Grammar nt t ->
-  [Symbol nt t] ->
-  Seq [Symbol nt t]
-leftDerivations grammar = derive Seq.empty . Seq.fromList
-  where
-    toSequences = fmap (fmap Seq.fromList)
-    production_map = toSequences . toProductionsMap $ productions grammar
-    derive _ Empty = Empty
-    derive ys ((Terminal x) :<| xs) = derive (ys :|> Terminal x) xs
-    derive ys ((Nonterminal x) :<| xs) = ps
-      where
-        smallDerive e = ys >< e >< xs
-        ps = Seq.fromList $ toList . smallDerive <$> (production_map Map.! x)
-
-allStarts :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> [[t]]
-allStarts k grammar = bfs Set.empty (Seq.singleton $ List.singleton start')
-  where
-    start' = Nonterminal $ start grammar
-    unpackT (Terminal t) = t
-    leftDerivations' = leftDerivations grammar
-    bfs _ Empty = []
-    bfs visited (top :<| queue)
-      | top `Set.member` visited = bfs new_visited queue
-      | null top = bfs new_visited queue
-      | all isTerminal k_terms = (unpackT <$> k_terms) : bfs new_visited queue
-      | otherwise = bfs new_visited (queue >< leftDerivations' top)
-      where
-        k_terms = take k top
-        new_visited = Set.insert top visited
-
 solveShortestsPrefix ::
   (Ord t, Ord nt, Show nt, Show t) =>
   Grammar nt t ->
@@ -370,7 +338,8 @@ llpParsingTable q k grammar
   where
     parsed = Map.mapWithKey auxiliary unwrapped
     unwrapped = (\[a] -> a) . Set.toList <$> psls_table
-    starts = Map.fromList . map ((,[0]) . ([],)) $ allStarts k grammar
+    start' = Nonterminal $ start grammar
+    starts = Map.fromList . map ((,[0]) . ([],)) . toList $ naiveFirst k grammar [start']
     collection = llpCollection q k grammar
     psls_table = psls collection
     llTableParse' = llTableParse k grammar
@@ -397,8 +366,8 @@ llpParse q k grammar = concatMap auxiliary . pairs q k . addStoppers . aug
     addStoppers = (replicate q RightTurnstile ++) . (++ replicate k LeftTurnstile)
     aug = fmap AugmentedTerminal
     augmented_grammar = augmentGrammar q k grammar
-    Just table = debug <$> llpParsingTable q k augmented_grammar
-    auxiliary = (table Map.!) . debug
+    Just table = llpParsingTable q k augmented_grammar
+    auxiliary = (table Map.!)
       -- where
       --   pairs = [(a, b) | a <- tails back, b <- inits forw]
       --   p = List.head $ mapMaybe (`Map.lookup` table) pairs
