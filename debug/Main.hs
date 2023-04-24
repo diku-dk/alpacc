@@ -18,11 +18,13 @@ import Data.Semigroup ((<>))
 import Data.String.Interpolate (i)
 import System.FilePath.Posix (stripExtension, takeFileName)
 import qualified Data.List as List
-import ParallelParser.LL (before, follow, first, last, llTable)
+import ParallelParser.LL
 import Prelude hiding (last)
 import Data.Bifunctor (Bifunctor (bimap))
 import ParallelParser.LL
 import Control.Parallel.Strategies
+import Debug.Trace (traceShow)
+debug x = traceShow x x
 
 data Parametars = Parametars
   { path      :: String
@@ -69,24 +71,29 @@ main = do
   let left_recursive_nonterminals = leftRecursiveNonterminals grammar
   let trouble_makers = List.intercalate ", " left_recursive_nonterminals
   let augmented_grammar = augmentGrammar q k grammar
-  -- let Just table = llpParsingTable q k augmented_grammar
+  let Just table = llpParsingTable q k augmented_grammar
   let collection = llpCollection q k augmented_grammar
   let psls_table = psls collection
   let unwrapped = (\[a] -> a) . S.toList <$> psls_table
   let llTableParse' = llTableParse k augmented_grammar
-  let ll_table = llTable k grammar
+  let ll_table = llTable k augmented_grammar
   let nt = "T"
   let aug_nt = AugmentedNonterminal "T"
   let first' = first k grammar [Nonterminal nt]
-  let follow' = follow k grammar
+  let extended_grammar = extendGrammar k grammar
+  let follow' = follow k extended_grammar
+  let naiveFollow' = naiveFollow k extended_grammar
   let aug_first' = first k augmented_grammar [Nonterminal aug_nt]
   let aug_follow' = follow k augmented_grammar aug_nt
-  -- putStrLn "LLP Table"
-  -- mapM_ print $ M.toList table
-  putStrLn "Missing parses"
-  mapM_ print . M.toList . M.filterWithKey ((isNothing . ).  auxiliary llTableParse') $  unwrapped
-  putStrLn "LL Table"
-  mapM_ print . M.toList $ ll_table
+  putStrLn "LLP Table"
+  mapM_ print $ M.toList table
+  -- putStrLn "Missing parses"
+  -- mapM_ print . M.toList . M.filterWithKey ((isNothing . ).  auxiliary llTableParse') $  unwrapped
+  -- putStrLn "LL Table"
+  -- mapM_ print . M.toList $ ll_table
   -- putStrLn $ "first(" ++ nt ++ ")"
   -- let strings = symbols <$> productions grammar
-  -- mapM_ print $ naiveFirst k grammar <$> strings
+  -- putStrLn "Correct Follow sets"
+  -- mapM_ print $ (\a -> (a, naiveFollow' a)) <$> nonterminals extended_grammar
+  -- putStrLn "Computed Follow sets"
+  -- mapM_ print $ (\a -> (a, follow' a)) <$> nonterminals extended_grammar
