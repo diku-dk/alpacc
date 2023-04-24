@@ -59,6 +59,22 @@ auxiliary llTableParse' (x, y) alpha = f <$> llTableParse' y alpha
   where
     f (epsilon, omega, pi) = pi
 
+followExtendedGrammar =
+  Grammar
+    { start = "T'",
+      terminals = ["$", "a", "b", "c"],
+      nonterminals = ["T'", "R", "T"],
+      productions =
+        [ Production "T'" [Nonterminal "T", Terminal "$"],
+          Production "T" [Nonterminal "R"],
+          Production "T" [Terminal "a", Nonterminal "T", Terminal "c"],
+          Production "R" [],
+          Production "R" [Nonterminal "R", Terminal "b", Nonterminal "R"]
+        ],
+      leftPadding = Nothing,
+      rightPadding = Just "$"
+    }
+
 main :: IO ()
 main = do
   options <- execParser opts
@@ -81,19 +97,19 @@ main = do
   let aug_nt = AugmentedNonterminal "T"
   let first' = first k grammar [Nonterminal nt]
   let extended_grammar = extendGrammar k grammar
-  let follow' = follow k extended_grammar
-  let naiveFollow' = naiveFollow k extended_grammar
+  let follow' = follow k followExtendedGrammar
+  let naiveFollow' = naiveFollow k followExtendedGrammar
   let aug_first' = first k augmented_grammar [Nonterminal aug_nt]
   let aug_follow' = follow k augmented_grammar aug_nt
   putStrLn "LLP Table"
   mapM_ print $ M.toList table
-  -- putStrLn "Missing parses"
-  -- mapM_ print . M.toList . M.filterWithKey ((isNothing . ).  auxiliary llTableParse') $  unwrapped
+  putStrLn "Missing parses"
+  mapM_ print . M.toList . M.filterWithKey ((isNothing . ).  auxiliary llTableParse') $  unwrapped
   -- putStrLn "LL Table"
   -- mapM_ print . M.toList $ ll_table
   -- putStrLn $ "first(" ++ nt ++ ")"
   -- let strings = symbols <$> productions grammar
   -- putStrLn "Correct Follow sets"
-  -- mapM_ print $ (\a -> (a, naiveFollow' a)) <$> nonterminals extended_grammar
+  -- mapM_ print $ (\a -> (a, naiveFollow' a)) <$> nonterminals followExtendedGrammar
   -- putStrLn "Computed Follow sets"
-  -- mapM_ print $ (\a -> (a, follow' a)) <$> nonterminals extended_grammar
+  -- mapM_ print $ (\a -> (a, follow' a)) <$> nonterminals followExtendedGrammar

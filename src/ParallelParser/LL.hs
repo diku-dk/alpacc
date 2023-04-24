@@ -77,8 +77,8 @@ naiveFirst k grammar = Set.fromList . bfs Set.empty . Seq.singleton
     leftDerivations' = leftDerivations grammar
     bfs _ Empty = []
     bfs visited (top :<| queue)
-      | k_terms `Set.member` visited = bfs new_visited queue
-      | all isTerminal k_terms = (unpackT <$> k_terms) : bfs new_visited queue
+      | k_terms `Set.member` visited = bfs visited queue
+      | all isTerminal k_terms = (unpackT <$> k_terms) : bfs new_visited (queue >< leftDerivations' top)
       | otherwise = bfs new_visited (queue >< leftDerivations' top)
       where
         k_terms = take k top
