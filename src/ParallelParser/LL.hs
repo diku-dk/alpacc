@@ -173,21 +173,9 @@ first' k first_map wi = new_set
   where
     new_set
       | null wi = Set.singleton []
-      | isTerminal a = alphaBetaProducts k first_map wi
-      | isNonterminal a = alphaBetaProducts k nt_first_map wi
+      | otherwise = alphaBetaProducts k first_map wi
       where
         alpha_betas = alphaBeta wi
-        nt_first_map = Map.adjust (Set.union nonterminal_set) nt first_map
-        a = head wi
-        w' = tail wi
-        Nonterminal nt = a
-        terminal_set = Set.singleton [(\(Terminal x) -> x) a]
-        nonterminal_set
-          | any null first_set = not_null_set `Set.union` first' k first_map w'
-          | otherwise = first_set
-          where
-            not_null_set = Set.filter (not . null) first_set
-            first_set = first_map Map.! nt
 
 firsts :: (Ord nt, Ord t) => Int -> Grammar nt t -> Map nt (Set [t])
 firsts k grammar = fixedPointIterate (/=) f init_first_map

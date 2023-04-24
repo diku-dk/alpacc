@@ -524,4 +524,4 @@ tests =
       [ augmentGrammarTestCase,
         pslsTestCase,
         collectionTestCase
-      ] -- ++ llpqkParsingTestCases
+      ] ++ llpqkParsingTestCases

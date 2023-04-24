@@ -153,7 +153,7 @@ firstkTestCase k = TestCase $ assertEqual [i|First k=#{k} set test|] expected re
     strings = symbols <$> productions extendedGrammar
     (expected, result) = unzip $ firstsTuples <$> strings
 
-firstkTestCases = [firstkTestCase k | k <- [1..3]]
+firstkTestCases = [firstkTestCase k | k <- [1..20]]
 
 followkTestCase k = TestCase $ assertEqual [i|Follow k=#{k} set test|] expected result
   where
@@ -162,7 +162,7 @@ followkTestCase k = TestCase $ assertEqual [i|Follow k=#{k} set test|] expected 
     nonterminals' = nonterminals extended_grammar
     (expected, result) = unzip $ followsTuples <$> nonterminals'
 
-followkTestCases = [followkTestCase k | k <- [1..3]]
+followkTestCases = [followkTestCase k | k <- [1..7]]
 
 tests =
   TestLabel "LL(k) tests" $
