@@ -8,7 +8,9 @@ module ParallelParser.LL
     llTable,
     llParse,
     leftDerivations,
+    derivations,
     naiveFirst,
+    naiveFollow,
     alphaBeta
   )
 where
@@ -51,6 +53,23 @@ leftDerivations grammar = derive Seq.empty . Seq.fromList
         smallDerive e = ys >< e >< xs
         ps = Seq.fromList $ toList . smallDerive <$> (production_map Map.! x)
 
+derivations ::
+  (Ord t, Ord nt, Show nt, Show t) =>
+  Grammar nt t ->
+  [Symbol nt t] ->
+  Seq [Symbol nt t]
+derivations grammar = derive Seq.empty Seq.empty . Seq.fromList
+  where
+    toSeq = fmap (fmap Seq.fromList)
+    production_map = toSeq . toProductionsMap $ productions grammar
+    derive es _ Empty = es
+    derive es ys ((Terminal x) :<| xs) = derive es (ys :|> Terminal x) xs
+    derive es ys ((Nonterminal x) :<| xs) = derive es' (ys :|> Nonterminal x) xs
+      where
+        es' = es >< ps
+        smallDerive e = ys >< e >< xs
+        ps = Seq.fromList $ toList . smallDerive <$> (production_map Map.! x)
+
 naiveFirst :: (Show nt, Show t, Ord nt, Ord t) => Int -> Grammar nt t -> [Symbol nt t] -> Set [t]
 naiveFirst k grammar = Set.fromList . bfs Set.empty . Seq.singleton
   where
@@ -64,6 +83,34 @@ naiveFirst k grammar = Set.fromList . bfs Set.empty . Seq.singleton
       where
         k_terms = take k top
         new_visited = Set.insert k_terms visited
+
+naiveFollows :: (Show nt, Show t, Ord nt, Ord t) => Int -> Grammar nt t -> Map nt (Set [t])
+naiveFollows k grammar =
+  Map.unionWith Set.union init_maps
+    . Map.unionsWith Set.union
+    $ bfs Set.empty start'
+  where
+    [Production nt s] = findProductions grammar (start grammar)
+    init_maps = Map.fromList $ (,Set.empty) <$> nonterminals grammar
+    first' = first k grammar
+    start' = Seq.singleton s
+    unpackT (Terminal t) = t
+    derivations' = derivations grammar
+    bfs _ Empty = []
+    bfs visited (top :<| queue)
+      | right_symbols_set `Set.isSubsetOf` visited = bfs visited queue
+      | null right_symbols = bfs new_visited queue
+      | otherwise = maps ++ bfs new_visited (queue >< derivations' top)
+      where
+        right_symbols = second first' <$> rightSymbols top
+        maps = uncurry Map.singleton <$> right_symbols
+        right_symbols_set = Set.fromList right_symbols
+        new_visited = right_symbols_set `Set.union` visited
+
+naiveFollow :: (Show nt, Show t, Ord nt, Ord t) => Int -> Grammar nt t -> nt -> Set [t]
+naiveFollow k grammar = (follow_map Map.!)
+  where
+    follow_map = naiveFollows k grammar
 
 fixedPointIterate :: Eq b => (b -> b -> Bool) -> (b -> b) -> b -> b
 fixedPointIterate cmp f = fst . head . dropWhile (uncurry cmp) . iterateFunction
@@ -171,28 +218,40 @@ dropWhileMinusOne = auxiliary Nothing
       | isJust last = fromJust last:x:xs
       | otherwise = x:xs
 
-follows :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> Maybe t -> Map nt (Set [t])
-follows k grammar end = fixedPointIterate (/=) f init_follow_map
+followsOne :: (Ord nt, Ord t, Show nt, Show t) => Grammar nt t -> Maybe t -> Map nt (Set [t])
+followsOne grammar end = fixedPointIterate (/=) f init_follow_map
   where
-    first' = first k grammar
-    cleanPadding = Set.map $ if isJust end then dropWhileMinusOne (==fromJust end) else id
-    stopper = Set.singleton . concat . maybeToList $ replicate k <$> end
+    first' = first 1 grammar
+    stopper = Set.singleton . concat . maybeToList $ List.singleton <$> end
     init_follow_map = Map.insert (start grammar) stopper . Map.fromList . map (,Set.empty) $ nonterminals grammar
     f follow_map = Map.unionsWith Set.union $ map (auxiliary follow_map) right_productions
     right_productions = concatMap rightProductons $ productions grammar
-    auxiliary follow_map' (aj, (ai, w')) = Map.adjust (Set.union follow_prod) ai current_follow_map
+    auxiliary follow_map' (aj, (ai, w')) = Map.adjust (Set.union new_set) ai follow_map'
       where
-        subset =
+        new_set =
           Set.unions
             [ first_set,
               follow_epsilon,
               follow_w'
             ]
         first_set = first' w'
-        current_follow_map = Map.adjust (Set.union subset) ai follow_map'
         follow_epsilon = if [] `elem` first_set then follow_map' Map.! aj else Set.empty
         follow_w' = if null w' then follow_map' Map.! aj else Set.empty
-        follow_prod = truncatedProduct k first_set (current_follow_map Map.! aj)
+
+follows :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> Maybe t -> Map nt (Set [t])
+follows k grammar end = fixedPointIterate (/=) f init_follow_map
+  where
+    first' = first k grammar
+    [Production nt syms] = findProductions grammar (start grammar)
+    Just (Nonterminal s) = find isNonterminal syms
+    stopper = Set.singleton . concat . maybeToList $ replicate k <$> end
+    init_follow_map = Map.insert s stopper . Map.fromList . map (,Set.empty) $ nonterminals grammar
+    f follow_map = Map.unionsWith Set.union $ map (auxiliary follow_map) right_productions
+    right_productions = concatMap rightProductons $ productions grammar
+    auxiliary follow_map' (aj, (ai, w')) = Map.adjust (Set.union subset) ai follow_map'
+      where
+        first_set = first' w'
+        subset = truncatedProduct k first_set (follow_map' Map.! aj)
 
 follow :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> nt -> Set [t]
 follow k grammar = (follows' Map.!)
@@ -254,7 +313,7 @@ llParse k grammar = auxiliary
             $ take k input
 
         maybeTuple = do
-          index <- (y, take k input) `Map.lookup` table
+          index <- head keys `Map.lookup` table
           production <- index `Map.lookup` production_map
           return (index, symbols production)
 

@@ -111,26 +111,26 @@ firstLargeTestCase = TestCase $ assertEqual "Large First(1) test" result expecte
         Set.fromList [["b"]]
       ]
 
-followSmallTestCase = TestCase $ assertEqual "Small Follow(1) test" expected result
+followSmallTestCase = TestCase $ assertEqual "Small Follow k=1 test" expected result
   where
     follow' = follow 1 followExtendedGrammar
     result = follow' <$> nonterminals followExtendedGrammar
     expected =
-      [ Set.fromList [["$"]],
-        Set.fromList [["$"], ["c"], ["b"], []],
+      [ Set.fromList [],
+        Set.fromList [["$"], ["c"], ["b"]],
         Set.fromList [["$"], ["c"]]
       ]
 
-followLargeTestCase = TestCase $ assertEqual "Large Follow(1) test" expected result
+followLargeTestCase = TestCase $ assertEqual "Large Follow k=1 test" expected result
   where
     follow' = follow 1 bookGrammar
     result = follow' <$> nonterminals bookGrammar
     expected =
-      [ Set.fromList [["$"]],
+      [ Set.fromList [],
         Set.fromList [["$"]],
-        Set.fromList [[], ["a"], ["b"], ["$"]],
-        Set.fromList [[], ["a"], ["b"], ["$"]],
-        Set.fromList [[], ["a"], ["b"], ["$"]]
+        Set.fromList [["a"], ["b"], ["$"]],
+        Set.fromList [["a"], ["b"], ["$"]],
+        Set.fromList [["a"], ["b"], ["$"]]
       ]
 
 ll1ParseTestCase = TestCase $ assertEqual "LL(1) parsing test" expected result
@@ -155,13 +155,14 @@ firstkTestCase k = TestCase $ assertEqual [i|First k=#{k} set test|] expected re
 
 firstkTestCases = [firstkTestCase k | k <- [1..20]]
 
--- followkTestCase k = TestCase $ assertEqual [i|Follow k=#{k} set test|] expected result
---   where
---     followsTuples string = (naiveFollow k grammar string, follow k grammar string)
---     nonterminals' = nonterminals grammar
---     (expected, result) = unzip $ followsTuples <$> nonterminals'
--- 
--- followkTestCases = [followkTestCase k | k <- [1..20]]
+followkTestCase k = TestCase $ assertEqual [i|Follow k=#{k} set test|] expected result
+  where
+    extended_grammar = extendGrammar k grammar
+    followsTuples string = (naiveFollow k extended_grammar string, follow k extended_grammar string)
+    nonterminals' = nonterminals extended_grammar
+    (expected, result) = unzip $ followsTuples <$> nonterminals'
+
+followkTestCases = [followkTestCase k | k <- [1..6]]
 
 tests =
   TestLabel "LL(k) tests" $
@@ -173,4 +174,4 @@ tests =
         ll1ParseTestCase,
         ll1ParseFailTestCase
       ] ++ firstkTestCases
-      --  ++ followkTestCases
+        ++ followkTestCases

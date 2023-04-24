@@ -65,23 +65,6 @@ initD q grammar
           shortestPrefix = []
         }
 
-derivations ::
-  (Ord t, Ord nt, Show nt, Show t) =>
-  Grammar nt t ->
-  [Symbol nt t] ->
-  Seq [Symbol nt t]
-derivations grammar = derive Seq.empty Seq.empty . Seq.fromList
-  where
-    toSeq = fmap (fmap Seq.fromList)
-    production_map = toSeq . toProductionsMap $ productions grammar
-    derive es _ Empty = es
-    derive es ys ((Terminal x) :<| xs) = derive es (ys :|> Terminal x) xs
-    derive es ys ((Nonterminal x) :<| xs) = derive es' (ys :|> Nonterminal x) xs
-      where
-        es' = es >< ps
-        smallDerive e = ys >< e >< xs
-        ps = Seq.fromList $ toList . smallDerive <$> (production_map Map.! x)
-
 isTerminalPrefix ::
   (Ord t, Ord nt, Show nt, Show t) =>
   Grammar nt t ->
@@ -137,7 +120,7 @@ newLlpItems q k grammar vi delta dot_production = product'
     last' = last q grammar . (++ alpha) . fmap Terminal
     first' = toList . first k grammar . (x ++) . fmap Terminal
     before' = before q grammar y
-    uj = toList . Set.unions $ last' `Set.map` before'
+    uj = toList . Set.unions $ last' `Set.map` if null before' then Set.singleton [] else before'
     vj = first' vi
     x = [List.head x_beta | not (List.null x_beta)]
     x_delta = x ++ delta
@@ -176,7 +159,7 @@ addLlpItem q grammar items old_item
       where
         last' = last q grammar . (++ delta) . fmap Terminal
         before' = before q grammar y
-        u' = toList . Set.unions $ last' `Set.map` before'
+        u' = toList . Set.unions $ last' `Set.map` if null before' then Set.singleton [] else before'
         newItem z =
           Item
             { dotProduction = DotProduction y delta [],
@@ -295,8 +278,15 @@ llTableParse k grammar a b = auxiliary (a, b, [])
       | isNothing maybeTuple = Nothing
       | otherwise = auxiliary (input, production ++ ys, index : parsed)
       where
+        keys =
+          filter (`Map.member` table)
+            . fmap (y,)
+            . takeWhile (not . null)
+            . iterate init
+            $ take k input
+
         maybeTuple = do
-          index <- (y, take k input) `Map.lookup` table
+          index <- head keys `Map.lookup` table
           production <- index `Map.lookup` production_map
           return (index, symbols production)
 
@@ -308,23 +298,23 @@ allStarts ::
   Int ->
   Grammar (AugmentedNonterminal nt) (AugmentedTerminal t) ->
   Map ([AugmentedTerminal t], [AugmentedTerminal t]) [Int]
-allStarts q k grammar = zero_keys `Map.union` epsilon_keys
+allStarts q k grammar = zero_keys
   where
     first' = naiveFirst k grammar
     start' = start grammar
     [Production nt s] = findProductions grammar start'
-    start_terminals = takeWhile isTerminal s
-    isHeadTerminal [a] = isTerminal a
-    isHeadTerminal _ = False
-    safeInit [] = []
-    safeInit a = init a
-    epsilon_symbols = safeInit . takeWhile (isHeadTerminal . fst) $ alphaBeta s
-    epsilon_keys = Map.fromList $ concatMap auxiliary epsilon_symbols
+    -- start_terminals = takeWhile isTerminal s
+    -- isHeadTerminal [a] = isTerminal a
+    -- isHeadTerminal _ = False
+    -- safeInit [] = []
+    -- safeInit a = init a
+    -- epsilon_symbols = safeInit . takeWhile (isHeadTerminal . fst) $ alphaBeta s
+    -- epsilon_keys = Map.fromList $ concatMap auxiliary epsilon_symbols
     zero_symbols = toList $ first' s
     zero_keys = Map.fromList $ (,[0]) . ([],) <$> zero_symbols
-    auxiliary (prev, next) = (,[]) . (prev',) <$> toList (first' next)
-      where
-        prev' = reverse . take q . reverse $ (\(Terminal t) -> t) <$> prev
+    -- auxiliary (prev, next) = (,[]) . (prev',) <$> toList (first' next)
+    --   where
+    --     prev' = reverse . take q . reverse $ (\(Terminal t) -> t) <$> prev
 
 llpParsingTable ::
   (Ord nt, Ord t, Show nt, Show t) =>
@@ -362,11 +352,11 @@ pairs q k = toList . auxiliary Seq.empty Seq.empty . Seq.fromList
 llpParse :: (Ord nt, Ord t, Show nt, Show t) => Int -> Int -> Grammar nt t -> [t] -> [Int]
 llpParse q k grammar = concatMap auxiliary . pairs q k . addStoppers . aug
   where
-    addStoppers = (replicate 1 RightTurnstile ++) . (++ replicate 1 LeftTurnstile)
+    addStoppers = (replicate q RightTurnstile ++) . (++ replicate k LeftTurnstile)
     aug = fmap AugmentedTerminal
     augmented_grammar = augmentGrammar q k grammar
     Just table = llpParsingTable q k augmented_grammar
-    auxiliary = (table Map.!)
+    auxiliary = (table Map.!) . debug
       -- where
       --   pairs = [(a, b) | a <- tails back, b <- inits forw]
       --   p = List.head $ mapMaybe (`Map.lookup` table) pairs
