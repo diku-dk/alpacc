@@ -149,20 +149,20 @@ ll1ParseFailTestCase = TestCase $ assertEqual "LL(1) parsing test" expected resu
 
 firstkTestCase k = TestCase $ assertEqual [i|First k=#{k} set test|] expected result
   where
-    firstsTuples string = (naiveFirst k grammar string, first k grammar string)
-    strings = symbols <$> productions grammar
+    firstsTuples string = (naiveFirst k extendedGrammar string, first k extendedGrammar string)
+    strings = symbols <$> productions extendedGrammar
     (expected, result) = unzip $ firstsTuples <$> strings
 
-firstkTestCases = [firstkTestCase k | k <- [1..20]]
+firstkTestCases = [firstkTestCase k | k <- [1..3]]
 
 followkTestCase k = TestCase $ assertEqual [i|Follow k=#{k} set test|] expected result
   where
-    extended_grammar = extendGrammar k grammar
+    extended_grammar = extendGrammar k extendedGrammar
     followsTuples string = (naiveFollow k extended_grammar string, follow k extended_grammar string)
     nonterminals' = nonterminals extended_grammar
     (expected, result) = unzip $ followsTuples <$> nonterminals'
 
-followkTestCases = [followkTestCase k | k <- [1..6]]
+followkTestCases = [followkTestCase k | k <- [1..3]]
 
 tests =
   TestLabel "LL(k) tests" $

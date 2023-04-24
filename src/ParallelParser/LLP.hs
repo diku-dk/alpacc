@@ -356,7 +356,7 @@ llpParse q k grammar = concatMap auxiliary . pairs q k . addStoppers . aug
     aug = fmap AugmentedTerminal
     augmented_grammar = augmentGrammar q k grammar
     Just table = llpParsingTable q k augmented_grammar
-    auxiliary = (table Map.!) . debug
+    auxiliary = (table Map.!)
       -- where
       --   pairs = [(a, b) | a <- tails back, b <- inits forw]
       --   p = List.head $ mapMaybe (`Map.lookup` table) pairs
