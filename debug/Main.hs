@@ -18,7 +18,6 @@ import Data.Semigroup ((<>))
 import Data.String.Interpolate (i)
 import System.FilePath.Posix (stripExtension, takeFileName)
 import qualified Data.List as List
-import ParallelParser.LL
 import Prelude hiding (last)
 import Data.Bifunctor (Bifunctor (bimap))
 import ParallelParser.LL
@@ -69,9 +68,7 @@ followExtendedGrammar =
           Production "T" [Terminal "a", Nonterminal "T", Terminal "c"],
           Production "R" [],
           Production "R" [Nonterminal "R", Terminal "b", Nonterminal "R"]
-        ],
-      leftPadding = Nothing,
-      rightPadding = Just "$"
+        ]
     }
 
 main :: IO ()

@@ -24,9 +24,7 @@ grammar =
           Production "E'" [],
           Production "T" [Terminal "a"],
           Production "T" [Terminal "[", Nonterminal "E", Terminal "]"]
-        ],
-      leftPadding = Nothing,
-      rightPadding = Nothing
+        ]
     }
 
 augmentedGrammar :: Grammar (AugmentedNonterminal String) (AugmentedTerminal String)
@@ -64,9 +62,7 @@ augmentedGrammar =
               Nonterminal (AugmentedNonterminal "E"),
               Terminal (AugmentedTerminal "]")
             ]
-        ],
-      leftPadding = Just RightTurnstile,
-      rightPadding = Just LeftTurnstile
+        ]
     }
 
 augT = AugmentedTerminal
@@ -488,7 +484,7 @@ collection =
 
 augmentGrammarTestCase = TestCase $ assertEqual "Augment grammar test" expected result
   where
-    sortGrammar (Grammar s t nt ps a b) = Grammar s (List.sort t) (List.sort nt) (List.sort ps) a b 
+    sortGrammar (Grammar s t nt ps) = Grammar s (List.sort t) (List.sort nt) (List.sort ps) 
     augmented_grammar = augmentGrammar 1 1 grammar
     expected = sortGrammar augmentedGrammar
     result = sortGrammar augmented_grammar

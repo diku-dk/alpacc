@@ -4,10 +4,14 @@ import qualified Data.List as List
 import qualified Data.Set as Set
 import ParallelParser.Grammar
 import ParallelParser.LL
+import ParallelParser.LLP
 import Test.HUnit
 import Debug.Trace (traceShow)
 import Text.ParserCombinators.ReadP (string)
 import Data.String.Interpolate (i)
+import Data.Sequence (Seq (..), (<|), (><), (|>))
+import qualified Data.Sequence as Seq hiding (Seq (..), (<|), (><), (|>))
+import Data.Maybe
 
 debug x = traceShow x x
 
@@ -21,9 +25,7 @@ grammar =
           Production "T" [Terminal "a", Nonterminal "T", Terminal "c"],
           Production "R" [],
           Production "R" [Terminal "b", Nonterminal "R"]
-        ],
-      leftPadding = Nothing,
-      rightPadding = Nothing
+        ]
     }
 
 followExtendedGrammar =
@@ -37,9 +39,7 @@ followExtendedGrammar =
           Production "T" [Terminal "a", Nonterminal "T", Terminal "c"],
           Production "R" [],
           Production "R" [Nonterminal "R", Terminal "b", Nonterminal "R"]
-        ],
-      leftPadding = Nothing,
-      rightPadding = Just "$"
+        ]
     }
 
 extendedGrammar =
@@ -53,9 +53,7 @@ extendedGrammar =
           Production "T" [Terminal "a", Nonterminal "T", Terminal "c"],
           Production "R" [],
           Production "R" [Terminal "b", Nonterminal "R"]
-        ],
-      leftPadding = Nothing,
-      rightPadding = Just "$"
+        ]
     }
 
 bookGrammar =
@@ -73,9 +71,7 @@ bookGrammar =
           Production "B" [Nonterminal "C", Nonterminal "B", Nonterminal "C"],
           Production "C" [Terminal "a"],
           Production "C" [Terminal "b"]
-        ],
-      leftPadding = Nothing,
-      rightPadding = Just "$"
+        ]
     }
 
 nullableTestCase = TestCase $ assertEqual "Nullable test" expected result
@@ -133,12 +129,14 @@ followLargeTestCase = TestCase $ assertEqual "Large Follow k=1 test" expected re
         Set.fromList [["a"], ["b"], ["$"]]
       ]
 
-ll1ParseTestCase = TestCase $ assertEqual "LL(1) parsing test" expected result
+llkParseTestCase k = TestCase $ assertEqual [i|LL(#{k}) parsing test|] expected result
   where
-    llkParse' = llParse 1 extendedGrammar
+    llkParse' = llParse k extendedGrammar
     input = List.singleton <$> "aabbbcc$"
     result = llkParse' (input, [Nonterminal $ start extendedGrammar], [])
     expected = Just ([], [], [0, 2, 2, 1, 4, 4, 4, 3])
+
+llkParseTestCases = [llkParseTestCase k | k <- [1..10]]
 
 ll1ParseFailTestCase = TestCase $ assertEqual "LL(1) parsing test" expected result
   where
@@ -157,12 +155,32 @@ firstkTestCases = [firstkTestCase k | k <- [1..20]]
 
 followkTestCase k = TestCase $ assertEqual [i|Follow k=#{k} set test|] expected result
   where
-    extended_grammar = extendGrammar k extendedGrammar
-    followsTuples string = (naiveFollow k extended_grammar string, follow k extended_grammar string)
-    nonterminals' = nonterminals extended_grammar
+    followsTuples string = (naiveFollow k extendedGrammar string, follow k extendedGrammar string)
+    nonterminals' = nonterminals extendedGrammar
     (expected, result) = unzip $ followsTuples <$> nonterminals'
 
 followkTestCases = [followkTestCase k | k <- [1..7]]
+
+deriveNLengths n grammar = Set.fromList . bfs . Seq.singleton . List.singleton . Nonterminal $ start grammar
+  where
+    unpackT (Terminal t) = t
+    leftDerivations' = leftDerivations grammar
+    bfs Empty = []
+    bfs (top :<| queue)
+      | length top > n = bfs queue
+      | all isTerminal top = (unpackT <$> top) : bfs (queue >< leftDerivations' top)
+      | otherwise = bfs (queue >< leftDerivations' top)
+
+exntendedGrammarDerivations10 = deriveNLengths 10 extendedGrammar
+
+canParseDerivedTestCase k = TestCase $ assertEqual [i|Can parse derived strings og length 10 with LL(#{k}) parser|] expected result
+  where
+    expected = True
+    result = all isJust $ llkParse' `Set.map` exntendedGrammarDerivations10 
+    start' = Nonterminal $ start extendedGrammar
+    llkParse' a = llParse k extendedGrammar (a, [start'], [])
+
+canParseDerivedTestCases = [canParseDerivedTestCase k | k <- [1..10]]
 
 tests =
   TestLabel "LL(k) tests" $
@@ -171,7 +189,8 @@ tests =
         firstSmallTestCase,
         followSmallTestCase,
         followLargeTestCase,
-        ll1ParseTestCase,
         ll1ParseFailTestCase
       ] ++ firstkTestCases
         ++ followkTestCases
+        ++ canParseDerivedTestCases
+        ++ llkParseTestCases

@@ -106,9 +106,7 @@ data Grammar nt t = Grammar
   { start :: nt,
     terminals :: [t],
     nonterminals :: [nt],
-    productions :: [Production nt t],
-    leftPadding :: Maybe t,
-    rightPadding :: Maybe t
+    productions :: [Production nt t]
   }
   deriving (Ord, Eq, Show)
 
@@ -187,9 +185,7 @@ pGrammar = tuple
           { start = read s,
             terminals = read <$> ts,
             nonterminals = read <$> nts,
-            productions = ps,
-            leftPadding = Nothing,
-            rightPadding = Nothing
+            productions = ps
           }
 
 instance (Read nt, Read t) => Read (Grammar nt t) where
@@ -239,9 +235,7 @@ extendGrammar k grammar =
     { start = ExtendedStart,
       terminals = terminals',
       nonterminals = nonterminals',
-      productions = productions',
-      rightPadding = Just End,
-      leftPadding = Nothing
+      productions = productions'
     }
   where
     extended_productions = augmentProduction <$> productions grammar
@@ -264,9 +258,7 @@ augmentGrammar q k grammar =
     { start = Start,
       terminals = terminals',
       nonterminals = nonterminals',
-      productions = productions',
-      leftPadding = Just RightTurnstile,
-      rightPadding = Just LeftTurnstile
+      productions = productions'
     }
   where
     augmented_productions = augmentProduction <$> productions grammar
@@ -303,9 +295,7 @@ unpackNTTGrammar grammar =
     { start = unpackNT $ start grammar,
       terminals = unpackT <$> terminals grammar,
       nonterminals = unpackNT <$> nonterminals grammar,
-      productions = bimap unpackNT unpackT <$> productions grammar,
-      leftPadding = unpackT <$> leftPadding grammar,
-      rightPadding = unpackT <$> rightPadding grammar
+      productions = bimap unpackNT unpackT <$> productions grammar
     }
   where
     unpackT (T s) = s
