@@ -226,16 +226,21 @@ followsOne grammar end = fixedPointIterate (/=) f init_follow_map
         follow_epsilon = if [] `elem` first_set then follow_map' Map.! aj else Set.empty
         follow_w' = if null w' then follow_map' Map.! aj else Set.empty
 
-follows :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> Maybe t -> Map nt (Set [t])
-follows k grammar end = fixedPointIterate (/=) f init_follow_map
+follows :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> Map nt (Set [t])
+follows k grammar = unextendMap $ fixedPointIterate (/=) f init_follow_map
   where
-    first' = first k grammar
-    [Production nt syms] = findProductions grammar (start grammar)
-    Just (Nonterminal s) = find isNonterminal syms
-    stopper = Set.singleton . concat . maybeToList $ replicate k <$> end
-    init_follow_map = Map.insert s stopper . Map.fromList . map (,Set.empty) $ nonterminals grammar
+    unextendKeys =
+      Map.mapKeys unextendNT
+      . Map.filterWithKey (\k _ -> k/=start extended_grammar)
+    unextendValues = fmap (Set.map (fmap unextendT . filter (/=End)) . Set.filter (not . all (==End)))
+    unextendMap = unextendValues . unextendKeys
+    extended_grammar = extendGrammar k grammar
+    old_start = ExtendedNonterminal $ start grammar
+    first' = first k extended_grammar
+    stopper = Set.singleton $ replicate k End
+    init_follow_map = Map.insert old_start stopper . Map.fromList . map (,Set.empty) $ nonterminals extended_grammar
     f follow_map = Map.unionsWith Set.union $ map (auxiliary follow_map) right_productions
-    right_productions = concatMap rightProductons $ productions grammar
+    right_productions = concatMap rightProductons $ productions extended_grammar
     auxiliary follow_map' (aj, (ai, w')) = Map.adjust (Set.union subset) ai follow_map'
       where
         first_set = first' w'
@@ -244,7 +249,7 @@ follows k grammar end = fixedPointIterate (/=) f init_follow_map
 follow :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> nt -> Set [t]
 follow k grammar = (follows' Map.!)
   where
-    follows' = follows k grammar (rightPadding grammar)
+    follows' = follows k grammar
 
 last :: (Show nt, Show a, Ord nt, Ord a) => Int -> Grammar nt a -> [Symbol nt a] -> Set [a]
 last q grammar = Set.map reverse . lasts . reverse
@@ -254,7 +259,7 @@ last q grammar = Set.map reverse . lasts . reverse
 before :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> nt -> Set [t]
 before q grammar = Set.map reverse . (befores Map.!)
   where
-    befores = follows q (reverseGrammar grammar) (leftPadding grammar)
+    befores = follows q $ reverseGrammar grammar
 
 llTable :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> Map (nt, [t]) Int
 llTable k grammar = Map.union first_table follow_table
