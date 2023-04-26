@@ -296,12 +296,17 @@ llParse k grammar = auxiliary
         keys =
           filter (`Map.member` table)
             . fmap (y,)
+            . (++[[]])
             . takeWhile (not . null)
             . iterate init
             $ take k input
+        
+        safeHead [] = Nothing
+        safeHead (x:_) = Just x
 
         maybeTuple = do
-          index <- head keys `Map.lookup` table
+          key <- safeHead keys
+          index <- key `Map.lookup` table
           production <- index `Map.lookup` production_map
           return (index, symbols production)
 
