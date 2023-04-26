@@ -23,7 +23,6 @@ import Prelude hiding (last)
 import Data.Bifunctor (Bifunctor (bimap))
 import ParallelParser.LL
 import Control.Parallel.Strategies
-import Debug.Trace (traceShow)
 debug x = traceShow x x
 
 data Parametars = Parametars
@@ -103,8 +102,9 @@ main = do
   let aug_follow' = follow k augmented_grammar aug_nt
   putStrLn "LLP Table"
   mapM_ print $ M.toList table
-  putStrLn "Missing parses"
-  mapM_ print . M.toList . M.filterWithKey ((isNothing . ).  auxiliary llTableParse') $  unwrapped
+  -- mapM_ (\x -> do putStrLn " "; mapM_ print x) collection
+  -- putStrLn "Missing parses"
+  -- mapM_ print . M.toList . M.filterWithKey ((isNothing . ).  auxiliary llTableParse') $ unwrapped
   -- putStrLn "LL Table"
   -- mapM_ print . M.toList $ ll_table
   -- putStrLn $ "first(" ++ nt ++ ")"

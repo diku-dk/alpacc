@@ -76,7 +76,11 @@ instance Read NT where
 data Symbol nt t
   = Nonterminal nt
   | Terminal t
-  deriving (Ord, Eq, Show, Read, Functor)
+  deriving (Ord, Eq, Read, Functor)
+
+instance (Show nt, Show t) => Show (Symbol nt t) where
+  show (Nonterminal a) = show a
+  show (Terminal a) = show a
 
 instance Bifunctor Symbol where
   first f (Nonterminal nt) = Nonterminal $ f nt
@@ -271,8 +275,8 @@ augmentGrammar q k grammar =
     augmented_terminals = AugmentedTerminal <$> terminals grammar
     terminals' = RightTurnstile : LeftTurnstile : augmented_terminals
     start' = Nonterminal . AugmentedNonterminal $ start grammar
-    leftPad = replicate q (Terminal RightTurnstile)
-    rightPad = replicate k (Terminal LeftTurnstile)
+    leftPad = [Terminal RightTurnstile]
+    rightPad = [Terminal LeftTurnstile]
     symbols' = leftPad ++ [start'] ++ rightPad
     augmentProduction = bimap AugmentedNonterminal AugmentedTerminal
 
