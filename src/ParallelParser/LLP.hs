@@ -120,7 +120,9 @@ newLlpItems ::
   [Symbol nt t] ->
   DotProduction nt t ->
   Set (Item nt t)
-newLlpItems q k grammar vi delta dot_production = product'
+newLlpItems q k grammar vi delta dot_production 
+  | null x = Set.empty
+  | otherwise = product'
   where
     product' = Set.fromList [newItem u v | u <- uj, v <- vj]
     last' = last q grammar . (++ alpha)
@@ -153,7 +155,7 @@ addLlpItem ::
 addLlpItem q grammar items old_item
   | null alpha_y = Set.empty
   | isTerminal $ List.last alpha_y = Set.empty
-  | otherwise = Set.unions $ newItems `Set.map` deltas
+  | otherwise = newItems `Set.map` deltas
   where
     Item
       { dotProduction = DotProduction x alpha_y beta,
@@ -164,11 +166,11 @@ addLlpItem q grammar items old_item
     y = (\(Nonterminal nt) -> nt) $ List.last alpha_y
     productions' = productions grammar
     deltas = Set.fromList $ symbols <$> findProductions grammar y
-    newItems delta = newItem `Set.map` u'
+    newItems delta = newItem u'
       where
         last' = last q grammar . (++ delta)
         before' = fmap Terminal `Set.map` before q grammar y
-        u' = last' `Set.map` if null before' then Set.singleton [] else before'
+        u' = Set.unions $ last' `Set.map` if null before' then Set.singleton [] else before'
         newItem u =
           Item
             { dotProduction = DotProduction y delta [],
@@ -183,9 +185,10 @@ addLlpItems ::
   Grammar nt t ->
   Set (Item nt t) ->
   Set (Item nt t)
-addLlpItems q grammar items = Set.union items $ Set.unions added_items
+addLlpItems q grammar = fixedPointIterate (/=) addedItems
   where
-    added_items = addLlpItem q grammar items `Set.map` items
+    addedItems items = foldl folder items items
+    folder a b = a `Set.union` addLlpItem q grammar a b
 
 nextLlpItems ::
   (Ord t, Ord nt, Show nt, Show t) =>
@@ -212,16 +215,15 @@ solveLlpItems ::
   Set (Item nt t) ->
   Set (Set (Item nt t))
 solveLlpItems q k grammar =
-  Set.map (fixedPointIterate (/=) (addLlpItems q grammar))
-    . Set.fromList
-    . fmap (Set.unions . fmap (nextLlpItems q k grammar))
+  Set.fromList
+    . fmap (addLlpItems q grammar  . Set.unions . fmap (nextLlpItems q k grammar))
     . List.groupBy ((==) `on` auxiliary)
     . List.sortOn auxiliary
     . toList
   where
     auxiliary = safeLast . (\(DotProduction _ xs _) -> xs) . dotProduction
-    safeLast [] = Nothing
-    safeLast x = Just $ List.last x
+    safeLast [] = []
+    safeLast x = [List.last x]
 
 llpCollection ::
   (Ord t, Ord nt, Show nt, Show t) =>
@@ -354,11 +356,12 @@ pairs q k = toList . auxiliary Seq.empty Seq.empty . Seq.fromList
             n = Seq.length seq
 
 llpParse :: (Ord nt, Ord t, Show nt, Show t) => Int -> Int -> Grammar nt t -> [t] -> [Int]
-llpParse q k grammar = concatMap auxiliary . pairs q k . addStoppers . aug
+llpParse q k grammar [] = []
+llpParse q k grammar string = concatMap auxiliary . pairs q k . addStoppers $ aug string
   where
     addStoppers = ([RightTurnstile] ++) . (++ [LeftTurnstile])
     aug = fmap AugmentedTerminal
-    augmented_grammar = augmentGrammar q k grammar
+    augmented_grammar = augmentGrammar grammar
     Just table = llpParsingTable q k augmented_grammar
     auxiliary = (table Map.!) . debug
       -- where

@@ -161,7 +161,13 @@ followkTestCase k = TestCase $ assertEqual [i|Follow k=#{k} set test|] expected 
 
 followkTestCases = [followkTestCase k | k <- [1..7]]
 
-deriveNLengths n grammar = Set.fromList . bfs . Seq.singleton . List.singleton . Nonterminal $ start grammar
+deriveNLengths n grammar = 
+  Set.fromList
+    . bfs
+    . Seq.singleton
+    . List.singleton
+    . Nonterminal
+    $ start grammar
   where
     unpackT (Terminal t) = t
     leftDerivations' = leftDerivations grammar
@@ -171,10 +177,11 @@ deriveNLengths n grammar = Set.fromList . bfs . Seq.singleton . List.singleton .
       | all isTerminal top = (unpackT <$> top) : bfs (queue >< leftDerivations' top)
       | otherwise = bfs (queue >< leftDerivations' top)
 
-exntendedGrammarDerivations10 = deriveNLengths 10 extendedGrammar
+exntendedGrammarDerivations10 = deriveNLengths 20 extendedGrammar
 
-canParseDerivedTestCase k = TestCase $ assertEqual [i|Can parse derived strings og length 10 with LL(#{k}) parser|] expected result
+canParseDerivedTestCase k = TestCase $ assertEqual text expected result
   where
+    text = [i|Can parse derived strings og length 10 with LL(#{k}) parser|]
     expected = True
     result = all isJust $ llkParse' `Set.map` exntendedGrammarDerivations10 
     start' = Nonterminal $ start extendedGrammar

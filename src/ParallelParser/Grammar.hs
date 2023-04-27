@@ -249,11 +249,9 @@ extendGrammar k grammar =
     augmentProduction = bimap ExtendedNonterminal ExtendedTerminal
 
 augmentGrammar ::
-  Int ->
-  Int ->
   Grammar nt t ->
   Grammar (AugmentedNonterminal nt) (AugmentedTerminal t)
-augmentGrammar q k grammar =
+augmentGrammar grammar =
   grammar
     { start = Start,
       terminals = terminals',
