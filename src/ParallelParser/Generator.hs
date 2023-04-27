@@ -110,7 +110,7 @@ def key_to_productions (key : (#{lookback_type}, #{lookahead_type})) =
   case _ -> assert false #{last_case}
 
 def parse [n] (arr : [n]u32) =
-  let arr' = #{start_terminals} ++ (map (+2) arr) ++ #{end_terminals}
+  let arr' = #{start_terminal} ++ (map (+2) arr) ++ #{end_terminal}
   in keys arr'
   |> map key_to_productions
   |> flatten
@@ -120,15 +120,15 @@ def parse [n] (arr : [n]u32) =
 |]
   where
     any_is_nothing =
-      isNothing maybe_start_terminals
-        || isNothing maybe_end_terminals
+      isNothing maybe_start_terminal
+        || isNothing maybe_end_terminal
         || isNothing maybe_table
-    Just start_terminals = toArray . fmap show . replicate q <$> maybe_start_terminals
-    Just end_terminals = toArray . fmap show . replicate k <$> maybe_end_terminals
+    Just start_terminal = List.singleton . show <$> maybe_start_terminal
+    Just end_terminal = List.singleton . show <$> maybe_end_terminal
     Just table = maybe_table
-    maybe_start_terminals = List.elemIndex RightTurnstile terminals'
-    maybe_end_terminals = List.elemIndex LeftTurnstile terminals'
-    augmented_grammar = augmentGrammar q k grammar
+    maybe_start_terminal = List.elemIndex RightTurnstile terminals'
+    maybe_end_terminal = List.elemIndex LeftTurnstile terminals'
+    augmented_grammar = augmentGrammar grammar
     maybe_table = llpParsingTable q k augmented_grammar
     terminals' = terminals augmented_grammar
     lookback_type = toTuple $ replicate q "u32"

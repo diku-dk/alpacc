@@ -254,7 +254,7 @@ follow k grammar = (follows' Map.!)
 last :: (Show nt, Show a, Ord nt, Ord a) => Int -> Grammar nt a -> [Symbol nt a] -> Set [a]
 last q grammar = Set.map reverse . lasts . reverse
   where
-    lasts = naiveFirst q $ reverseGrammar grammar
+    lasts = first q $ reverseGrammar grammar
 
 before :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> nt -> Set [t]
 before q grammar = Set.map reverse . (befores Map.!)
