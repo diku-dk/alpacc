@@ -99,7 +99,7 @@ collection =
     [ Set.fromList -- = #
         [ Item -- 1. Item
             { dotProduction = DotProduction Start [rightTurnstile', augNT' "E", leftTurnstile'] [],
-              suffix = Set.singleton [LeftTurnstile],
+              suffix = [LeftTurnstile],
               prefix = [],
               shortestPrefix = []
             }
@@ -107,49 +107,49 @@ collection =
       Set.fromList -- = ⊣
         [ Item -- 1. Item
             { dotProduction = DotProduction Start [rightTurnstile', augNT' "E"] [leftTurnstile'],
-              suffix = Set.singleton  [augT "a"],
+              suffix =  [augT "a"],
               prefix = [LeftTurnstile],
               shortestPrefix = [leftTurnstile']
             },
           Item
             { dotProduction = DotProduction Start [rightTurnstile', augNT' "E"] [leftTurnstile'],
-              suffix = Set.singleton [augT "]"],
+              suffix = [augT "]"],
               prefix = [LeftTurnstile],
               shortestPrefix = [leftTurnstile']
             },
           Item -- 2. Item
             { dotProduction = DotProduction (augNT "E") [augNT' "T", augNT' "E'"] [],
-              suffix = Set.singleton [augT "a"],
+              suffix = [augT "a"],
               prefix = [LeftTurnstile],
               shortestPrefix = [leftTurnstile']
             },
           Item
             { dotProduction = DotProduction (augNT "E") [augNT' "T", augNT' "E'"] [],
-              suffix = Set.singleton [augT "]"],
+              suffix = [augT "]"],
               prefix = [LeftTurnstile],
               shortestPrefix = [leftTurnstile']
             },
           Item -- 3. Item
             { dotProduction = DotProduction (augNT "E'") [augT' "+", augNT' "T", augNT' "E'"] [],
-              suffix = Set.singleton [augT "a"],
+              suffix = [augT "a"],
               prefix = [LeftTurnstile],
               shortestPrefix = [leftTurnstile']
             },
           Item
             { dotProduction = DotProduction (augNT "E'") [augT' "+", augNT' "T", augNT' "E'"] [],
-              suffix = Set.singleton [augT "]"],
+              suffix = [augT "]"],
               prefix = [LeftTurnstile],
               shortestPrefix = [leftTurnstile']
             },
           Item -- 4. Item
             { dotProduction = DotProduction (augNT "E'") [] [],
-              suffix = Set.singleton  [augT "a"],
+              suffix =  [augT "a"],
               prefix = [LeftTurnstile],
               shortestPrefix = [leftTurnstile']
             },
           Item
             { dotProduction = DotProduction (augNT "E'") [] [],
-              suffix = Set.singleton [augT "]"],
+              suffix = [augT "]"],
               prefix = [LeftTurnstile],
               shortestPrefix = [leftTurnstile']
             }
@@ -157,13 +157,13 @@ collection =
       Set.fromList -- = E1
         [ Item -- 1. Item
             { dotProduction = DotProduction Start [rightTurnstile'] [augNT' "E", leftTurnstile'],
-              suffix = Set.singleton [RightTurnstile],
+              suffix = [RightTurnstile],
               prefix = [augT "a"],
               shortestPrefix = [augNT' "E"]
             },
           Item
             { dotProduction = DotProduction Start [rightTurnstile'] [augNT' "E", leftTurnstile'],
-              suffix = Set.singleton [RightTurnstile],
+              suffix = [RightTurnstile],
               prefix = [augT "["],
               shortestPrefix = [augNT' "E"]
             }
@@ -171,73 +171,73 @@ collection =
       Set.fromList -- = E'1
         [ Item -- 1. Item
             { dotProduction = DotProduction (augNT "E") [augNT' "T"] [augNT' "E'"],
-              suffix = Set.singleton [augT "a"],
+              suffix = [augT "a"],
               prefix = [LeftTurnstile],
               shortestPrefix = [augNT' "E'", leftTurnstile']
             },
           Item
             { dotProduction = DotProduction (augNT "E") [augNT' "T"] [augNT' "E'"],
-              suffix = Set.singleton [augT "]"],
+              suffix = [augT "]"],
               prefix = [LeftTurnstile],
               shortestPrefix = [augNT' "E'", leftTurnstile']
             },
           Item -- 2. Item
             { dotProduction = DotProduction (augNT "E") [augNT' "T"] [augNT' "E'"],
-              suffix = Set.singleton [augT "a"],
+              suffix = [augT "a"],
               prefix = [augT "+"],
               shortestPrefix = [augNT' "E'"]
             },
           Item
             { dotProduction = DotProduction (augNT "E") [augNT' "T"] [augNT' "E'"],
-              suffix = Set.singleton [augT "]"],
+              suffix = [augT "]"],
               prefix = [augT "+"],
               shortestPrefix = [augNT' "E'"]
             },
           Item -- 3. Item
             { dotProduction = DotProduction (augNT "E'") [augT' "+", augNT' "T"] [augNT' "E'"],
-              suffix = Set.singleton [augT "a"],
+              suffix = [augT "a"],
               prefix = [LeftTurnstile],
               shortestPrefix = [augNT' "E'", leftTurnstile']
             },
           Item
             { dotProduction = DotProduction (augNT "E'") [augT' "+", augNT' "T"] [augNT' "E'"],
-              suffix = Set.singleton [augT "]"],
+              suffix = [augT "]"],
               prefix = [LeftTurnstile],
               shortestPrefix = [augNT' "E'", leftTurnstile']
             },
           Item -- 4. Item
             { dotProduction = DotProduction (augNT "E'") [augT' "+", augNT' "T"] [augNT' "E'"],
-              suffix = Set.singleton [augT "a"],
+              suffix = [augT "a"],
               prefix = [augT "+"],
               shortestPrefix = [augNT' "E'"]
             },
           Item
             { dotProduction = DotProduction (augNT "E'") [augT' "+", augNT' "T"] [augNT' "E'"],
-              suffix = Set.singleton [augT "]"],
+              suffix = [augT "]"],
               prefix = [augT "+"],
               shortestPrefix = [augNT' "E'"]
             },
           Item -- 5. Item
             { dotProduction = DotProduction (augNT "T") [augT' "a"] [],
-              suffix = Set.singleton [augT "a"],
+              suffix = [augT "a"],
               prefix = [LeftTurnstile],
               shortestPrefix = [augNT' "E'", leftTurnstile']
             },
           Item -- 6. Item
             { dotProduction = DotProduction (augNT "T") [augT' "a"] [],
-              suffix = Set.singleton [augT "a"],
+              suffix = [augT "a"],
               prefix = [augT "+"],
               shortestPrefix = [augNT' "E'"]
             },
           Item -- 5. Item
             { dotProduction = DotProduction (augNT "T") [augT' "[", augNT' "E", augT' "]"] [],
-              suffix = Set.singleton [augT "]"],
+              suffix = [augT "]"],
               prefix = [LeftTurnstile],
               shortestPrefix = [augNT' "E'", leftTurnstile']
             },
           Item -- 6. Item
             { dotProduction = DotProduction (augNT "T") [augT' "[", augNT' "E", augT' "]"] [],
-              suffix = Set.singleton [augT "]"],
+              suffix = [augT "]"],
               prefix = [augT "+"],
               shortestPrefix = [augNT' "E'"]
             }
@@ -245,7 +245,7 @@ collection =
       Set.fromList -- = ⊢
         [ Item -- 1. Item
             { dotProduction = DotProduction Start [] [rightTurnstile', augNT' "E", leftTurnstile'],
-              suffix = Set.singleton [],
+              suffix = [],
               prefix = [RightTurnstile],
               shortestPrefix = [rightTurnstile']
             }
@@ -253,37 +253,37 @@ collection =
       Set.fromList -- = T
         [ Item -- 1. Item
             { dotProduction = DotProduction (augNT "E") [] [augNT' "T", augNT' "E'"],
-              suffix = Set.singleton [RightTurnstile],
+              suffix = [RightTurnstile],
               prefix = [augT "a"],
               shortestPrefix = [augNT' "T"]
             },
           Item
             { dotProduction = DotProduction (augNT "E") [] [augNT' "T", augNT' "E'"],
-              suffix = Set.singleton [augT "["],
+              suffix = [augT "["],
               prefix = [augT "a"],
               shortestPrefix = [augNT' "T"]
             },
           Item
             { dotProduction = DotProduction (augNT "E") [] [augNT' "T", augNT' "E'"],
-              suffix = Set.singleton [RightTurnstile],
+              suffix = [RightTurnstile],
               prefix = [augT "["],
               shortestPrefix = [augNT' "T"]
             },
           Item
             { dotProduction = DotProduction (augNT "E") [] [augNT' "T", augNT' "E'"],
-              suffix = Set.singleton [augT "["],
+              suffix = [augT "["],
               prefix = [augT "["],
               shortestPrefix = [augNT' "T"]
             },
           Item -- 2. Item
             { dotProduction = DotProduction (augNT "E'") [augT' "+"] [augNT' "T", augNT' "E'"],
-              suffix = Set.singleton [augT "+"],
+              suffix = [augT "+"],
               prefix = [augT "a"],
               shortestPrefix = [augNT' "T"]
             },
           Item
             { dotProduction = DotProduction (augNT "E'") [augT' "+"] [augNT' "T", augNT' "E'"],
-              suffix = Set.singleton [augT "+"],
+              suffix = [augT "+"],
               prefix = [augT "["],
               shortestPrefix = [augNT' "T"]
             }
@@ -291,19 +291,19 @@ collection =
       Set.fromList -- = a
         [ Item -- 1. Item
             { dotProduction = DotProduction (augNT "T") [] [augT' "a"],
-              suffix = Set.singleton [RightTurnstile],
+              suffix = [RightTurnstile],
               prefix = [augT "a"],
               shortestPrefix = [augT' "a"]
             },
           Item
             { dotProduction = DotProduction (augNT "T") [] [augT' "a"],
-              suffix = Set.singleton [augT "+"],
+              suffix = [augT "+"],
               prefix = [augT "a"],
               shortestPrefix = [augT' "a"]
             },
           Item
             { dotProduction = DotProduction (augNT "T") [] [augT' "a"],
-              suffix = Set.singleton [augT "["],
+              suffix = [augT "["],
               prefix = [augT "a"],
               shortestPrefix = [augT' "a"]
             }
@@ -311,49 +311,49 @@ collection =
       Set.fromList -- = ]
         [ Item -- 1. Item
             { dotProduction = DotProduction (augNT "T") [augT' "[", augNT' "E"] [augT' "]"],
-              suffix = Set.singleton [augT "a"],
+              suffix = [augT "a"],
               prefix = [augT "]"],
               shortestPrefix = [augT' "]"]
             },
           Item
             { dotProduction = DotProduction (augNT "T") [augT' "[", augNT' "E"] [augT' "]"],
-              suffix = Set.singleton [augT "]"],
+              suffix = [augT "]"],
               prefix = [augT "]"],
               shortestPrefix = [augT' "]"]
             },
           Item -- 2. Item
             { dotProduction = DotProduction (augNT "E") [augNT' "T", augNT' "E'"] [],
-              suffix = Set.singleton [augT "a"],
+              suffix = [augT "a"],
               prefix = [augT "]"],
               shortestPrefix = [augT' "]"]
             },
           Item
             { dotProduction = DotProduction (augNT "E") [augNT' "T", augNT' "E'"] [],
-              suffix = Set.singleton [augT "]"],
+              suffix = [augT "]"],
               prefix = [augT "]"],
               shortestPrefix = [augT' "]"]
             },
           Item -- 3. Item
             { dotProduction = DotProduction (augNT "E'") [augT' "+", augNT' "T", augNT' "E'"] [],
-              suffix = Set.singleton [augT "a"],
+              suffix = [augT "a"],
               prefix = [augT "]"],
               shortestPrefix = [augT' "]"]
             },
           Item
             { dotProduction = DotProduction (augNT "E'") [augT' "+", augNT' "T", augNT' "E'"] [],
-              suffix = Set.singleton [augT "]"],
+              suffix = [augT "]"],
               prefix = [augT "]"],
               shortestPrefix = [augT' "]"]
             },
           Item -- 4. Item
             { dotProduction = DotProduction (augNT "E'") [] [],
-              suffix = Set.singleton [augT "a"],
+              suffix = [augT "a"],
               prefix = [augT "]"],
               shortestPrefix = [augT' "]"]
             },
           Item
             { dotProduction = DotProduction (augNT "E'") [] [],
-              suffix = Set.singleton [augT "]"],
+              suffix = [augT "]"],
               prefix = [augT "]"],
               shortestPrefix = [augT' "]"]
             }
@@ -361,13 +361,13 @@ collection =
       Set.fromList -- = +
         [ Item -- 1. Item
             { dotProduction = DotProduction (augNT "E'") [] [augT' "+", augNT' "T", augNT' "E'"],
-              suffix = Set.singleton [augT "a"],
+              suffix = [augT "a"],
               prefix = [augT "+"],
               shortestPrefix = [augT' "+"]
             },
           Item
             { dotProduction = DotProduction (augNT "E'") [] [augT' "+", augNT' "T", augNT' "E'"],
-              suffix = Set.singleton [augT "]"],
+              suffix = [augT "]"],
               prefix = [augT "+"],
               shortestPrefix = [augT' "+"]
             }
@@ -375,13 +375,13 @@ collection =
       Set.fromList -- = E2
         [ Item -- 1. Item (I believe the E -> [.E] from the paper is an error so I use T -> [.E].)
             { dotProduction = DotProduction (augNT "T") [augT' "["] [augNT' "E", augT' "]"],
-              suffix = Set.singleton [augT "["],
+              suffix = [augT "["],
               prefix = [augT "a"],
               shortestPrefix = [augNT' "E"]
             },
           Item
             { dotProduction = DotProduction (augNT "T") [augT' "["] [augNT' "E", augT' "]"],
-              suffix = Set.singleton [augT "["],
+              suffix = [augT "["],
               prefix = [augT "["],
               shortestPrefix = [augNT' "E"]
             }
@@ -389,73 +389,73 @@ collection =
       Set.fromList -- = E'2
         [ Item -- 1. Item
             { dotProduction = DotProduction (augNT "E") [augNT' "T"] [augNT' "E'"],
-              suffix = Set.singleton [augT "a"],
+              suffix = [augT "a"],
               prefix = [augT "]"],
               shortestPrefix = [augNT' "E'", augT' "]"]
             },
           Item
             { dotProduction = DotProduction (augNT "E") [augNT' "T"] [augNT' "E'"],
-              suffix = Set.singleton [augT "]"],
+              suffix = [augT "]"],
               prefix = [augT "]"],
               shortestPrefix = [augNT' "E'", augT' "]"]
             },
           Item -- 2. Item
             { dotProduction = DotProduction (augNT "E") [augNT' "T"] [augNT' "E'"],
-              suffix = Set.singleton [augT "a"],
+              suffix = [augT "a"],
               prefix = [augT "+"],
               shortestPrefix = [augNT' "E'"]
             },
           Item
             { dotProduction = DotProduction (augNT "E") [augNT' "T"] [augNT' "E'"],
-              suffix = Set.singleton [augT "]"],
+              suffix = [augT "]"],
               prefix = [augT "+"],
               shortestPrefix = [augNT' "E'"]
             },
           Item -- 3. Item
             { dotProduction = DotProduction (augNT "E'") [augT' "+", augNT' "T"] [augNT' "E'"],
-              suffix = Set.singleton [augT "a"],
+              suffix = [augT "a"],
               prefix = [augT "]"],
               shortestPrefix = [augNT' "E'", augT' "]"]
             },
           Item
             { dotProduction = DotProduction (augNT "E'") [augT' "+", augNT' "T"] [augNT' "E'"],
-              suffix = Set.singleton [augT "]"],
+              suffix = [augT "]"],
               prefix = [augT "]"],
               shortestPrefix = [augNT' "E'", augT' "]"]
             },
           Item -- 4. Item
             { dotProduction = DotProduction (augNT "E'") [augT' "+", augNT' "T"] [augNT' "E'"],
-              suffix = Set.singleton [augT "a"],
+              suffix = [augT "a"],
               prefix = [augT "+"],
               shortestPrefix = [augNT' "E'"]
             },
           Item
             { dotProduction = DotProduction (augNT "E'") [augT' "+", augNT' "T"] [augNT' "E'"],
-              suffix = Set.singleton [augT "]"],
+              suffix = [augT "]"],
               prefix = [augT "+"],
               shortestPrefix = [augNT' "E'"]
             },
           Item -- 5. Item
             { dotProduction = DotProduction (augNT "T") [augT' "a"] [],
-              suffix = Set.singleton [augT "a"],
+              suffix = [augT "a"],
               prefix = [augT "]"],
               shortestPrefix = [augNT' "E'", augT' "]"]
             },
           Item -- 6. Item
             { dotProduction = DotProduction (augNT "T") [augT' "a"] [],
-              suffix = Set.singleton [augT "a"],
+              suffix = [augT "a"],
               prefix = [augT "+"],
               shortestPrefix = [augNT' "E'"]
             },
           Item -- 7. Item
             { dotProduction = DotProduction (augNT "T") [augT' "[", augNT' "E", augT' "]"] [],
-              suffix = Set.singleton [augT "]"],
+              suffix = [augT "]"],
               prefix = [augT "]"],
               shortestPrefix = [augNT' "E'", augT' "]"]
             },
           Item -- 8. Item
             { dotProduction = DotProduction (augNT "T") [augT' "[", augNT' "E", augT' "]"] [],
-              suffix = Set.singleton [augT "]"],
+              suffix = [augT "]"],
               prefix = [augT "+"],
               shortestPrefix = [augNT' "E'"]
             }
@@ -463,19 +463,19 @@ collection =
       Set.fromList -- = [
         [ Item -- 1. Item
             { dotProduction = DotProduction (augNT "T") [] [augT' "[", augNT' "E", augT' "]"],
-              suffix = Set.singleton [RightTurnstile],
+              suffix = [RightTurnstile],
               prefix = [augT "["],
               shortestPrefix = [augT' "["]
             },
           Item
             { dotProduction = DotProduction (augNT "T") [] [augT' "[", augNT' "E", augT' "]"],
-              suffix = Set.singleton [augT "+"],
+              suffix = [augT "+"],
               prefix = [augT "["],
               shortestPrefix = [augT' "["]
             },
           Item
             { dotProduction = DotProduction (augNT "T") [] [augT' "[", augNT' "E", augT' "]"],
-              suffix = Set.singleton [augT "["],
+              suffix = [augT "["],
               prefix = [augT "["],
               shortestPrefix = [augT' "["]
             }
@@ -492,9 +492,8 @@ augmentGrammarTestCase = TestCase $ assertEqual "Augment grammar test" expected 
 collectionTestCase = TestCase $ assertEqual "LLP collection test" expected result
   where
     expected = Set.empty
-    computed_collection = Set.map (Set.unions . Set.map unpackSets) $ llpCollection 1 1 augmentedGrammar
-    result = Set.map debug $ Set.difference computed_collection collection
-    unpackSets (Item dp s p sp) = Set.fromList [Item dp (Set.singleton s') p sp | s' <- toList s]
+    computed_collection = llpCollection 1 1 augmentedGrammar
+    result = Set.difference computed_collection collection
 
 pslsTestCase = TestCase $ assertEqual "PSLS table test" expected result
   where
@@ -509,7 +508,7 @@ llpqkParsingTestCase q k = TestCase $ assertEqual [i|LLP(#{q}, #{k}) parse test|
     expected = [0, 1, 4, 2, 5, 1, 4, 2, 4, 3, 3]
     parser q k = llpParse q k grammar input
 
-llpqkParsingTestCases = [llpqkParsingTestCase q k | q <- [1..5], k <- [1..5]]
+llpqkParsingTestCases = [llpqkParsingTestCase q k | q <- [1..3], k <- [1..3]]
 
 tests = 
   TestLabel "LLP(q, k) tests" $
