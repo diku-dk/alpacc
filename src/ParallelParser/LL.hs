@@ -207,26 +207,6 @@ dropWhileMinusOne = auxiliary Nothing
       | isJust last = fromJust last:x:xs
       | otherwise = x:xs
 
-followsOne :: (Ord nt, Ord t, Show nt, Show t) => Grammar nt t -> Maybe t -> Map nt (Set [t])
-followsOne grammar end = fixedPointIterate (/=) f init_follow_map
-  where
-    first' = first 1 grammar
-    stopper = Set.singleton . concat . maybeToList $ List.singleton <$> end
-    init_follow_map = Map.insert (start grammar) stopper . Map.fromList . map (,Set.empty) $ nonterminals grammar
-    f follow_map = Map.unionsWith Set.union $ map (auxiliary follow_map) right_productions
-    right_productions = concatMap rightProductons $ productions grammar
-    auxiliary follow_map' (aj, (ai, w')) = Map.adjust (Set.union new_set) ai follow_map'
-      where
-        new_set =
-          Set.unions
-            [ first_set,
-              follow_epsilon,
-              follow_w'
-            ]
-        first_set = first' w'
-        follow_epsilon = if [] `elem` first_set then follow_map' Map.! aj else Set.empty
-        follow_w' = if null w' then follow_map' Map.! aj else Set.empty
-
 follows :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> Map nt (Set [t])
 follows k grammar = unextendMap $ fixedPointIterate (/=) f init_follow_map
   where
@@ -239,7 +219,11 @@ follows k grammar = unextendMap $ fixedPointIterate (/=) f init_follow_map
     old_start = ExtendedNonterminal $ start grammar
     first' = first k extended_grammar
     stopper = Set.singleton $ replicate k End
-    init_follow_map = Map.insert old_start stopper . Map.fromList . map (,Set.empty) $ nonterminals extended_grammar
+    init_follow_map =
+      Map.insert old_start stopper
+        . Map.fromList
+        . map (,Set.empty)
+        $ nonterminals extended_grammar
     f follow_map = Map.unionsWith Set.union $ map (auxiliary follow_map) right_productions
     right_productions = concatMap rightProductons $ productions extended_grammar
     auxiliary follow_map' (aj, (ai, w')) = Map.adjust (Set.union subset) ai follow_map'
