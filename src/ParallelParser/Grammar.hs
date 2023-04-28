@@ -20,6 +20,8 @@ module ParallelParser.Grammar
     unextendNT,
     unextendT,
     extendGrammar,
+    unpackNonterminal,
+    unpackTerminal
   )
 where
 
@@ -95,6 +97,12 @@ data Production nt t
 instance Bifunctor Production where
   first f (Production nt s) = Production (f nt) (first f <$> s)
   second f (Production nt s) = Production nt (second f <$> s)
+
+unpackNonterminal :: Symbol nt t -> nt
+unpackNonterminal (Nonterminal a) = a
+
+unpackTerminal :: Symbol nt t -> t
+unpackTerminal (Terminal a) = a
 
 symbols :: Production nt t -> [Symbol nt t]
 symbols (Production _ s) = s
