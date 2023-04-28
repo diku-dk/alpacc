@@ -88,7 +88,7 @@ main = do
   let psls_table = psls collection
   let unwrapped = (\[a] -> a) . S.toList <$> psls_table
   let llTableParse' = llTableParse k augmented_grammar
-  let ll_table = llTable k augmented_grammar
+  let ll_table = llTable k grammar
   let nt = "T"
   let aug_nt = AugmentedNonterminal "T"
   let first' = first k grammar [Nonterminal nt]
@@ -102,8 +102,8 @@ main = do
   -- mapM_ (\x -> do putStrLn " "; mapM_ print x) collection
   -- putStrLn "Missing parses"
   -- mapM_ print . M.toList . M.filterWithKey ((isNothing . ).  auxiliary llTableParse') $ unwrapped
-  -- putStrLn "LL Table"
-  -- mapM_ print . M.toList $ ll_table
+  putStrLn "LL Table"
+  mapM_ print . M.toList $ ll_table
   -- putStrLn $ "first(" ++ nt ++ ")"
   -- let strings = symbols <$> productions grammar
   -- putStrLn "Correct Follow sets"

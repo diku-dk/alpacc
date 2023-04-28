@@ -48,14 +48,14 @@ toDotProduction (Production nt s) = DotProduction nt s []
 
 data Item nt t = Item
   { dotProduction :: DotProduction nt t,
-    suffix :: Set [t],
+    suffix :: [t],
     prefix :: [t],
     shortestPrefix :: [Symbol nt t]
   }
   deriving (Eq, Ord)
 
 instance (Show nt, Show t) => Show (Item nt t) where
-  show (Item dp s p sp) = [i|(#{dp}, #{pprintSet s}, #{unwords (map show p)}, #{unwords (map show sp)})|]
+  show (Item dp s p sp) = [i|(#{dp}, #{unwords (map show s)}, #{unwords (map show p)}, #{unwords (map show sp)})|]
     where
       pprintSet = (++ "}") . ("{" ++) . List.intercalate ", " . map show . Set.toList
 
@@ -63,7 +63,7 @@ initD :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> Item nt t
 initD q grammar = init
   where
     production' = head $ findProductions grammar (start grammar)
-    last' = last q grammar $ symbols production'
+    [last'] = toList $ last q grammar $ symbols production'
     init = Item
         { dotProduction = toDotProduction production',
           suffix = last',
@@ -83,18 +83,13 @@ isTerminalPrefix grammar t = bfs Set.empty . Seq.singleton
     bfs _ Empty = False
     bfs visited (top :<| queue)
       | null top = bfs visited queue
-      | top `Set.member` visited = bfs visited queue
-      | [head_top] `Set.member` visited = bfs visited queue
+      | head_top `Set.member` visited = bfs visited queue
       | Terminal t == head_top = True
       | isTerminal $ head top = bfs new_visited queue
       | otherwise = bfs new_visited (queue >< derivations' top)
       where
         head_top = head top
-        new_visited =
-          if isNonterminal $ head top
-            then Set.insert [head_top] new_visited'
-            else new_visited'
-        new_visited' = Set.insert top visited
+        new_visited = Set.insert head_top visited
 
 solveShortestsPrefix ::
   (Ord t, Ord nt, Show nt, Show t) =>
@@ -128,7 +123,7 @@ newLlpItems q k grammar vi delta dot_production
     last' = last q grammar . (++ alpha)
     first' = first k grammar . (x ++)
     before' = fmap Terminal `Set.map` before q grammar y
-    uj = toList $ last' `Set.map`  if null before' then Set.singleton [] else before'
+    uj = toList . Set.unions $ last' `Set.map` before'
     vj = toList $ first' $ fmap Terminal vi
     x = [List.last alpha_x | not (List.null alpha_x)]
     alpha = if null alpha_x then [] else List.init alpha_x
@@ -155,7 +150,7 @@ addLlpItem ::
 addLlpItem q grammar items old_item
   | null alpha_y = Set.empty
   | isTerminal $ List.last alpha_y = Set.empty
-  | otherwise = newItems `Set.map` deltas
+  | otherwise = Set.unions $ newItems `Set.map` deltas
   where
     Item
       { dotProduction = DotProduction x alpha_y beta,
@@ -166,11 +161,11 @@ addLlpItem q grammar items old_item
     y = (\(Nonterminal nt) -> nt) $ List.last alpha_y
     productions' = productions grammar
     deltas = Set.fromList $ symbols <$> findProductions grammar y
-    newItems delta = newItem u'
+    newItems delta = newItem `Set.map` u'
       where
         last' = last q grammar . (++ delta)
         before' = fmap Terminal `Set.map` before q grammar y
-        u' = Set.unions $ last' `Set.map` if null before' then Set.singleton [] else before'
+        u' = Set.unions $ last' `Set.map` before'
         newItem u =
           Item
             { dotProduction = DotProduction y delta [],
@@ -257,10 +252,9 @@ psls = Map.unionsWith Set.union . fmap auxiliary . toList . Set.unions
     auxiliary old_item
       | null alpha_z = Map.empty
       | null y = Map.empty
-      | isTerminal z = Map.unionsWith Set.union product'
+      | isTerminal z = Map.singleton (x, y) (Set.singleton gamma)
       | otherwise = Map.empty
       where
-        product' = [Map.singleton (x', y) (Set.singleton gamma) | x' <- toList x]
         Item
           { dotProduction = DotProduction _ alpha_z _,
             suffix = x,
@@ -292,7 +286,6 @@ llTableParse k grammar a b = auxiliary (a, b, [])
         keys =
           filter (`Map.member` table)
             . fmap (y,)
-            . (++[[]])
             . takeWhile (not . null)
             . iterate init
             $ take k input

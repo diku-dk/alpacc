@@ -58,7 +58,7 @@ derivations ::
   Grammar nt t ->
   [Symbol nt t] ->
   Seq [Symbol nt t]
-derivations grammar = derive Seq.empty Seq.empty . Seq.fromList
+derivations grammar str = (str <|) .  derive Seq.empty Seq.empty $ Seq.fromList str
   where
     toSeq = fmap (fmap Seq.fromList)
     production_map = toSeq . toProductionsMap $ productions grammar
@@ -93,7 +93,7 @@ naiveFollows k grammar =
     [Production nt s] = findProductions grammar (start grammar)
     init_maps = Map.fromList $ (,Set.empty) <$> nonterminals grammar
     first' = first k grammar
-    start' = Seq.singleton s
+    start' = Seq.singleton [Nonterminal nt]
     unpackT (Terminal t) = t
     derivations' = derivations grammar
     bfs _ Empty = []
@@ -169,6 +169,7 @@ alphaBetaProducts k first_map string = Set.unions $ map subProducts alpha_betas
     subProducts = uncurry (truncatedProduct k) . both subProduct
 
 first' :: (Ord nt, Ord t) => Int -> Map nt (Set [t]) -> [Symbol nt t] -> Set [t]
+first' _ _ [] = Set.singleton []
 first' k first_map wi = new_set
   where
     new_set
@@ -232,7 +233,7 @@ follows k grammar = unextendMap $ fixedPointIterate (/=) f init_follow_map
     unextendKeys =
       Map.mapKeys unextendNT
       . Map.filterWithKey (\k _ -> k/=start extended_grammar)
-    unextendValues = fmap (Set.map (fmap unextendT . filter (/=End)) . Set.filter (not . all (==End)))
+    unextendValues = fmap (Set.map (fmap unextendT . filter (/=End)))
     unextendMap = unextendValues . unextendKeys
     extended_grammar = extendGrammar k grammar
     old_start = ExtendedNonterminal $ start grammar
@@ -270,12 +271,12 @@ llTable k grammar = Map.union first_table follow_table
     first' = first k grammar
     firstEntry i (Production nt a) = Map.fromList [((nt, y), i) | y <- ts]
       where
-        ts = Set.toList $ first' a
+        ts = Set.toList . Set.filter (not . null) $ first' a
     follow' = follow k grammar
     followEntry i (Production nt a) =
       Map.fromList [((nt, y), i) | is_nullable, y <- nts]
       where
-        nts = Set.toList $ follow' nt
+        nts = Set.toList . Set.filter (not . null) $ follow' nt
         is_nullable = [] `Set.member` first' a
 
 llParse ::
@@ -301,7 +302,6 @@ llParse k grammar = auxiliary
         keys =
           filter (`Map.member` table)
             . fmap (y,)
-            . (++[[]])
             . takeWhile (not . null)
             . iterate init
             $ take k input
