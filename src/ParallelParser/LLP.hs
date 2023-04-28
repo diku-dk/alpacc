@@ -116,9 +116,9 @@ newLlpItems ::
   (Ord t, Ord nt, Show nt, Show t) =>
   Int ->
   Int ->
-  Grammar nt t ->
-  Item nt t ->
-  Set (Item nt t)
+  Grammar (AugmentedNonterminal nt) (AugmentedTerminal t) ->
+  Item (AugmentedNonterminal nt) (AugmentedTerminal t) ->
+  Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t))
 newLlpItems q k grammar old_item
   | null x = Set.empty
   | otherwise = product'
@@ -152,13 +152,13 @@ newLlpItems q k grammar old_item
 extraLlpItem ::
   (Ord t, Ord nt, Show nt, Show t) =>
   Int ->
-  Grammar nt t ->
-  Item nt t ->
-  Set (Item nt t)
+  Grammar (AugmentedNonterminal nt) (AugmentedTerminal t) ->
+  Item (AugmentedNonterminal nt) (AugmentedTerminal t) ->
+  Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t))
 extraLlpItem q grammar old_item
   | null alpha_y = Set.empty
   | isTerminal $ List.last alpha_y = Set.empty
-  | y == start grammar = Set.empty
+  | y == Start = Set.empty
   | otherwise = Set.unions $ newItems `Set.map` deltas
   where
     Item
@@ -186,9 +186,9 @@ extraLlpItem q grammar old_item
 extraLlpItems ::
   (Ord t, Ord nt, Show nt, Show t) =>
   Int ->
-  Grammar nt t ->
-  Set (Item nt t) ->
-  Set (Item nt t)
+  Grammar (AugmentedNonterminal nt) (AugmentedTerminal t) ->
+  Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t)) ->
+  Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t))
 extraLlpItems q grammar = fixedPointIterate (/=) addedItems
   where
     addedItems items = items `Set.union` Set.unions (extraLlpItem q grammar `Set.map` items)
@@ -196,9 +196,9 @@ extraLlpItems q grammar = fixedPointIterate (/=) addedItems
 solveLlpItem ::
   (Ord t, Ord nt, Show nt, Show t) => Int ->
   Int ->
-  Grammar nt t ->
-  Set (Item nt t) ->
-  Set (Item nt t)
+  Grammar (AugmentedNonterminal nt) (AugmentedTerminal t) ->
+  Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t)) ->
+  Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t))
 solveLlpItem q k grammar items =
   extraLlpItems q grammar
     . Set.unions
@@ -207,9 +207,9 @@ solveLlpItem q k grammar items =
 solveLlpItems :: (Ord t, Ord nt, Show nt, Show t) =>
   Int ->
   Int ->
-  Grammar nt t ->
-  Set (Item nt t) ->
-  Set (Set (Item nt t))
+  Grammar (AugmentedNonterminal nt) (AugmentedTerminal t) ->
+  Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t)) ->
+  Set (Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t)))
 solveLlpItems q k grammar =
   Set.fromList
     . toList
