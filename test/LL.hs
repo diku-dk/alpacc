@@ -161,6 +161,16 @@ followkTestCase k = TestCase $ assertEqual [i|Follow k=#{k} set test|] expected 
 
 followkTestCases = [followkTestCase k | k <- [1..7]]
 
+firstMemokTestCase k = TestCase $ assertEqual [i|First k=#{k} set test|] expected result
+  where
+    ctx = initFirstMemoizedContext k grammar
+    firstsTuples string = (naiveFirst k extendedGrammar string, fst $ firstMemoized ctx string)
+    strings = symbols <$> productions extendedGrammar
+    (expected, result) = unzip $ firstsTuples <$> strings
+
+firstMemokTestCases = [firstMemokTestCase k | k <- [1..20]]
+
+
 deriveNLengths n grammar = 
   Set.fromList
     . bfs
@@ -177,13 +187,13 @@ deriveNLengths n grammar =
       | all isTerminal top = (unpackT <$> top) : bfs (queue >< leftDerivations' top)
       | otherwise = bfs (queue >< leftDerivations' top)
 
-exntendedGrammarDerivations10 = deriveNLengths 20 extendedGrammar
+extendedGrammarDerivations10 = deriveNLengths 20 extendedGrammar
 
 canParseDerivedTestCase k = TestCase $ assertEqual text expected result
   where
     text = [i|Can parse derived strings og length 10 with LL(#{k}) parser|]
     expected = True
-    result = all isJust $ llkParse' `Set.map` exntendedGrammarDerivations10 
+    result = all isJust $ llkParse' `Set.map` extendedGrammarDerivations10 
     start' = Nonterminal $ start extendedGrammar
     llkParse' a = llParse k extendedGrammar (a, [start'], [])
 
@@ -201,3 +211,4 @@ tests =
         ++ followkTestCases
         ++ canParseDerivedTestCases
         ++ llkParseTestCases
+        ++ firstMemokTestCases

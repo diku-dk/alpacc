@@ -40,6 +40,7 @@ common common
     , extra
     , parallel
     , filepath
+    , mtl
 
 library
   import: common
