@@ -34,7 +34,7 @@ import Data.Function
 import Data.Sequence (Seq (..), (<|), (><), (|>))
 import qualified Data.Sequence as Seq hiding (Seq (..), (<|), (><), (|>))
 import Data.Foldable
-import Data.Bifunctor (Bifunctor (second, bimap))
+import qualified Data.Bifunctor as Bifunctor
 import Data.Composition
 import Debug.Trace (traceShow)
 
@@ -108,7 +108,7 @@ naiveFollows k grammar =
       | null right_symbols = bfs new_visited queue
       | otherwise = maps ++ bfs new_visited (queue >< derivations' top)
       where
-        right_symbols = second first' <$> rightSymbols top
+        right_symbols = Bifunctor.second first' <$> rightSymbols top
         maps = uncurry Map.singleton <$> right_symbols
         right_symbols_set = Set.fromList right_symbols
         new_visited = right_symbols_set `Set.union` visited
@@ -232,7 +232,7 @@ lastMemoized ::
   AlphaBetaMemoizedContext nt t ->
   [Symbol nt t] ->
   (Set [t], AlphaBetaMemoizedContext nt t)
-lastMemoized = firstMemoized
+lastMemoized ctx = Bifunctor.first (Set.map reverse) . firstMemoized ctx . reverse
 
 firstMemoized ::
   (Ord nt, Ord t) =>
@@ -244,7 +244,7 @@ firstMemoized ctx wi = updatCtx $ runMemoized alphaBetaProducts wi state
       where
         state = alphaBetaState ctx
         alphaBetaProducts = openAlphaBetaFunction ctx
-        updatCtx = second (\state' -> ctx { alphaBetaState = state' })
+        updatCtx = Bifunctor.second (\state' -> ctx { alphaBetaState = state' })
 
 first' :: (Ord nt, Ord t) => Int -> Map nt (Set [t]) -> [Symbol nt t] -> Set [t]
 first' _ _ [] = Set.singleton []
