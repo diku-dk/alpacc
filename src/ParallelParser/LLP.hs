@@ -1,3 +1,6 @@
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+
+{-# HLINT ignore "Use newtype instead of data" #-}
 module ParallelParser.LLP
   ( Item (..),
     llpCollection,
@@ -7,10 +10,14 @@ module ParallelParser.LLP
     llpParsingTable,
     llpParse,
     leftRecursiveNonterminals,
-    llTableParse
+    llTableParse,
+    initLlpContext,
+    llpCollectionMemo
   )
 where
 
+import Control.Monad.State
+import Control.Parallel.Strategies
 import Data.Foldable
 import Data.Function (flip, on, ($), (.))
 import qualified Data.List as List
@@ -21,21 +28,22 @@ import Data.Sequence (Seq (..), (<|), (><), (|>))
 import qualified Data.Sequence as Seq hiding (Seq (..), (<|), (><), (|>))
 import Data.Set (Set (..))
 import qualified Data.Set as Set hiding (Set (..))
+import Data.String.Interpolate (i)
 import Debug.Trace (traceShow)
 import ParallelParser.Grammar
 import ParallelParser.LL
 import Prelude hiding (last)
-import Data.String.Interpolate (i)
-import Control.Parallel.Strategies
 
 pmap :: NFData b => (a -> b) -> [a] -> [b]
 pmap f ls =
-        let bs = map f ls
-            cs = bs `using` parList rdeepseq
-        in cs
+  let bs = map f ls
+      cs = bs `using` parList rdeepseq
+   in cs
 
 debug x = traceShow x x
+
 debugBreak = traceShow "BREAK:"
+
 debugPrint a = traceShow (show a)
 
 data DotProduction nt t
@@ -66,7 +74,8 @@ initD q grammar = init `Set.map` last'
   where
     production' = head $ findProductions grammar (start grammar)
     last' = last q grammar $ symbols production'
-    init l = Item
+    init l =
+      Item
         { dotProduction = toDotProduction production',
           suffix = l,
           prefix = [],
@@ -87,7 +96,7 @@ isTerminalPrefix grammar ts = bfs Set.empty . Seq.singleton
     bfs visited (top :<| queue)
       | null top = bfs visited queue
       | k_terms_top `Set.member` visited = bfs visited queue
-      |  ts' == k_terms_top = True
+      | ts' == k_terms_top = True
       | all isTerminal k_terms_top = bfs new_visited queue
       | otherwise = bfs new_visited (queue >< derivations' top)
       where
@@ -112,6 +121,113 @@ solveShortestsPrefix k grammar ts string = solveShortestsPrefix' string
     safeHead [] = []
     safeHead (x : xs) = x
 
+data LlpContext nt t = LlpContext
+  { lookback :: Int,
+    lookahead :: Int,
+    theGrammar :: Grammar (AugmentedNonterminal nt) (AugmentedTerminal t),
+    firstContext :: AlphaBetaMemoizedContext (AugmentedNonterminal nt) (AugmentedTerminal t),
+    lastContext :: AlphaBetaMemoizedContext (AugmentedNonterminal nt) (AugmentedTerminal t),
+    follow' :: AugmentedNonterminal nt -> Set [AugmentedTerminal t],
+    before' :: AugmentedNonterminal nt -> Set [AugmentedTerminal t]
+  }
+
+useFirst ::
+  (Ord nt, Ord t) =>
+  [Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)] ->
+  State (LlpContext nt t) (Set [AugmentedTerminal t])
+useFirst symbols = do
+  ctx <- get
+  let first_ctx = firstContext ctx
+  let (set, first_ctx') = firstMemoized first_ctx symbols
+  let ctx' = ctx {firstContext = first_ctx'}
+  put ctx'
+  return set
+
+useLast ::
+  (Ord nt, Ord t) =>
+  [Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)] ->
+  State (LlpContext nt t) (Set [AugmentedTerminal t])
+useLast symbols = do
+  ctx <- get
+  let last_ctx = lastContext ctx
+  let (set, last_ctx') = lastMemoized last_ctx symbols
+  let ctx' = ctx {lastContext = last_ctx'}
+  put ctx'
+  return set
+
+useFollow ::
+  (Ord nt, Ord t) =>
+  AugmentedNonterminal nt ->
+  State (LlpContext nt t) (Set [AugmentedTerminal t])
+useFollow nt = do
+  ctx <- get
+  return $ follow' ctx nt
+
+useBefore ::
+  (Ord nt, Ord t) =>
+  AugmentedNonterminal nt ->
+  State (LlpContext nt t) (Set [AugmentedTerminal t])
+useBefore nt = do
+  ctx <- get
+  return $ before' ctx nt
+
+initLlpContext ::
+  (Ord nt, Ord t, Show nt, Show t) =>
+  Int ->
+  Int ->
+  Grammar nt t ->
+  LlpContext nt t
+initLlpContext q k grammar =
+  LlpContext
+    { lookback = q,
+      lookahead = k,
+      theGrammar = augmented_grammar,
+      firstContext = initFirstMemoizedContext k augmented_grammar,
+      lastContext = initLastMemoizedContext q augmented_grammar,
+      before' = before q augmented_grammar,
+      follow' = follow k augmented_grammar
+    }
+  where
+    augmented_grammar = augmentGrammar grammar
+
+newLlpItemsMemo ::
+  (Ord t, Ord nt, Show nt, Show t) =>
+  Item (AugmentedNonterminal nt) (AugmentedTerminal t) ->
+  State (LlpContext nt t) (Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t)))
+newLlpItemsMemo old_item = result
+  where
+    Item
+      { dotProduction = DotProduction y alpha_x beta,
+        suffix = ui,
+        prefix = vi,
+        shortestPrefix = delta
+      } = old_item
+
+    result = do
+      ctx <- get
+      before_result <- useBefore y
+      let before_symbols = toList $ fmap Terminal `Set.map` before_result
+      let alpha = if null alpha_x then [] else List.init alpha_x
+      uj <- Set.unions <$> mapM (useLast . (++ alpha)) before_symbols
+      let x = [List.last alpha_x | not (List.null alpha_x)]
+      vj <- useFirst . (x ++) $ fmap Terminal vi
+      let x_delta = x ++ delta
+      let grammar = theGrammar ctx
+      let solveShortestsPrefix' v = solveShortestsPrefix 1 grammar v x_delta
+      let x_beta = x ++ beta
+      let new_dot_production = DotProduction y alpha x_beta
+      let newItem u v =
+            Item
+              { dotProduction = new_dot_production,
+                suffix = u,
+                prefix = v,
+                shortestPrefix = solveShortestsPrefix' v
+              }
+      return $
+        if null x
+          then Set.empty
+          else Set.fromList [newItem u v | u <- toList uj, v <- toList vj]
+
 newLlpItems ::
   (Ord t, Ord nt, Show nt, Show t) =>
   Int ->
@@ -128,7 +244,7 @@ newLlpItems q k grammar old_item
     first' = first k grammar . (x ++)
     before' = fmap Terminal `Set.map` before q grammar y
     uj = toList . Set.unions $ last' `Set.map` before'
-    vj = toList $ first' $ fmap Terminal vi
+    vj = toList . first' $ fmap Terminal vi
     x = [List.last alpha_x | not (List.null alpha_x)]
     alpha = if null alpha_x then [] else List.init alpha_x
     x_delta = x ++ delta
@@ -148,6 +264,47 @@ newLlpItems q k grammar old_item
         prefix = vi,
         shortestPrefix = delta
       } = old_item
+
+extraLlpItemMemo ::
+  (Ord t, Ord nt, Show nt, Show t) =>
+  Item (AugmentedNonterminal nt) (AugmentedTerminal t) ->
+  State (LlpContext nt t) (Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t)))
+extraLlpItemMemo old_item
+  | null alpha_y = return Set.empty
+  | isTerminal $ List.last alpha_y = return Set.empty
+  | y == Start = return Set.empty
+  | otherwise = result
+  where
+    Item
+      { dotProduction = DotProduction x alpha_y beta,
+        suffix = u,
+        prefix = v,
+        shortestPrefix = gamma
+      } = old_item
+
+    newItem delta u =
+      Item
+        { dotProduction = DotProduction y delta [],
+          suffix = u,
+          prefix = v,
+          shortestPrefix = gamma
+        }
+
+    Nonterminal y = List.last alpha_y
+
+    newItems delta = result
+      where
+        result = do
+          before_result <- useBefore y
+          let before_symbols = toList $ fmap Terminal `Set.map` before_result
+          u' <- mapM (useLast . (++ delta)) before_symbols
+          return $ newItem delta `Set.map` Set.unions u'
+
+    result = do
+      ctx <- get
+      let grammar = theGrammar ctx
+      let deltas = symbols <$> findProductions grammar y
+      Set.unions <$> mapM newItems deltas
 
 extraLlpItem ::
   (Ord t, Ord nt, Show nt, Show t) =>
@@ -183,6 +340,22 @@ extraLlpItem q grammar old_item
               shortestPrefix = gamma
             }
 
+extraLlpItemsMemo ::
+  (Ord t, Ord nt, Show nt, Show t) =>
+  Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t)) ->
+  State (LlpContext nt t) (Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t)))
+extraLlpItemsMemo = fixedPointIterate
+  where
+    fixedPointIterate items = do
+      new_items <- addExtraItems items
+      if items == new_items
+        then return new_items
+        else fixedPointIterate new_items
+
+    addExtraItems items = do
+      extras <- mapM extraLlpItemMemo $ toList items
+      return $ items `Set.union` Set.unions extras
+
 extraLlpItems ::
   (Ord t, Ord nt, Show nt, Show t) =>
   Int ->
@@ -193,8 +366,18 @@ extraLlpItems q grammar = fixedPointIterate (/=) addedItems
   where
     addedItems items = items `Set.union` Set.unions (extraLlpItem q grammar `Set.map` items)
 
+solveLlpItemMemo ::
+  (Ord t, Ord nt, Show nt, Show t) =>
+  Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t)) ->
+  State (LlpContext nt t) (Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t)))
+solveLlpItemMemo items = do
+  ctx <- get
+  new_items <- mapM newLlpItemsMemo $ toList items
+  extraLlpItemsMemo $ Set.unions new_items
+
 solveLlpItem ::
-  (Ord t, Ord nt, Show nt, Show t) => Int ->
+  (Ord t, Ord nt, Show nt, Show t) =>
+  Int ->
   Int ->
   Grammar (AugmentedNonterminal nt) (AugmentedTerminal t) ->
   Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t)) ->
@@ -204,7 +387,33 @@ solveLlpItem q k grammar items =
     . Set.unions
     $ Set.map (newLlpItems q k grammar) items
 
-solveLlpItems :: (Ord t, Ord nt, Show nt, Show t) =>
+solveLlpItemsMemo ::
+  (Ord t, Ord nt, Show nt, Show t) =>
+  Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t)) ->
+  State (LlpContext nt t) (Set (Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t))))
+solveLlpItemsMemo items = do
+  let groups = groupByDotSymbol Map.empty $ toList items
+  Set.fromList <$> mapM solveLlpItemMemo (toList groups)
+  where
+    auxiliary =
+      safeLast
+        . (\(DotProduction _ alpha_x _) -> alpha_x)
+        . dotProduction
+    safeLast [] = []
+    safeLast x = [List.last x]
+    groupByDotSymbol symbol_map [] = symbol_map
+    groupByDotSymbol symbol_map (a : as)
+      | null x' = groupByDotSymbol symbol_map as
+      | x `Map.member` symbol_map = groupByDotSymbol new_symbol_map as
+      | otherwise = groupByDotSymbol new_symbol_map' as
+      where
+        new_symbol_map = Map.adjust (Set.insert a) x symbol_map
+        new_symbol_map' = Map.insert x (Set.singleton a) symbol_map
+        [x] = x'
+        x' = auxiliary a
+
+solveLlpItems ::
+  (Ord t, Ord nt, Show nt, Show t) =>
   Int ->
   Int ->
   Grammar (AugmentedNonterminal nt) (AugmentedTerminal t) ->
@@ -219,12 +428,12 @@ solveLlpItems q k grammar =
   where
     auxiliary =
       safeLast
-      . (\(DotProduction _ alpha_x _) -> alpha_x)
-      . dotProduction
+        . (\(DotProduction _ alpha_x _) -> alpha_x)
+        . dotProduction
     safeLast [] = []
     safeLast x = [List.last x]
     groupByDotSymbol symbol_map [] = symbol_map
-    groupByDotSymbol symbol_map (a:as)
+    groupByDotSymbol symbol_map (a : as)
       | null x' = groupByDotSymbol symbol_map as
       | x `Map.member` symbol_map = groupByDotSymbol new_symbol_map as
       | otherwise = groupByDotSymbol new_symbol_map' as
@@ -233,6 +442,32 @@ solveLlpItems q k grammar =
         new_symbol_map' = Map.insert x (Set.singleton a) symbol_map
         [x] = x'
         x' = auxiliary a
+
+llpCollectionMemo ::
+  (Ord t, Ord nt, Show nt, Show t) =>
+  State (LlpContext nt t) (Set (Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t))))
+llpCollectionMemo = do 
+  ctx <- get
+  let grammar = theGrammar ctx
+  let q = lookback ctx
+  let d_init = initD q grammar
+  let d_init_set = Set.singleton d_init
+  let d_init_list = [d_init]
+  removeNull <$> auxiliary Set.empty d_init_set d_init_list
+  where
+    removeNull = Set.filter (not . null)
+    auxiliary _ items [] = return items
+    auxiliary visited items (top : queue) = do
+      if top `Set.member` visited
+        then auxiliary visited items queue
+        else new
+      where
+        new_visited = Set.insert top visited
+        new = do
+          new_item <- solveLlpItemsMemo top
+          let new_items = Set.union new_item items
+          let new_queue = queue ++ toList new_item
+          auxiliary new_visited new_items new_queue
 
 llpCollection ::
   (Ord t, Ord nt, Show nt, Show t) =>
@@ -305,7 +540,7 @@ llTableParse k grammar a b = auxiliary (a, b, [])
             $ take k input
 
         safeHead [] = Nothing
-        safeHead (x:_) = Just x
+        safeHead (x : _) = Just x
 
         maybeTuple = do
           key <- safeHead keys
@@ -319,8 +554,8 @@ allStarts ::
   (Ord nt, Ord t, Show nt, Show t) =>
   Int ->
   Int ->
-  Grammar (AugmentedNonterminal nt) (AugmentedTerminal t) ->
-  Map ([AugmentedTerminal t], [AugmentedTerminal t]) [Int]
+  Grammar nt t ->
+  Map ([t], [t]) [Int]
 allStarts q k grammar = zero_keys
   where
     first' = naiveFirst k grammar
@@ -362,6 +597,7 @@ pairs q k = toList . auxiliary Seq.empty Seq.empty . Seq.fromList
           where
             n = Seq.length seq
 
+
 llpParse :: (Ord nt, Ord t, Show nt, Show t) => Int -> Int -> Grammar nt t -> [t] -> [Int]
 llpParse q k grammar [] = []
 llpParse q k grammar string = concatMap auxiliary . pairs q k . addStoppers $ aug string
@@ -371,11 +607,6 @@ llpParse q k grammar string = concatMap auxiliary . pairs q k . addStoppers $ au
     augmented_grammar = augmentGrammar grammar
     Just table = llpParsingTable q k augmented_grammar
     auxiliary = (table Map.!) . debug
-      -- where
-      --   pairs = [(a, b) | a <- tails back, b <- inits forw]
-      --   p = List.head $ mapMaybe (`Map.lookup` table) pairs
-      --   inits = (++[[]]) . takeWhile (not . null) . iterate init
-      --   tails = (++[[]]) . takeWhile (not . null) . iterate tail
 
 leftRecursiveNonterminals :: (Ord nt, Ord t, Show nt, Show t) => Grammar nt t -> [nt]
 leftRecursiveNonterminals grammar = mapMaybe (auxiliary . Nonterminal) nonterminals'

@@ -11,10 +11,16 @@ module ParallelParser.LL
     derivations,
     naiveFirst,
     naiveFollow,
-    alphaBeta
+    alphaBeta,
+    firstMemoized,
+    lastMemoized,
+    initFirstMemoizedContext,
+    initLastMemoizedContext,
+    AlphaBetaMemoizedContext (..)
   )
 where
 
+import Control.Monad.State
 import qualified Data.List as List
 import Data.Map (Map (..))
 import qualified Data.Map as Map
@@ -28,7 +34,7 @@ import Data.Function
 import Data.Sequence (Seq (..), (<|), (><), (|>))
 import qualified Data.Sequence as Seq hiding (Seq (..), (<|), (><), (|>))
 import Data.Foldable
-import Data.Bifunctor (Bifunctor (second))
+import Data.Bifunctor (Bifunctor (second, bimap))
 import Data.Composition
 import Debug.Trace (traceShow)
 
@@ -158,6 +164,35 @@ alphaBeta string
       where
         new_taken = taken ++ [x]
 
+type MemoState k v = State (Map.Map k v) v
+type MemoFunction k v = (k -> MemoState k v) -> (k -> MemoState k v)
+
+memoize :: Ord k => MemoFunction k v -> k -> MemoState k v
+memoize f k = do
+  memory <- get
+  let lookup_result = Map.lookup k memory
+  case lookup_result of
+    Just result -> return result
+    Nothing -> do
+      result <- f (memoize f) k
+      put (Map.insert k result memory)
+      return result
+
+runMemoized :: Ord k => MemoFunction k v -> k -> Map.Map k v -> (v, Map.Map k v)
+runMemoized f arg = runState (memoize f arg)
+
+memoAlphaBetaProducts :: (Ord nt, Ord t) => Int -> Map nt (Set [t]) -> MemoFunction [Symbol nt t] (Set [t])
+memoAlphaBetaProducts _ _ _ [] = error "Input string cannot be empty."
+memoAlphaBetaProducts _ _ _ [Terminal t] = return $ Set.singleton [t]
+memoAlphaBetaProducts _ first_map _ [Nonterminal nt] = return $ first_map Map.! nt
+memoAlphaBetaProducts k _ self string = Set.unions <$> mapM bothSubProducts alpha_betas
+  where
+    alpha_betas = alphaBeta string
+    bothSubProducts (a, b) = do
+      a' <- self a
+      b' <- self b
+      return $ truncatedProduct k a' b'
+
 alphaBetaProducts :: (Ord nt, Ord t) => Int -> Map nt (Set [t]) -> [Symbol nt t] -> Set [t]
 alphaBetaProducts _ _ [] = error "Input string cannot be empty."
 alphaBetaProducts k first_map [Terminal t] = Set.singleton [t]
@@ -168,18 +203,55 @@ alphaBetaProducts k first_map string = Set.unions $ map subProducts alpha_betas
     subProduct = alphaBetaProducts k first_map
     subProducts = uncurry (truncatedProduct k) . both subProduct
 
+mkmemoAlphaBetaProducts :: (Ord nt, Ord t) => Int -> Grammar nt t -> MemoFunction [Symbol nt t] (Set [t])
+mkmemoAlphaBetaProducts k grammar = memoAlphaBetaProducts k first_map
+  where
+    first_map = firstMap k grammar
+
+data AlphaBetaMemoizedContext nt t = AlphaBetaMemoizedContext
+  { openAlphaBetaFunction :: MemoFunction [Symbol nt t] (Set [t]),
+    alphaBetaState :: Map [Symbol nt t] (Set [t])
+  }
+
+initFirstMemoizedContext :: (Ord nt, Ord t) => Int -> Grammar nt t -> AlphaBetaMemoizedContext nt t
+initFirstMemoizedContext k grammar =
+  AlphaBetaMemoizedContext {
+    openAlphaBetaFunction = mkmemoAlphaBetaProducts k grammar,
+    alphaBetaState = Map.empty
+  }
+
+initLastMemoizedContext :: (Ord nt, Ord t) => Int -> Grammar nt t -> AlphaBetaMemoizedContext nt t
+initLastMemoizedContext q grammar =
+  AlphaBetaMemoizedContext {
+    openAlphaBetaFunction = mkmemoAlphaBetaProducts q (reverseGrammar grammar),
+    alphaBetaState = Map.empty
+  }
+
+lastMemoized ::
+ (Ord nt, Ord t) =>
+  AlphaBetaMemoizedContext nt t ->
+  [Symbol nt t] ->
+  (Set [t], AlphaBetaMemoizedContext nt t)
+lastMemoized = firstMemoized
+
+firstMemoized ::
+  (Ord nt, Ord t) =>
+  AlphaBetaMemoizedContext nt t ->
+  [Symbol nt t] ->
+  (Set [t], AlphaBetaMemoizedContext nt t)
+firstMemoized ctx [] = (Set.singleton [], ctx)
+firstMemoized ctx wi = updatCtx $ runMemoized alphaBetaProducts wi state
+      where
+        state = alphaBetaState ctx
+        alphaBetaProducts = openAlphaBetaFunction ctx
+        updatCtx = second (\state' -> ctx { alphaBetaState = state' })
+
 first' :: (Ord nt, Ord t) => Int -> Map nt (Set [t]) -> [Symbol nt t] -> Set [t]
 first' _ _ [] = Set.singleton []
-first' k first_map wi = new_set
-  where
-    new_set
-      | null wi = Set.singleton []
-      | otherwise = alphaBetaProducts k first_map wi
-      where
-        alpha_betas = alphaBeta wi
+first' k first_map wi = alphaBetaProducts k first_map wi
 
-firsts :: (Ord nt, Ord t) => Int -> Grammar nt t -> Map nt (Set [t])
-firsts k grammar = fixedPointIterate (/=) f init_first_map
+firstMap :: (Ord nt, Ord t) => Int -> Grammar nt t -> Map nt (Set [t])
+firstMap k grammar = fixedPointIterate (/=) f init_first_map
   where
     init_first_map = Map.fromList . map (,Set.empty) $ nonterminals grammar
     f first_map = Map.unionsWith Set.union $ map (auxiliary first_map) (productions grammar)
@@ -190,7 +262,7 @@ firsts k grammar = fixedPointIterate (/=) f init_first_map
 first :: (Show nt, Show t, Ord nt, Ord t) => Int -> Grammar nt t -> [Symbol nt t] -> Set [t]
 first k grammar = first' k first_map
   where
-    first_map = firsts k grammar
+    first_map = firstMap k grammar
 
 rightSymbols :: [Symbol nt t] -> [(nt, [Symbol nt t])]
 rightSymbols [] = []
@@ -207,8 +279,8 @@ dropWhileMinusOne = auxiliary Nothing
       | isJust last = fromJust last:x:xs
       | otherwise = x:xs
 
-follows :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> Map nt (Set [t])
-follows k grammar = unextendMap $ fixedPointIterate (/=) f init_follow_map
+followMap :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> Map nt (Set [t])
+followMap k grammar = unextendMap $ fixedPointIterate (/=) f init_follow_map
   where
     unextendKeys =
       Map.mapKeys unextendNT
@@ -232,9 +304,9 @@ follows k grammar = unextendMap $ fixedPointIterate (/=) f init_follow_map
         subset = truncatedProduct k first_set (follow_map' Map.! aj)
 
 follow :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> nt -> Set [t]
-follow k grammar = (follows' Map.!)
+follow k grammar = (followMap' Map.!)
   where
-    follows' = follows k grammar
+    followMap' = followMap k grammar
 
 last :: (Show nt, Show a, Ord nt, Ord a) => Int -> Grammar nt a -> [Symbol nt a] -> Set [a]
 last q grammar = Set.map reverse . lasts . reverse
@@ -244,7 +316,7 @@ last q grammar = Set.map reverse . lasts . reverse
 before :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> nt -> Set [t]
 before q grammar = Set.map reverse . (befores Map.!)
   where
-    befores = follows q $ reverseGrammar grammar
+    befores = followMap q $ reverseGrammar grammar
 
 llTable :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> Map (nt, [t]) Int
 llTable k grammar = Map.union first_table follow_table
@@ -289,7 +361,7 @@ llParse k grammar = auxiliary
             . takeWhile (not . null)
             . iterate init
             $ take k input
-        
+
         safeHead [] = Nothing
         safeHead (x:_) = Just x
 
