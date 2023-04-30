@@ -568,7 +568,7 @@ llpParsingTable ::
   (Ord nt, Ord t, Show nt, Show t) =>
   Int ->
   Int ->
-  Grammar (AugmentedNonterminal nt) (AugmentedTerminal t) ->
+  Grammar nt t ->
   Maybe (Map ([AugmentedTerminal t], [AugmentedTerminal t]) [Int])
 llpParsingTable q k grammar
   | any ((/= 1) . Set.size) psls_table = Nothing
@@ -576,10 +576,11 @@ llpParsingTable q k grammar
   where
     parsed = Map.mapWithKey auxiliary unwrapped
     unwrapped = (\[a] -> a) . Set.toList <$> psls_table
-    starts = allStarts q k grammar
-    collection = llpCollection q k grammar
+    starts = allStarts q k (theGrammar init_context)
+    init_context = initLlpContext q k grammar
+    collection = evalState llpCollectionMemo init_context
     psls_table = psls collection
-    llTableParse' = llTableParse k grammar
+    llTableParse' = llTableParse k (theGrammar init_context)
     auxiliary (x, y) alpha = f <$> llTableParse' y alpha
       where
         f (epsilon, omega, pi) = pi
@@ -605,7 +606,7 @@ llpParse q k grammar string = concatMap auxiliary . pairs q k . addStoppers $ au
     addStoppers = ([RightTurnstile] ++) . (++ [LeftTurnstile])
     aug = fmap AugmentedTerminal
     augmented_grammar = augmentGrammar grammar
-    Just table = llpParsingTable q k augmented_grammar
+    Just table = llpParsingTable q k grammar
     auxiliary = (table Map.!) . debug
 
 leftRecursiveNonterminals :: (Ord nt, Ord t, Show nt, Show t) => Grammar nt t -> [nt]
