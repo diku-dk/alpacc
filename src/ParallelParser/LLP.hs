@@ -272,7 +272,6 @@ extraLlpItemMemo ::
 extraLlpItemMemo old_item
   | null alpha_y = return Set.empty
   | isTerminal $ List.last alpha_y = return Set.empty
-  | y == Start = return Set.empty
   | otherwise = result
   where
     Item
@@ -315,7 +314,6 @@ extraLlpItem ::
 extraLlpItem q grammar old_item
   | null alpha_y = Set.empty
   | isTerminal $ List.last alpha_y = Set.empty
-  | y == Start = Set.empty
   | otherwise = Set.unions $ newItems `Set.map` deltas
   where
     Item
