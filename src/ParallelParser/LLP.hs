@@ -562,6 +562,28 @@ allStarts q k grammar = zero_keys
     zero_symbols = toList $ first' s
     zero_keys = Map.fromList $ (,[0]) . ([],) <$> zero_symbols
 
+admissiblePairs ::
+  (Show nt, Show t, Ord nt, Ord t) =>
+  Int ->
+  Int ->
+  Grammar nt t ->
+  Set [t]
+admissiblePairs q k grammar = naiveFirst (2 * (q + k)) grammar init_start
+  where
+    init_start = List.singleton . Nonterminal $ start grammar
+
+filterAdmissiblePairs ::
+  (Show nt, Show t, Ord nt, Ord t) =>
+  Int ->
+  Int ->
+  Grammar nt t ->
+  Map ([t], [t]) a ->
+  Map ([t], [t]) a
+filterAdmissiblePairs q k grammar = Map.filterWithKey (\k _ -> isValid k)
+  where
+    valid_strings = admissiblePairs q k grammar
+    isValid (x, y) = any ((x ++ y) `List.isInfixOf`) valid_strings
+
 llpParsingTable ::
   (Ord nt, Ord t, Show nt, Show t) =>
   Int ->
@@ -577,7 +599,7 @@ llpParsingTable q k grammar
     starts = allStarts q k (theGrammar init_context)
     init_context = initLlpContext q k grammar
     collection = evalState llpCollectionMemo init_context
-    psls_table = psls collection
+    psls_table = filterAdmissiblePairs q k (augmentGrammar grammar) $ psls collection
     llTableParse' = llTableParse k (theGrammar init_context)
     auxiliary (x, y) alpha = f <$> llTableParse' y alpha
       where
