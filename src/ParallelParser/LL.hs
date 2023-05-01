@@ -209,21 +209,21 @@ mkmemoAlphaBetaProducts k grammar = memoAlphaBetaProducts k first_map
     first_map = firstMap k grammar
 
 data AlphaBetaMemoizedContext nt t = AlphaBetaMemoizedContext
-  { openAlphaBetaFunction :: MemoFunction [Symbol nt t] (Set [t]),
+  { alphaBetaFunction :: MemoFunction [Symbol nt t] (Set [t]),
     alphaBetaState :: Map [Symbol nt t] (Set [t])
   }
 
 initFirstMemoizedContext :: (Ord nt, Ord t) => Int -> Grammar nt t -> AlphaBetaMemoizedContext nt t
 initFirstMemoizedContext k grammar =
   AlphaBetaMemoizedContext {
-    openAlphaBetaFunction = mkmemoAlphaBetaProducts k grammar,
+    alphaBetaFunction = mkmemoAlphaBetaProducts k grammar,
     alphaBetaState = Map.empty
   }
 
 initLastMemoizedContext :: (Ord nt, Ord t) => Int -> Grammar nt t -> AlphaBetaMemoizedContext nt t
 initLastMemoizedContext q grammar =
   AlphaBetaMemoizedContext {
-    openAlphaBetaFunction = mkmemoAlphaBetaProducts q (reverseGrammar grammar),
+    alphaBetaFunction = mkmemoAlphaBetaProducts q (reverseGrammar grammar),
     alphaBetaState = Map.empty
   }
 
@@ -243,7 +243,7 @@ firstMemoized ctx [] = (Set.singleton [], ctx)
 firstMemoized ctx wi = updatCtx $ runMemoized alphaBetaProducts wi state
       where
         state = alphaBetaState ctx
-        alphaBetaProducts = openAlphaBetaFunction ctx
+        alphaBetaProducts = alphaBetaFunction ctx
         updatCtx = Bifunctor.second (\state' -> ctx { alphaBetaState = state' })
 
 first' :: (Ord nt, Ord t) => Int -> Map nt (Set [t]) -> [Symbol nt t] -> Set [t]
