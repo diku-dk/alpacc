@@ -699,7 +699,7 @@ llpParse q k grammar string = concatMap auxiliary . pairs q k . addStoppers $ au
     aug = fmap AugmentedTerminal
     augmented_grammar = augmentGrammar grammar
     Just table = llpParsingTable q k grammar
-    auxiliary = (table Map.!) . debug
+    auxiliary = (table Map.!)
 
 -- | Checks if a grammar is left recursive and returns all the nonterminals
 -- which causes the left recursion.
