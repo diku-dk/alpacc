@@ -17,16 +17,20 @@ import ParallelParser.LLP
 import Debug.Trace (traceShow)
 debug x = traceShow x x
 
+-- | Adds m padding to the left side of a list.
 lpad :: a -> Int -> [a] -> [a]
 lpad p m xs = replicate (m - length ys) p ++ ys
   where
     ys = take m xs
 
+-- | Adds m padding to the right side of a list.
 rpad :: a -> Int -> [a] -> [a]
 rpad p m xs = ys ++ replicate (m - length ys) p
   where
     ys = take m xs
 
+-- | Given the table keys for a LLP parser create the keys which will be used
+-- in the Futhark language for pattern matching.
 futharkTableKey ::
   Ord t =>
   Int ->
@@ -42,30 +46,45 @@ futharkTableKey q k grammar = both toTuple . bimap backPad frontPad . both conve
     backPad = lpad "4294967295" q
     frontPad = rpad "4294967295" k
 
+-- | Adds square brackets to sides of a string.
 squareBrackets :: String -> String
 squareBrackets = ("[" ++) . (++ "]")
 
+-- | Creates a string that indexes an array in the Futhark language.
 indexArray :: Show a => String -> a -> String
 indexArray name = (name ++) . squareBrackets . show
 
+-- | Creates a string that is a tuple in the Futhark language.
 toTuple :: [String] -> String
 toTuple = ('(' :) . (++ ")") . List.intercalate ", "
 
+-- | Creates a string that is a array in the Futhark language.
 toArray :: [String] -> String
 toArray = squareBrackets . List.intercalate ", "
 
+-- | Creates a string that is a array in the Futhark language which corresponds
+-- to the resulting productions list. This is used in the pattern matching.
 futharkProductions :: Show a => Int -> [a] -> String
 futharkProductions max_size = toArray . lpad "u32.highest" max_size . map show
 
+-- | Creates a string that is a tuple where a variable is indexed from 0 to 
+-- n - 1 in the Futhark language.
 toTupleIndexArray :: (Show a, Num a, Enum a) => String -> a -> String
 toTupleIndexArray name n = toTuple $ map (indexArray name) [0 .. n - 1]
 
+-- | Creates a string that is a single pattern matching in the Futhark Language.
+-- This pattern matching is a table pair that results in a productions list.
 futharkTableCase :: (String, String) -> String -> String
 futharkTableCase (b, f) v = [i|case (#{b}, #{f}) -> #{v}|]
 
+
+-- | Creates a string that does pattern matching in the Futhark language.
+-- The pattern matching is use to make the LLP table.
 futharkTablesCases :: [((String, String), String)] -> String
 futharkTablesCases = L.intercalate "\n  " . fmap (uncurry futharkTableCase)
 
+-- | Creates a string that is the resulting LLP table which is done by using
+-- pattern matching in Futhark.
 futharkTable ::
   (Ord t, Show a) =>
   Int ->
@@ -80,6 +99,8 @@ futharkTable q k grammar max_size = cases . prods . keys
     prods = fmap (futharkProductions max_size)
     keys = Map.mapKeys (uncurry (futharkTableKey q k grammar))
 
+-- | Creates Futhark source code which contains a parallel parser that can
+-- create the productions list for a input which is indexes of terminals.
 futharkKeyGeneration :: (Ord nt, Ord t, Show nt, Show t) => Int -> Int -> Grammar nt t -> Maybe String
 futharkKeyGeneration q k grammar
   | any_is_nothing = Nothing

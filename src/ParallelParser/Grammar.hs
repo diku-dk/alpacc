@@ -190,11 +190,15 @@ replaceEscapedChars input@(x : xs)
     auxiliary ('\\' : ys) = ("", ys)
     auxiliary ys = ("", ys)
 
--- | 
+-- | Parses a elements in a set as a string and accounts for escape characters.
+setElement :: ReadP String
 setElement = replaceEscapedChars . concat <$> many1 escaped
   where
-    escaped = string "\\}" <++ string "\\," <++ fmap List.singleton (satisfy (`notElem` [' ', ',', '}', '\n', '\r', '\t']))
+    whitespace_list = [' ', ',', '}', '\n', '\r', '\t']
+    whitespace = fmap List.singleton (satisfy (`notElem` whitespace_list))
+    escaped = string "\\}" <++ string "\\," <++ whitespace
 
+-- | Parses a string as a grammar.
 pGrammar :: (Read nt, Read t) => ReadP (Grammar nt t)
 pGrammar = tuple
   where
@@ -226,44 +230,58 @@ pGrammar = tuple
             productions = ps
           }
 
+-- | Uses pGrammar to allow for reading the grammar.
 instance (Read nt, Read t) => Read (Grammar nt t) where
   readsPrec _ = readP_to_S pGrammar
 
-findProductions :: (Eq b) => Grammar b t -> b -> [Production b t]
+-- | Finds a grammar by its left handside.
+findProductions :: (Eq nt) => Grammar nt t -> nt -> [Production nt t]
 findProductions grammar nt = filterNt $ productions grammar
   where
     filterNt = filter ((== nt) . nonterminal)
 
+-- | Reverses a grammar by reversing the right handside of every production.
 reverseGrammar :: Grammar nt t -> Grammar nt t
 reverseGrammar grammar =
   grammar {productions = reverseProduction <$> productions grammar}
   where
     reverseProduction (Production nt s) = Production nt (reverse s)
 
+-- | Extends the terminals by one terminal which can be used when constructing
+-- the follow sets.
 data ExtendedTerminal t
   = ExtendedTerminal t
   | End
   deriving (Ord, Eq)
 
+-- | Shows whats inside the terminals or the End terminal. 
 instance Show t => Show (ExtendedTerminal t) where
   show End = "End"
   show (ExtendedTerminal t) = show t
 
+-- | Extends the nonterminals by one nonterminal which can be used when constructing
+-- the follow sets.
 data ExtendedNonterminal nt
   = ExtendedNonterminal nt
   | ExtendedStart
   deriving (Ord, Eq)
 
+-- | Shows whats inside the nonterminals or the Start nonterminal. 
 instance Show nt => Show (ExtendedNonterminal nt) where
   show ExtendedStart = "Start"
   show (ExtendedNonterminal t) = show t
 
+-- | Given ExtendedNonterminal return the value inside the Nonterminal.
 unextendNT :: ExtendedNonterminal nt -> nt
 unextendNT (ExtendedNonterminal nt) = nt
 
+-- | Given ExtendedNonterminal return the value inside the ExtendedNonterminal.
 unextendT :: ExtendedTerminal t -> t
 unextendT (ExtendedTerminal t) = t
 
+-- | Extends a grammar with a new starting production where the old starting
+-- production is in the beginning of the left handside and k End terminals are
+-- at the back of the left hand side.
 extendGrammar ::
   Int ->
   Grammar nt t ->
@@ -286,6 +304,8 @@ extendGrammar k grammar =
     padding = replicate k End
     augmentProduction = bimap ExtendedNonterminal ExtendedTerminal
 
+-- | Augmenting the grammar corresponds to the augmentation in algorithm 8 of
+-- the LLP paper.
 augmentGrammar ::
   Grammar nt t ->
   Grammar (AugmentedNonterminal nt) (AugmentedTerminal t)
@@ -308,13 +328,17 @@ augmentGrammar grammar =
     symbols' = leftPad ++ [start'] ++ rightPad
     augmentProduction = bimap AugmentedNonterminal AugmentedTerminal
 
+-- | Predicate used to tell if a symbol is a terminal.
 isTerminal :: Symbol nt t -> Bool
 isTerminal (Terminal _) = True
 isTerminal (Nonterminal _) = False
 
+-- | Predicate used to tell if a symbol is a nonterminal.
 isNonterminal :: Symbol nt t -> Bool
 isNonterminal = not . isTerminal
 
+-- | Creates  map for productions such that the nonterminals maps to possible
+-- right handsides.
 toProductionsMap ::
   (Ord nt, Ord t) =>
   [Production nt t] ->
@@ -325,6 +349,7 @@ toProductionsMap = Map.fromList . fmap toPair . groupSort
     nonterminalEq a b = nonterminal a == nonterminal b
     toPair a = (nonterminal $ head a, symbols <$> a)
 
+-- | Given a grammar using NT and T convert it to a grammar using strings.
 unpackNTTGrammar :: Grammar NT T -> Grammar String String
 unpackNTTGrammar grammar =
   grammar
