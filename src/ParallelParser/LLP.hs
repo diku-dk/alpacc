@@ -1,6 +1,3 @@
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
-
-{-# HLINT ignore "Use newtype instead of data" #-}
 module ParallelParser.LLP
   ( Item (..),
     llpCollection,
@@ -46,16 +43,25 @@ debugBreak = traceShow "BREAK:"
 
 debugPrint a = traceShow (show a)
 
+-- | This Algebraic data structure is used to model the production with a dot in
+-- it descriped in algorithm 8 in the LLP paper.
 data DotProduction nt t
   = DotProduction nt [Symbol nt t] [Symbol nt t]
   deriving (Ord, Eq, Read)
 
+-- | Makes the printing of dot productions a bit prettier.
 instance (Show nt, Show t) => Show (DotProduction nt t) where
-  show (DotProduction nt s s') = [i|#{nt} -> #{unwords (map show s)}.#{unwords (map show s')}|]
+  show (DotProduction nt s s') = [i|#{nt} -> #{s_str}.#{s_str'}|]
+    where
+      s_str = unwords (map show s)
+      s_str' = unwords (map show s')
 
+-- | Converts Productions to DotProductions where the dot is placed on the left
+-- side.
 toDotProduction :: Production nt t -> DotProduction nt t
-toDotProduction (Production nt s) = DotProduction nt s []
+toDotProduction (Production nt s) = DotProduction  nt s []
 
+-- | This Record models the 4-tuple described in algorithm 8. 
 data Item nt t = Item
   { dotProduction :: DotProduction nt t,
     suffix :: [t],
@@ -64,11 +70,17 @@ data Item nt t = Item
   }
   deriving (Eq, Ord)
 
+-- | Prints the Record in the form of the 4-tuple in algorithm 8 in the LLP
+-- paper.
 instance (Show nt, Show t) => Show (Item nt t) where
-  show (Item dp s p sp) = [i|(#{dp}, #{unwords (map show s)}, #{unwords (map show p)}, #{unwords (map show sp)})|]
+  show (Item dp s p sp) = [i|(#{dp}, #{s'}, #{p'}, #{sp'})|]
     where
+      s' = unwords (map show s)
+      p' = unwords (map show p)
+      sp' = unwords (map show sp)
       pprintSet = (++ "}") . ("{" ++) . List.intercalate ", " . map show . Set.toList
 
+-- | Computes the initial item set which is $D_0$ in the LLP paper. 
 initD :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> Set (Item nt t)
 initD q grammar = init `Set.map` last'
   where
@@ -82,6 +94,8 @@ initD q grammar = init `Set.map` last'
           shortestPrefix = []
         }
 
+-- | Checks if a string of terminals is a prefix of a string symbols. This is
+-- done by doing breadth first search on all possible derivations.
 isTerminalPrefix ::
   (Ord t, Ord nt, Show nt, Show t) =>
   Grammar nt t ->
@@ -103,6 +117,8 @@ isTerminalPrefix grammar ts = bfs Set.empty . Seq.singleton
         k_terms_top = take (length ts) top
         new_visited = Set.insert k_terms_top visited
 
+-- | Given a string of symbols and a string of terminals it solves for the
+-- shortest prefix of the symbols where the string of terminals is the prefix.
 solveShortestsPrefix ::
   (Ord t, Ord nt, Show nt, Show t) =>
   Int ->
@@ -121,16 +137,26 @@ solveShortestsPrefix k grammar ts string = solveShortestsPrefix' string
     safeHead [] = []
     safeHead (x : xs) = x
 
+-- | The context needed for the LLP collection can be created.
 data LlpContext nt t = LlpContext
-  { lookback :: Int,
+  { -- | The lookback used i.e. q in LLP(q,k)
+    lookback :: Int,
+    -- | The lookahead used i.e. k in LLP(q,k)
     lookahead :: Int,
+    -- | The augmented grammar.
     theGrammar :: Grammar (AugmentedNonterminal nt) (AugmentedTerminal t),
+    -- | The context needed for first to be memoized.
     firstContext :: AlphaBetaMemoizedContext (AugmentedNonterminal nt) (AugmentedTerminal t),
+    -- | The context needed for last to be memoized.
     lastContext :: AlphaBetaMemoizedContext (AugmentedNonterminal nt) (AugmentedTerminal t),
+    -- | The follow function for the given grammar.
     follow' :: AugmentedNonterminal nt -> Set [AugmentedTerminal t],
+    -- | The before function for the given grammar.
     before' :: AugmentedNonterminal nt -> Set [AugmentedTerminal t]
   }
 
+-- | Computes the first set within the LLP Context such that memoization can be
+-- used.
 useFirst ::
   (Ord nt, Ord t) =>
   [Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)] ->
@@ -143,6 +169,8 @@ useFirst symbols = do
   put ctx'
   return set
 
+-- | Computes the last set within the LLP Context such that memoization can be
+-- used.
 useLast ::
   (Ord nt, Ord t) =>
   [Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)] ->
@@ -155,6 +183,7 @@ useLast symbols = do
   put ctx'
   return set
 
+-- | Uses the follow function within the LLP context.
 useFollow ::
   (Ord nt, Ord t) =>
   AugmentedNonterminal nt ->
@@ -163,6 +192,7 @@ useFollow nt = do
   ctx <- get
   return $ follow' ctx nt
 
+-- | Uses the follow function within the LLP context.
 useBefore ::
   (Ord nt, Ord t) =>
   AugmentedNonterminal nt ->
@@ -171,6 +201,7 @@ useBefore nt = do
   ctx <- get
   return $ before' ctx nt
 
+-- | Creates the initial LLP context to be used the LLP collection creation.
 initLlpContext ::
   (Ord nt, Ord t, Show nt, Show t) =>
   Int ->
@@ -190,6 +221,9 @@ initLlpContext q k grammar =
   where
     augmented_grammar = augmentGrammar grammar
 
+-- | From a single LLP item it creates a subset of the set in step 3 (a) of 
+-- algorithm 8 in the LLP paper. This is done with memoization using the LLP
+-- context.
 newLlpItemsMemo ::
   (Ord t, Ord nt, Show nt, Show t) =>
   Item (AugmentedNonterminal nt) (AugmentedTerminal t) ->
@@ -228,6 +262,8 @@ newLlpItemsMemo old_item = result
           then Set.empty
           else Set.fromList [newItem u v | u <- toList uj, v <- toList vj]
 
+-- | From a single LLP item it creates a subset of the set in step 3 (a) of 
+-- algorithm 8 in the LLP paper.
 newLlpItems ::
   (Ord t, Ord nt, Show nt, Show t) =>
   Int ->
@@ -265,6 +301,10 @@ newLlpItems q k grammar old_item
         shortestPrefix = delta
       } = old_item
 
+-- | This function performs step 3 (b) in algorithm 8 of the LLP paper. This is
+-- done for a single item and if the item does not fulfill the conditions
+-- described in the paper, the empty set is returned. This is done with
+-- memozation.
 extraLlpItemMemo ::
   (Ord t, Ord nt, Show nt, Show t) =>
   Item (AugmentedNonterminal nt) (AugmentedTerminal t) ->
@@ -305,6 +345,9 @@ extraLlpItemMemo old_item
       let deltas = symbols <$> findProductions grammar y
       Set.unions <$> mapM newItems deltas
 
+-- | This function performs step 3 (b) in algorithm 8 of the LLP paper. This is
+-- done for a single item and if the item does not fulfill the conditions
+-- described in the paper, the empty set is returned.
 extraLlpItem ::
   (Ord t, Ord nt, Show nt, Show t) =>
   Int ->
@@ -338,6 +381,8 @@ extraLlpItem q grammar old_item
               shortestPrefix = gamma
             }
 
+-- | This function performs step 3 (b) of algorithm 8 in the LLP paper. This is
+-- with memoization.
 extraLlpItemsMemo ::
   (Ord t, Ord nt, Show nt, Show t) =>
   Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t)) ->
@@ -354,6 +399,7 @@ extraLlpItemsMemo = fixedPointIterate
       extras <- mapM extraLlpItemMemo $ toList items
       return $ items `Set.union` Set.unions extras
 
+-- | This function performs step 3 (b) of algorithm 8 in the LLP paper.
 extraLlpItems ::
   (Ord t, Ord nt, Show nt, Show t) =>
   Int ->
@@ -364,6 +410,9 @@ extraLlpItems q grammar = fixedPointIterate (/=) addedItems
   where
     addedItems items = items `Set.union` Set.unions (extraLlpItem q grammar `Set.map` items)
 
+-- | This function computes a single iteration of step 3 for a single item in
+-- algorithm 8 of the LLP paper. This will create a subset of a item set. This
+-- is done using memoization.
 solveLlpItemMemo ::
   (Ord t, Ord nt, Show nt, Show t) =>
   Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t)) ->
@@ -373,6 +422,8 @@ solveLlpItemMemo items = do
   new_items <- mapM newLlpItemsMemo $ toList items
   extraLlpItemsMemo $ Set.unions new_items
 
+-- | This function computes a single iteration of step 3 for a single item in
+-- algorithm 8 of the LLP paper. This will be a subset of a item set.
 solveLlpItem ::
   (Ord t, Ord nt, Show nt, Show t) =>
   Int ->
@@ -385,6 +436,9 @@ solveLlpItem q k grammar items =
     . Set.unions
     $ Set.map (newLlpItems q k grammar) items
 
+-- | Given a item set it creates a new set of items sets which will be a subset
+-- of the LLP collection. This corrosponds to a single iteration of step 3. This
+-- is done using memoization.
 solveLlpItemsMemo ::
   (Ord t, Ord nt, Show nt, Show t) =>
   Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t)) ->
@@ -410,6 +464,8 @@ solveLlpItemsMemo items = do
         [x] = x'
         x' = auxiliary a
 
+-- | Given a item set it creates a new set of items sets which will be a subset
+-- of the LLP collection. This corrosponds to a single iteration of step 3.
 solveLlpItems ::
   (Ord t, Ord nt, Show nt, Show t) =>
   Int ->
@@ -441,6 +497,8 @@ solveLlpItems q k grammar =
         [x] = x'
         x' = auxiliary a
 
+-- | Creates the LLP collection as described in algorithm 8 from the LLP paper.
+-- This is done using memoization.
 llpCollectionMemo ::
   (Ord t, Ord nt, Show nt, Show t) =>
   State (LlpContext nt t) (Set (Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t))))
@@ -467,6 +525,7 @@ llpCollectionMemo = do
           let new_queue = queue ++ toList new_item
           auxiliary new_visited new_items new_queue
 
+-- | Creates the LLP collection as described in algorithm 8 from the LLP paper.
 llpCollection ::
   (Ord t, Ord nt, Show nt, Show t) =>
   Int ->
@@ -490,6 +549,7 @@ llpCollection q k grammar = removeNull $ auxiliary Set.empty d_init_set d_init_l
         new_items = Set.union new_item items
         new_queue = queue ++ toList new_item
 
+-- | Creates the PSLS table as described in algorithm 9 in the LLP paper. 
 psls ::
   (Ord t, Ord nt, Show nt, Show t) =>
   Set (Set (Item nt t)) ->
@@ -510,6 +570,8 @@ psls = Map.unionsWith Set.union . fmap auxiliary . toList . Set.unions
           } = old_item
         z = List.last alpha_z
 
+-- | Performance the parsing described in step 2 of algorithm 13 of the LLP
+-- paper.
 llTableParse ::
   (Ord nt, Ord t, Show nt, Show t) =>
   Int ->
@@ -548,6 +610,8 @@ llTableParse k grammar a b = auxiliary (a, b, [])
 
         Just (index, production) = maybeTuple
 
+-- | Creates all the starting pairs which results in the augmented starting
+-- production.
 allStarts ::
   (Ord nt, Ord t, Show nt, Show t) =>
   Int ->
@@ -562,16 +626,20 @@ allStarts q k grammar = zero_keys
     zero_symbols = toList $ first' s
     zero_keys = Map.fromList $ (,[0]) . ([],) <$> zero_symbols
 
-admissiblePairs ::
+-- | Creates all strings of length 2 * (q + k) using the first set. This can be
+-- used to find the admissable pairs.
+admissibleStrings ::
   (Show nt, Show t, Ord nt, Ord t) =>
   Int ->
   Int ->
   Grammar nt t ->
   Set [t]
-admissiblePairs q k grammar = naiveFirst (2 * (q + k)) grammar init_start
+admissibleStrings q k grammar = naiveFirst (2 * (q + k)) grammar init_start
   where
     init_start = List.singleton . Nonterminal $ start grammar
 
+-- | Removes the keys of a LLP table if the pairs are not admissable i.e. cannot
+-- be created with the grammar.
 filterAdmissiblePairs ::
   (Show nt, Show t, Ord nt, Ord t) =>
   Int ->
@@ -581,9 +649,11 @@ filterAdmissiblePairs ::
   Map ([t], [t]) a
 filterAdmissiblePairs q k grammar = Map.filterWithKey (\k _ -> isValid k)
   where
-    valid_strings = admissiblePairs q k grammar
+    valid_strings = admissibleStrings q k grammar
     isValid (x, y) = any ((x ++ y) `List.isInfixOf`) valid_strings
 
+-- | Creates the LLP parsing table if Nothing is returned then the table could
+-- not be created since the grammar is not LLP(q,k).
 llpParsingTable ::
   (Ord nt, Ord t, Show nt, Show t) =>
   Int ->
@@ -605,6 +675,8 @@ llpParsingTable q k grammar
       where
         f (epsilon, omega, pi) = pi
 
+-- | Given a string create all the pairs which will be used as keys in the LLP
+-- table.
 pairs :: Int -> Int -> [a] -> [([a], [a])]
 pairs q k = toList . auxiliary Seq.empty Seq.empty . Seq.fromList
   where
@@ -618,7 +690,7 @@ pairs q k = toList . auxiliary Seq.empty Seq.empty . Seq.fromList
           where
             n = Seq.length seq
 
-
+-- | Given a grammar it will parse the string using a LLP table.
 llpParse :: (Ord nt, Ord t, Show nt, Show t) => Int -> Int -> Grammar nt t -> [t] -> [Int]
 llpParse q k grammar [] = []
 llpParse q k grammar string = concatMap auxiliary . pairs q k . addStoppers $ aug string
@@ -629,6 +701,8 @@ llpParse q k grammar string = concatMap auxiliary . pairs q k . addStoppers $ au
     Just table = llpParsingTable q k grammar
     auxiliary = (table Map.!) . debug
 
+-- | Checks if a grammar is left recursive and returns all the nonterminals
+-- which causes the left recursion.
 leftRecursiveNonterminals :: (Ord nt, Ord t, Show nt, Show t) => Grammar nt t -> [nt]
 leftRecursiveNonterminals grammar = mapMaybe (auxiliary . Nonterminal) nonterminals'
   where

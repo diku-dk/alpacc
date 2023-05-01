@@ -9,7 +9,8 @@ homepage:
 
 -- A URL where users can report bugs.
 -- bug-reports:
-license:
+license:            MIT
+license-file:       LICENSE
 author:             William Due
 maintainer:         williamhenrichdue@gmail.com
 
