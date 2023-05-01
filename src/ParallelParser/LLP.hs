@@ -634,7 +634,7 @@ admissibleStrings ::
   Int ->
   Grammar nt t ->
   Set [t]
-admissibleStrings q k grammar = naiveFirst (2 * (q + k)) grammar init_start
+admissibleStrings q k grammar = naiveFirst (1 + 2 * (q + k)) grammar init_start
   where
     init_start = List.singleton . Nonterminal $ start grammar
 
