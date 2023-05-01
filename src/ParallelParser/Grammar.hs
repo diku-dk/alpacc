@@ -39,77 +39,100 @@ import Text.ParserCombinators.ReadP
 
 debug x = traceShow x x
 
+-- | Structure used for terminals making it easier to print strings in a
+-- readable manner.
 newtype T = T String deriving (Ord, Eq)
 
+-- | Used in augmenting terminals for the augmented grammar.
 data AugmentedTerminal t
   = AugmentedTerminal t
   | RightTurnstile
   | LeftTurnstile
   deriving (Ord, Eq)
 
+-- | Prints whats inside the augmented terminal structure.
 instance Show t => Show (AugmentedTerminal t) where
   show RightTurnstile = "⊢"
   show LeftTurnstile = "⊣"
   show (AugmentedTerminal t) = show t
 
+-- | Used in augmenting nonterminals for the augmented grammar.
 data AugmentedNonterminal nt
   = AugmentedNonterminal nt
   | Start
   deriving (Ord, Eq)
 
+-- | Prints whats inside the augmented nonterminal structure.
 instance Show nt => Show (AugmentedNonterminal nt) where
   show (AugmentedNonterminal nt) = show nt
   show Start = "⊥"
 
+-- | Reads the string as it is for the terminal.
 instance Read T where
   readsPrec _ a = [(T a, "")]
 
+-- | Prints the string inside the terminal symbol.
 instance Show T where
   show (T a) = a
 
+-- | Structure used for nonterminals making it easier to print strings in a
+-- readable manner.
 newtype NT = NT String deriving (Ord, Eq)
 
+-- | Reads the string as it is for the nonterminal.
 instance Show NT where
   show (NT a) = a
 
+-- | Reads the string as it is for the terminal.
 instance Read NT where
   readsPrec _ a = [(NT a, "")]
 
+-- | An algebraic data structure which can contain a terminal or a nonterminal.
 data Symbol nt t
   = Nonterminal nt
   | Terminal t
   deriving (Ord, Eq, Read, Functor)
 
+-- | Shows whats inside the symbol.
 instance (Show nt, Show t) => Show (Symbol nt t) where
   show (Nonterminal a) = show a
   show (Terminal a) = show a
 
+-- | Bifunctor for symbol where first is the Nonterminal and second is Terminal.
 instance Bifunctor Symbol where
   first f (Nonterminal nt) = Nonterminal $ f nt
   first _ (Terminal t) = Terminal t
   second _ (Nonterminal nt) = Nonterminal nt
   second f (Terminal t) = Terminal $ f t
 
+-- | An algebraic data structure which describes a production.
 data Production nt t
   = Production nt [Symbol nt t]
   deriving (Ord, Eq, Show, Read, Functor)
 
+-- | Bifunctor for production where first is the Nonterminal and second is
+-- Terminal.
 instance Bifunctor Production where
   first f (Production nt s) = Production (f nt) (first f <$> s)
   second f (Production nt s) = Production nt (second f <$> s)
 
+-- | Given Nonterminal return the value inside the Nonterminal.
 unpackNonterminal :: Symbol nt t -> nt
 unpackNonterminal (Nonterminal a) = a
 
+-- | Given Terminal return the value inside the Terminal.
 unpackTerminal :: Symbol nt t -> t
 unpackTerminal (Terminal a) = a
 
+-- | Returns the right hand side of the production.
 symbols :: Production nt t -> [Symbol nt t]
 symbols (Production _ s) = s
 
+-- | Returns the left hand side of the production.
 nonterminal :: Production nt t -> nt
 nonterminal (Production nt _) = nt
 
+-- | Record used to store the 4-tuple that defines a context-free grammar.
 data Grammar nt t = Grammar
   { start :: nt,
     terminals :: [t],
@@ -118,11 +141,13 @@ data Grammar nt t = Grammar
   }
   deriving (Ord, Eq, Show)
 
+-- | Skips white spaces.
 skipWhiteSpaces :: ReadP ()
 skipWhiteSpaces = do
   _ <- munch (`elem` [' ', '\n', '\r', '\t'])
   return ()
 
+-- | Removes the white spaces around som ReadP term.
 skipSpacesAround :: ReadP a -> ReadP a
 skipSpacesAround a = do
   _ <- skipWhiteSpaces
@@ -130,20 +155,24 @@ skipSpacesAround a = do
   _ <- skipWhiteSpaces
   return result
 
+-- | Removes whitespaces around a comma.
 sep :: ReadP ()
 sep = do
   _ <- skipSpacesAround (char ',')
   return ()
 
+-- | Parses all elements seperated by a comma and ignore spaces.
 sepBySkip :: ReadP a -> ReadP sep -> ReadP [a]
 sepBySkip a sep' = skipSpacesAround $ sepBy a sep'
 
+-- | Given a string parses it as a symbol.
 toSymbol :: (Read nt, Read t) => [String] -> [String] -> String -> Symbol nt t
 toSymbol ts nts symbol
   | symbol `elem` nts = Nonterminal $ read symbol
   | symbol `elem` ts = Terminal $ read symbol
   | otherwise = error $ show symbol ++ " is not a defined symbol."
 
+-- | Replaces escaped characters with their counter parts.
 replaceEscapedChars :: String -> String
 replaceEscapedChars "" = ""
 replaceEscapedChars input@(x : xs)
@@ -161,6 +190,7 @@ replaceEscapedChars input@(x : xs)
     auxiliary ('\\' : ys) = ("", ys)
     auxiliary ys = ("", ys)
 
+-- | 
 setElement = replaceEscapedChars . concat <$> many1 escaped
   where
     escaped = string "\\}" <++ string "\\," <++ fmap List.singleton (satisfy (`notElem` [' ', ',', '}', '\n', '\r', '\t']))
