@@ -505,13 +505,13 @@ llpqkParsingTestCase q k = TestCase $ assertEqual [i|LLP(#{q}, #{k}) parse test|
   where
     input = map List.singleton "a+[a+a]"
     result = parser q k
-    expected = [0, 1, 4, 2, 5, 1, 4, 2, 4, 3, 3]
+    expected = Just [0, 1, 4, 2, 5, 1, 4, 2, 4, 3, 3]
     parser q k = llpParse q k grammar input
 
 llpqkParsingTestCases = [llpqkParsingTestCase q k | q <- [1..5], k <- [1..5]]
 
 tests = 
-  TestLabel "LLP(q, k) tests" $
+  TestLabel "LLP(q,k) tests" $
     TestList $
       [ augmentGrammarTestCase,
         pslsTestCase,

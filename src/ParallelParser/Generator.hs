@@ -144,9 +144,9 @@ def parse [n] (arr : [n]u32) =
       isNothing maybe_start_terminal
         || isNothing maybe_end_terminal
         || isNothing maybe_table
-    Just start_terminal = List.singleton . show <$> maybe_start_terminal
-    Just end_terminal = List.singleton . show <$> maybe_end_terminal
-    Just table = maybe_table
+    Just start_terminal = List.singleton <$> maybe_start_terminal
+    Just end_terminal = List.singleton <$> maybe_end_terminal
+    Just table = fmap thd3 <$> maybe_table
     maybe_start_terminal = List.elemIndex RightTurnstile terminals'
     maybe_end_terminal = List.elemIndex LeftTurnstile terminals'
     augmented_grammar = augmentGrammar grammar

@@ -7,7 +7,8 @@ module ParallelParser.LL
     fixedPointIterate,
     llTable,
     llParse,
-    leftDerivations,
+    leftmostDerivations,
+    leftmostDerive,
     derivations,
     naiveFirst,
     naiveFollow,
@@ -48,12 +49,12 @@ rightProductons :: Production nt t -> [(nt, (nt, [Symbol nt t]))]
 rightProductons (Production aj symbols') = (aj,) <$> rightSymbols symbols'
 
 -- | Given a string of symbols create all the leftmost derivations.
-leftDerivations ::
+leftmostDerive ::
   (Ord t, Ord nt, Show nt, Show t) =>
   Grammar nt t ->
   [Symbol nt t] ->
   Seq [Symbol nt t]
-leftDerivations grammar = derive Seq.empty . Seq.fromList
+leftmostDerive grammar = derive Seq.empty . Seq.fromList
   where
     toSequences = fmap (fmap Seq.fromList)
     production_map = toSequences . toProductionsMap $ productions grammar
@@ -88,12 +89,28 @@ naiveFirst :: (Show nt, Show t, Ord nt, Ord t) => Int -> Grammar nt t -> [Symbol
 naiveFirst k grammar = Set.fromList . bfs Set.empty . Seq.singleton
   where
     unpackT (Terminal t) = t
-    leftDerivations' = leftDerivations grammar
+    derivations' = derivations grammar
     bfs _ Empty = []
     bfs visited (top :<| queue)
       | k_terms `Set.member` visited = bfs visited queue
-      | all isTerminal k_terms = (unpackT <$> k_terms) : bfs new_visited (queue >< leftDerivations' top)
-      | otherwise = bfs new_visited (queue >< leftDerivations' top)
+      | all isTerminal k_terms = (unpackT <$> k_terms) : bfs new_visited (queue >< derivations' top)
+      | otherwise = bfs new_visited (queue >< derivations' top)
+      where
+        k_terms = take k top
+        new_visited = Set.insert k_terms visited
+
+-- | Naïvely creates creates all leftmost derivations which results in
+-- terminals.
+leftmostDerivations :: (Show nt, Show t, Ord nt, Ord t) => Int -> Grammar nt t -> [Symbol nt t] -> Set [t]
+leftmostDerivations k grammar = Set.fromList . bfs Set.empty . Seq.singleton
+  where
+    unpackT (Terminal t) = t
+    leftmostDerive' = leftmostDerive grammar
+    bfs _ Empty = []
+    bfs visited (top :<| queue)
+      | k_terms `Set.member` visited = bfs visited queue
+      | all isTerminal k_terms = (unpackT <$> k_terms) : bfs new_visited (queue >< leftmostDerive' top)
+      | otherwise = bfs new_visited (queue >< leftmostDerive' top)
       where
         k_terms = take k top
         new_visited = Set.insert k_terms visited
