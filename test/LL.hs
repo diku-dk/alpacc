@@ -180,12 +180,12 @@ deriveNLengths n grammar =
     $ start grammar
   where
     unpackT (Terminal t) = t
-    leftDerivations' = leftDerivations grammar
+    leftmostDerive' = leftmostDerive grammar
     bfs Empty = []
     bfs (top :<| queue)
       | length top > n = bfs queue
-      | all isTerminal top = (unpackT <$> top) : bfs (queue >< leftDerivations' top)
-      | otherwise = bfs (queue >< leftDerivations' top)
+      | all isTerminal top = (unpackT <$> top) : bfs (queue >< leftmostDerive' top)
+      | otherwise = bfs (queue >< leftmostDerive' top)
 
 extendedGrammarDerivations10 = deriveNLengths 20 extendedGrammar
 

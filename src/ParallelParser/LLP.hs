@@ -29,7 +29,9 @@ import Data.String.Interpolate (i)
 import Debug.Trace (traceShow)
 import ParallelParser.Grammar
 import ParallelParser.LL
+import Control.Monad (liftM2)
 import Prelude hiding (last)
+import Data.Tuple.Extra (thd3)
 
 pmap :: NFData b => (a -> b) -> [a] -> [b]
 pmap f ls =
@@ -617,14 +619,14 @@ allStarts ::
   Int ->
   Int ->
   Grammar nt t ->
-  Map ([t], [t]) [Int]
+  Map ([t], [t]) ([Symbol nt t], [Symbol nt t], [Int])
 allStarts q k grammar = zero_keys
   where
-    first' = naiveFirst k grammar
+    first' = leftmostDerivations k grammar
     start' = start grammar
     [Production nt s] = findProductions grammar start'
     zero_symbols = toList $ first' s
-    zero_keys = Map.fromList $ (,[0]) . ([],) <$> zero_symbols
+    zero_keys = Map.fromList $ (,([Nonterminal start'], tail s, [0])) . ([],) <$> zero_symbols
 
 -- | Creates all strings of length 2 * (q + k) using the first set. This can be
 -- used to find the admissable pairs.
@@ -634,7 +636,7 @@ admissibleStrings ::
   Int ->
   Grammar nt t ->
   Set [t]
-admissibleStrings q k grammar = naiveFirst (1 + 2 * (q + k)) grammar init_start
+admissibleStrings q k grammar = leftmostDerivations (1 + 2 * (q + k)) grammar init_start
   where
     init_start = List.singleton . Nonterminal $ start grammar
 
@@ -659,7 +661,8 @@ llpParsingTable ::
   Int ->
   Int ->
   Grammar nt t ->
-  Maybe (Map ([AugmentedTerminal t], [AugmentedTerminal t]) [Int])
+  Maybe (Map ([AugmentedTerminal t], [AugmentedTerminal t])
+  ([Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)], [Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)], [Int]))
 llpParsingTable q k grammar
   | any ((/= 1) . Set.size) psls_table = Nothing
   | otherwise = Map.union starts <$> sequence parsed
@@ -673,33 +676,51 @@ llpParsingTable q k grammar
     llTableParse' = llTableParse k (theGrammar init_context)
     auxiliary (x, y) alpha = f <$> llTableParse' y alpha
       where
-        f (epsilon, omega, pi) = pi
+        f (epsilon, omega, pi) = (alpha, omega, pi)
 
--- | Given a string create all the pairs which will be used as keys in the LLP
--- table.
-pairs :: Int -> Int -> [a] -> [([a], [a])]
-pairs q k = toList . auxiliary Seq.empty Seq.empty . Seq.fromList
+-- | Given a lsit create all the pairs with q lookback and k lookahead which
+-- will be used as keys in the table.
+pairLookup :: Ord t => Map ([t], [t]) v -> Int -> Int -> [t] -> [Maybe v]
+pairLookup table q k = toList . auxiliary Seq.empty Seq.empty . Seq.fromList
   where
     auxiliary es _ Empty = es
-    auxiliary es ys (x :<| xs) = auxiliary (es :|> substring) (ys :|> x) xs
+    auxiliary es ys (x :<| xs) = auxiliary (es :|> val) (ys :|> x) xs
       where
         backwards = takeR q ys
         forwards = Seq.take (k - 1) xs
-        substring = (toList backwards, toList $ x <| forwards)
+        val = (toList backwards, toList $ x <| forwards) `Map.lookup` table
         takeR i seq = Seq.drop (n - i) seq
           where
             n = Seq.length seq
 
+-- | glues two stacks together as described in definition 1 of the LLP paper.
+glue :: 
+  (Eq nt, Eq t) =>
+  ([Symbol nt t], [Symbol nt t], [Int]) ->
+  ([Symbol nt t], [Symbol nt t], [Int]) ->
+  Maybe ([Symbol nt t], [Symbol nt t], [Int])
+glue (alpha_l, omega_l, pi_l) (alpha_r, omega_r, pi_r)
+  | omega_l == alpha_r = Just (alpha_l, omega_l, pi)
+  | omega_l `List.isPrefixOf` alpha_r = Just (alpha_l ++ beta_0, omega_r, pi)
+  | alpha_r `List.isPrefixOf` omega_l = Just (alpha_l, omega_r ++ beta_1, pi)
+  | otherwise = Nothing
+  where
+    pi = pi_l ++ pi_r
+    beta_0 = drop (length omega_l) alpha_r
+    beta_1 = drop (length alpha_r) omega_l
+
 -- | Given a grammar it will parse the string using a LLP table.
-llpParse :: (Ord nt, Ord t, Show nt, Show t) => Int -> Int -> Grammar nt t -> [t] -> [Int]
-llpParse q k grammar [] = []
-llpParse q k grammar string = concatMap auxiliary . pairs q k . addStoppers $ aug string
+llpParse :: (Ord nt, Show nt, Show t, Ord t) => Int -> Int -> Grammar nt t -> [t] -> Maybe [Int]
+llpParse q k grammar string = fmap thd3 . foldl1 glue' . pairLookup table q k . addStoppers $ aug string
   where
     addStoppers = ([RightTurnstile] ++) . (++ [LeftTurnstile])
     aug = fmap AugmentedTerminal
     augmented_grammar = augmentGrammar grammar
     Just table = llpParsingTable q k grammar
-    auxiliary = (table Map.!)
+    glue' a b = do
+      a' <- a
+      b' <- b
+      glue (debug a') (debug b')
 
 -- | Checks if a grammar is left recursive and returns all the nonterminals
 -- which causes the left recursion.
@@ -707,17 +728,17 @@ leftRecursiveNonterminals :: (Ord nt, Ord t, Show nt, Show t) => Grammar nt t ->
 leftRecursiveNonterminals grammar = mapMaybe (auxiliary . Nonterminal) nonterminals'
   where
     nonterminals' = nonterminals grammar
-    leftDerivations' = leftDerivations grammar
+    leftmostDerive' = leftmostDerive grammar
     auxiliary nt = bfs Set.empty init_queue
       where
-        init_queue = leftDerivations' [nt]
+        init_queue = leftmostDerive' [nt]
         bfs _ Empty = Nothing
         bfs visited (top :<| queue)
           | null top = bfs visited queue
           | head_top `Set.member` visited = bfs visited queue
           | isTerminal head_top = bfs new_visited queue
           | nt == head_top = Just . unpackNonterminal $ nt
-          | otherwise = bfs new_visited (queue >< leftDerivations' top)
+          | otherwise = bfs new_visited (queue >< leftmostDerive' top)
           where
             head_top = head top
             new_visited = Set.insert head_top visited
