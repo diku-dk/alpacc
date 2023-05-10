@@ -143,11 +143,11 @@ def lookahead_array_to_tuple [n] (arr : [n]u32) : (u32) =
 
 def lookback_chunks [n] (arr : [n]u32) =
   let arr' = replicate 1 u32.highest ++ arr
-  in iota n |> map (\i -> arr'[i:i + 1] |> lookbkack_array_to_tuple)
+  in iota n |> map (\\i -> arr'[i:i + 1] |> lookbkack_array_to_tuple)
 
 def lookahead_chunks [n] (arr : [n]u32) =
   let arr' = arr ++ replicate 1 u32.highest
-  in iota n |> map (\i -> arr'[i:i + 1] |> lookahead_array_to_tuple)
+  in iota n |> map (\\i -> arr'[i:i + 1] |> lookahead_array_to_tuple)
 
 def keys [n] (arr : [n]u32) =
   let lookback = lookback_chunks arr
@@ -161,10 +161,10 @@ def key_to_config (key : (#{lookback_type}, #{lookahead_type})) =
 type bracket = #left u64 | #right u64
 
 def lbr (xs : []u64) : []bracket =
-  map (\x -> #left x) xs
+  map (\\x -> #left x) xs
 
 def rbr (xs : []u64) : []bracket =
-  map (\x -> #right x) xs
+  map (\\x -> #right x) xs
 
 def is_nonempty_bracket (b : bracket) =
   match b
