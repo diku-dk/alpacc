@@ -665,7 +665,7 @@ llpParsingTable ::
   ([Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)], [Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)], [Int]))
 llpParsingTable q k grammar
   | any ((/= 1) . Set.size) psls_table = Nothing
-  | otherwise = Map.union starts <$> sequence parsed
+  | otherwise = sequence parsed
   where
     parsed = Map.mapWithKey auxiliary unwrapped
     unwrapped = (\[a] -> a) . Set.toList <$> psls_table
