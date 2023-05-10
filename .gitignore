@@ -28,3 +28,6 @@ cabal.project.local~
 
 # VS code
 **/.vscode/
+
+# No futhark lib folder.
+lib
