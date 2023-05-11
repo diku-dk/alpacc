@@ -17,7 +17,9 @@ module ParallelParser.LL
     lastMemoized,
     initFirstMemoizedContext,
     initLastMemoizedContext,
-    AlphaBetaMemoizedContext (..)
+    AlphaBetaMemoizedContext (..),
+    derivableNLengths,
+    nonderivableNLengths
   )
 where
 
@@ -40,6 +42,35 @@ import Data.Composition
 import Debug.Trace (traceShow)
 
 debug x = traceShow x x
+
+listProduct :: Int -> [t] -> [[t]]
+listProduct 1 zs = map (:[]) zs
+listProduct n zs = [x:y | x <- zs, y <- listProduct (n - 1) zs]
+
+derivableNLengths :: (Ord t, Ord nt, Show nt, Show t) => Int -> Grammar nt t -> Set [t]
+derivableNLengths n grammar =
+  Set.fromList
+    . bfs
+    . Seq.singleton
+    . List.singleton
+    . Nonterminal
+    $ start grammar
+  where
+    unpackT (Terminal t) = t
+    leftmostDerive' = leftmostDerive grammar
+    bfs Empty = []
+    bfs (top :<| queue)
+      | length top > n = bfs queue
+      | all isTerminal top = (unpackT <$> top) : bfs (queue >< leftmostDerive' top)
+      | otherwise = bfs (queue >< leftmostDerive' top)
+
+nonderivableNLengths :: (Ord nt, Show nt, Show t, Ord t) => Int -> Grammar nt t -> Set [t]
+nonderivableNLengths n grammar = nonderivable
+  where
+    ts = terminals grammar
+    combs = Set.fromList $ concatMap (`listProduct` ts) [1..n]
+    derivable = derivableNLengths (n + 1) grammar
+    nonderivable = combs `Set.difference` derivable
 
 -- | Given a production it produces a list of tuples where the first element is
 -- the left hand side of the production. The second element is a tuple where the

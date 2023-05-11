@@ -170,24 +170,7 @@ firstMemokTestCase k = TestCase $ assertEqual [i|First k=#{k} set test|] expecte
 
 firstMemokTestCases = [firstMemokTestCase k | k <- [1..20]]
 
-
-deriveNLengths n grammar = 
-  Set.fromList
-    . bfs
-    . Seq.singleton
-    . List.singleton
-    . Nonterminal
-    $ start grammar
-  where
-    unpackT (Terminal t) = t
-    leftmostDerive' = leftmostDerive grammar
-    bfs Empty = []
-    bfs (top :<| queue)
-      | length top > n = bfs queue
-      | all isTerminal top = (unpackT <$> top) : bfs (queue >< leftmostDerive' top)
-      | otherwise = bfs (queue >< leftmostDerive' top)
-
-extendedGrammarDerivations10 = deriveNLengths 20 extendedGrammar
+extendedGrammarDerivations10 = derivableNLengths 20 extendedGrammar
 
 canParseDerivedTestCase k = TestCase $ assertEqual text expected result
   where

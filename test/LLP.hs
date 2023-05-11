@@ -6,9 +6,11 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set
 import ParallelParser.Grammar
 import ParallelParser.LLP
+import ParallelParser.LL
 import Test.HUnit
 import Data.String.Interpolate (i)
 import Debug.Trace (traceShow)
+import Data.Maybe
 
 debug x = traceShow x x
 
@@ -501,14 +503,25 @@ pslsTestCase = TestCase $ assertEqual "PSLS table test" expected result
     collection' = llpCollection 1 1 augmentedGrammar
     result = psls collection'
 
-llpqkParsingTestCase q k = TestCase $ assertEqual [i|LLP(#{q}, #{k}) parse test|] expected result
+llpqkParsingTestCase parser q k = TestCase $ assertEqual [i|LLP(#{q}, #{k}) parse test|] expected result
   where
     input = map List.singleton "a+[a+a]"
-    result = parser q k
+    result = parser input
     expected = Just [0, 1, 4, 2, 5, 1, 4, 2, 4, 3, 3]
-    parser q k = llpParse q k grammar input
 
-llpqkParsingTestCases = [llpqkParsingTestCase q k | q <- [1..5], k <- [1..5]]
+llpParsers = [(llpParse q k grammar, q, k) | q <- [1..3], k <- [1..3]]
+
+derivable10 = derivableNLengths 10 grammar
+
+llpqkParsingDerivableTestCase parser q k = TestCase $ assertEqual [i|LLP(#{q}, #{k}) parse derivables of length 10.|] expected True
+  where
+    expected = all isJust . debug $ parser <$> Set.toList derivable10
+
+llpqkParsingDerivableTestCases  = [llpqkParsingDerivableTestCase parser q k | (parser, k, q) <- llpParsers]
+
+llpqkParsingTestCases = [llpqkParsingTestCase parser q k | (parser, k, q) <- llpParsers]
+
+nonderivable10 = nonderivableNLengths 10 grammar
 
 tests = 
   TestLabel "LLP(q,k) tests" $
