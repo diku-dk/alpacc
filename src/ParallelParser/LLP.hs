@@ -720,7 +720,7 @@ llpParse q k grammar string = fmap thd3 . foldl1 glue' . pairLookup table q k . 
     glue' a b = do
       a' <- a
       b' <- b
-      glue (debug a') (debug b')
+      glue a' b'
 
 -- | Checks if a grammar is left recursive and returns all the nonterminals
 -- which causes the left recursion.
