@@ -133,7 +133,7 @@ futharkKeyGeneration q k grammar
   | any_is_nothing = Nothing
   | otherwise =
       Just
-        [i|import "lib/github.com/diku-dk/sorts/quick_sort"
+        [i|import "lib/github.com/diku-dk/sorts/radix_sort"
 
 def lookbkack_array_to_tuple [n] (arr : [n]u32) : (u32) =
   (arr[0])
@@ -159,6 +159,7 @@ def key_to_config (key : (#{lookback_type}, #{lookahead_type})) =
   #{futhark_table}
 
 type bracket = #left u64 | #right u64
+type maybe 'a = #just a | #nothing
 
 def lbr (xs : []u64) : []bracket =
   map (\\x -> #left x) xs
@@ -185,74 +186,56 @@ def step_one [n][m] (configs : []([n]u64, [m]u64, []u32)) =
   in (lbr_reverse_omega ++ evaluated_homomorphisms)
     |> filter is_nonempty_bracket
 
-def to_tuple (b : bracket) : i64 =
-  match b
-  case #left _ -> 1
-  case #right _ -> -1
-
 def is_left (b : bracket) : bool =
   match b
   case #left _ -> true
   case #right _ -> false
 
-def is_balanced (input : []bracket) =
-  input
-  |> map to_tuple
-  |> scan (+) 0
-  |> (\\a -> all (0<=) a && last a == 0)
+def depths [n] (input : [n]bracket) : maybe ([n]i64) =
+  let left_brackets =
+    input
+    |> map (is_left)
+  let bracket_scan =
+    left_brackets
+    |> map (\\b -> if b then 1 else -1)
+    |> scan (+) 0
+  let result =
+    bracket_scan
+    |> map2 (\\a b -> b - i64.bool a) left_brackets
+  in if any (<0) bracket_scan
+  then #nothing
+  else #just result
+
+def grade (xs : []i64) =
+  zip xs (indices xs)
+  |> radix_sort_int_by_key (.0) i64.num_bits i64.get_bit
+  |> map (.1)
+
+def even_indices 'a [n] (_ : [n]a) =
+  iota (n / 2) |> map (2*)
 
 def unpack_bracket (b : bracket) : u64 =
   match b
   case #left a -> a
   case #right a -> a
 
-def eq_bracket(a : bracket) (b : bracket) : bool =
-  match (a, b)
-  case (#left _, #right _) -> false
-  case (#right _, #left _) -> false
-  case (#left x, #left y) -> x u64.== y
-  case (#right x, #right y) -> x u64.== y
-
-def lq_bracket (a : bracket) (b : bracket) : bool =
-  match (a, b)
-  case (#left _, #right _) -> true
-  case (#right _, #left _) -> false
-  case (#left x, #left y) -> x u64.<= y
-  case (#right x, #right y) -> x u64.<= y
-
-def lq_bracket_indexed (a : (bracket, i64)) (b : (bracket, i64)) : bool =
-  if eq_bracket a.0 b.0
-  then a.1 i64.<= b.1
-  else lq_bracket a.0 b.0
-
 def eq_no_bracket (a : bracket) (b : bracket) : bool =
   unpack_bracket a u64.== unpack_bracket b
 
-def zip_index 'a [n] (as : [n]a) : [n](a, i64) =
-  zip as (iota n)
-
-def is_correctly_typed [n] (brackets : [n]bracket) =
-  let sorted_brackets =
-    brackets
-    |> zip_index
-    |> qsort lq_bracket_indexed
-    |> map (.0)
-    |> map unpack_bracket
-  let n_halves = n / 2
-  let left = sorted_brackets[n_halves:] :> [n_halves]u64
-  let right = sorted_brackets[:n_halves] :> [n_halves]u64
-  in map2 (==) left right |> and
-
-def bracket_matching (brackets : []bracket) : bool =
-  if is_balanced brackets |> not
-  then false
-  else is_correctly_typed brackets
+def brackets_matches [n] (brackets : [n]bracket) =
+  match depths brackets
+  case #just depths' ->
+    let grade' = grade depths'
+    in even_indices grade'
+      |> map (\\i -> eq_no_bracket brackets[grade'[i]] brackets[grade'[i+1]])
+      |> and
+  case #nothing -> false
 
 def parse [n] (arr : [n]u32) =
   let arr' = [0] ++ (map (+2) arr) ++ [1]
   let configs = keys arr' |> map key_to_config
   let brackets = step_one configs
-  in if bracket_matching brackets
+  in if brackets_matches brackets
   then map (.2) configs
     |> flatten
     |> filter (!=u32.highest)
