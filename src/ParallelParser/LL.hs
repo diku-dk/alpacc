@@ -45,7 +45,10 @@ debug x = traceShow x x
 
 listProduct :: Int -> [t] -> [[t]]
 listProduct 1 zs = map (:[]) zs
-listProduct n zs = [x:y | x <- zs, y <- listProduct (n - 1) zs]
+listProduct n zs = [x:y | x <- zs, y <- result]
+  where
+    result = listProduct (n - 1) zs
+    
 
 derivableNLengths :: (Ord t, Ord nt, Show nt, Show t) => Int -> Grammar nt t -> Set [t]
 derivableNLengths n grammar =
