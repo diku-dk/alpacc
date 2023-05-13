@@ -160,12 +160,6 @@ leftmostDerivations k grammar = bfs Set.empty Set.empty . Seq.singleton
         k_terms = take k top
         new_visited = Set.insert k_terms visited
 
-
-isValidString :: Grammar nt t -> [Symbol nt t] -> Bool
-isValidString grammar string = True
-  where
-    ps = symbols <$> productions grammar
-
 -- | Naïvely creates the follow sets for a given string of symbols. This is done
 -- using breadth first search and applying first and to the symbols after the
 -- nonterminals of a given derivation in the bfs.

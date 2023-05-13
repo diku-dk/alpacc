@@ -3,7 +3,7 @@ module ParallelParser.Generator
   )
 where
 
-import Data.Bifunctor
+import qualified Data.Bifunctor as BI
 import Data.Composition
 import qualified Data.List as L
 import qualified Data.List as List
@@ -42,7 +42,7 @@ futharkTableKey ::
   [t] ->
   [t] ->
   (String, String)
-futharkTableKey q k grammar = both toTuple . bimap backPad frontPad . both convert .: (,)
+futharkTableKey q k grammar = both toTuple . BI.bimap backPad frontPad . both convert .: (,)
   where
     terminal_map = Map.fromList . flip zip (show <$> [0 ..]) $ terminals grammar
     convert = map (terminal_map Map.!)
@@ -67,14 +67,14 @@ toArray = squareBrackets . List.intercalate ", "
 
 -- | Creates a string that is a array in the Futhark language which corresponds
 -- to the resulting productions list. This is used in the pattern matching.
-futharkProductions :: Int -> Int -> Int -> ([Int], [Int], [Int]) -> String
-futharkProductions max_alpha max_omega max_pi = toTuple . toArr . thd' . snd' . fst'
+futharkProductions :: Int -> Int -> ([Bracket Int], [Int]) -> String
+futharkProductions max_alpha_omega max_pi = toTuple . toArr . snd' . fst'
   where
-    toArr (a, b, c) = [a, b, c]
-    fst' = first3 (auxliary "u64.highest" max_alpha)
-    snd' = second3 (auxliary "u64.highest" max_omega)
-    thd' = third3 (auxliary "u32.highest" max_pi)
-    auxliary str max = toArray . rpad str max . map show
+    toArr (a, b) = [a, b]
+    snd' = BI.second (toArray . rpad "u32.highest" max_pi . map show)
+    fst' = BI.first (toArray . rpad "#epsilon" max_alpha_omega . map auxiliary)
+    auxiliary (LBracket a) = "#left " ++ show a
+    auxiliary (RBracket a) = "#right " ++ show a
 
 -- | Creates a string that is a tuple where a variable is indexed from 0 to 
 -- n - 1 in the Futhark language.
@@ -94,39 +94,36 @@ futharkTablesCases = L.intercalate "\n  " . fmap (uncurry futharkTableCase)
 symbolsToInts ::
   (Ord nt, Ord t) =>
   Grammar nt t ->
-  Map ([t], [t]) ([Symbol nt t], [Symbol nt t], [Int]) ->
-  Map ([t], [t]) ([Int], [Int], [Int])
+  Map ([t], [t]) ([Bracket (Symbol nt t)], [Int]) ->
+  Map ([t], [t]) ([Bracket Int], [Int])
 symbolsToInts grammar = Map.map auxiliary
   where
     ts = Terminal <$> terminals grammar
     nts = Nonterminal <$> nonterminals grammar
     mapping = Map.fromList $ zip (ts ++ nts) [0..]
-    auxiliary (a, b, c) = (fmap (mapping Map.!) a, fmap (mapping Map.!) b, c)
+    auxiliary (a, b) = (fmap (mapping Map.!) <$> a, b)
 
 -- | Creates a string that is the resulting LLP table which is done by using
 -- pattern matching in Futhark.
 futharkTable ::
-  (Ord nt, Show nt, Show t, Ord t, NFData t, NFData nt) =>
+  (Ord nt, Ord t) =>
   Int ->
   Int ->
   Grammar nt t ->
-  Map ([t], [t]) ([Symbol nt t], [Symbol nt t], [Int]) ->
-  (Int, String)
-futharkTable q k grammar table = (max_alpha_omega, ) . (++last_case_str) . cases . prods . keys $ symbolsToInts' table
+  Map ([t], [t]) ([Bracket (Symbol nt t)], [Int]) ->
+  String
+futharkTable q k grammar table = (++last_case_str) . cases . prods . keys $ symbolsToInts' table
   where
     symbolsToInts' = symbolsToInts grammar
     cases = futharkTablesCases . Map.toList
     values = Map.elems table
-    max_alpha = maximum $ length . fst3 <$> values
-    max_omega = maximum $ length . snd3 <$> values
-    max_alpha_omega = max max_alpha max_omega
-    alpha_omega_size = max_alpha + max_omega
-    max_pi = maximum $ length . thd3 <$> values
-    stacks = toArray . flip replicate "u64.highest" <$> [max_alpha_omega, max_alpha_omega]
+    max_alpha_omega = maximum $ length . fst <$> values
+    max_pi = maximum $ length . snd <$> values
+    stacks = toArray $ replicate max_alpha_omega "#epsilon"
     rules = toArray $ replicate max_pi "u32.highest"
-    last_case = toTuple (stacks ++ [rules])
+    last_case = toTuple [stacks, rules]
     last_case_str = [i|\n  case _ -> assert false #{last_case}|]
-    prods = fmap (futharkProductions max_alpha_omega max_alpha_omega max_pi)
+    prods = fmap (futharkProductions max_alpha_omega max_pi)
     keys = Map.mapKeys (uncurry (futharkTableKey q k grammar))
 
 -- | Creates Futhark source code which contains a parallel parser that can
@@ -139,6 +136,9 @@ futharkKeyGeneration q k grammar
   | otherwise =
       Just
         [i|import "lib/github.com/diku-dk/sorts/radix_sort"
+
+type bracket = #left u64 | #right u64 | #epsilon
+type maybe 'a = #just a | #nothing
 
 def lookbkack_array_to_tuple [n] (arr : [n]u32) =
   #{toTupleIndexArray "arr" q}
@@ -159,42 +159,15 @@ def keys [n] (arr : [n]u32) =
   let lookahead = lookahead_chunks arr
   in zip lookback lookahead
 
-def key_to_config (key : (#{lookback_type}, #{lookahead_type})) =
+def key_to_config (key : (#{lookback_type}, #{lookahead_type})) : ([]bracket, []u32) =
   match key
   #{futhark_table}
-
-type bracket = #left u64 | #right u64
-type maybe 'a = #just a | #nothing
-
-def lbr (xs : []u64) : []bracket =
-  map (\\x -> #left x) xs
-
-def rbr (xs : []u64) : []bracket =
-  map (\\x -> #right x) xs
-
-def is_nonempty_bracket (b : bracket) =
-  match b
-  case #left 18446744073709551615 -> false
-  case #right 18446744073709551615 -> false
-  case _ -> true
-
-def eval_homomorphisms (config : ([]u64, []u64, []u32)) : []bracket =
-  let reverse_omega = reverse config.1
-  in rbr config.0 ++ lbr reverse_omega
-
-def step_one [n][m] (configs : []([n]u64, [m]u64, []u32)) =
-  let x = head configs
-  let xs = tail configs
-  let k = n + m
-  let evaluated_homomorphisms = map (\\a -> eval_homomorphisms a :> [k]bracket) xs |> flatten
-  let lbr_reverse_omega = reverse x.1 |> lbr
-  in (lbr_reverse_omega ++ evaluated_homomorphisms)
-    |> filter is_nonempty_bracket
 
 def is_left (b : bracket) : bool =
   match b
   case #left _ -> true
   case #right _ -> false
+  case #epsilon -> false
 
 def depths [n] (input : [n]bracket) : maybe ([n]i64) =
   let left_brackets =
@@ -223,6 +196,7 @@ def unpack_bracket (b : bracket) : u64 =
   match b
   case #left a -> a
   case #right a -> a
+  case #epsilon -> assert false 0
 
 def eq_no_bracket (a : bracket) (b : bracket) : bool =
   unpack_bracket a u64.== unpack_bracket b
@@ -238,10 +212,12 @@ def brackets_matches [n] (brackets : [n]bracket) =
 
 def parse [n] (arr : [n]u32) =
   let arr' = [0] ++ (map (+2) arr) ++ [1]
-  let configs = keys arr' |> map key_to_config
-  let brackets = step_one configs
-  in if brackets_matches brackets
-  then map (.2) configs
+  let (brackets, productions) = keys arr' |> map key_to_config |> unzip
+  in if brackets 
+        |> flatten
+        |> filter (!=#epsilon)
+        |> brackets_matches
+  then productions
     |> flatten
     |> filter (!=u32.highest)
   else []
@@ -257,8 +233,8 @@ def parse [n] (arr : [n]u32) =
     maybe_start_terminal = List.elemIndex RightTurnstile terminals'
     maybe_end_terminal = List.elemIndex LeftTurnstile terminals'
     augmented_grammar = augmentGrammar grammar
-    maybe_table = llpParsingTable q k grammar
+    maybe_table = llpParserTableWithStartsHomomorphisms q k grammar
     terminals' = terminals augmented_grammar
     lookback_type = toTuple $ replicate q "u32"
     lookahead_type = toTuple $ replicate k "u32"
-    (max_alpha_omega, futhark_table) = futharkTable q k augmented_grammar table
+    futhark_table = futharkTable q k augmented_grammar table
