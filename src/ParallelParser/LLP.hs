@@ -530,6 +530,30 @@ solveLlpItemMemoParallel sets = do
 
 -- | Creates the LLP collection as described in algorithm 8 from the LLP paper.
 -- This is done using memoization.
+llpCollectionMemoParallel ::
+  (Ord t, Ord nt, Show nt, Show t, NFData t, NFData nt) =>
+  State (LlpContext nt t) (Set (Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t))))
+llpCollectionMemoParallel = do
+  ctx <- get
+  let grammar = theGrammar ctx
+  let q = lookback ctx
+  let d_init = initD q grammar
+  let d_init_set = Set.singleton d_init
+  let d_init_list = [d_init]
+  removeNull <$> auxiliary Set.empty d_init_set d_init_list
+  where
+    removeNull = Set.filter (not . null)
+    auxiliary _ items [] = return items
+    auxiliary visited items queue = do
+      let not_visited = filter (`Set.notMember` visited) queue
+      new_items' <- solveLlpItemMemoParallel not_visited
+      let new_queue = toList new_items'
+      let new_items = items `Set.union` new_items'
+      let new_visited = Set.union (Set.fromList queue) visited
+      auxiliary new_visited new_items new_queue
+
+-- | Creates the LLP collection as described in algorithm 8 from the LLP paper.
+-- This is done using memoization.
 llpCollectionMemo ::
   (Ord t, Ord nt, Show nt, Show t, NFData t, NFData nt) =>
   State (LlpContext nt t) (Set (Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t))))
