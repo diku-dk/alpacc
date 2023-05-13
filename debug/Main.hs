@@ -81,32 +81,5 @@ main = do
   contents <- readFile grammar_path
   let grammar = unpackNTTGrammar (read contents :: Grammar NT T)
   let left_recursive_nonterminals = leftRecursiveNonterminals grammar
-  let trouble_makers = List.intercalate ", " left_recursive_nonterminals
-  let augmented_grammar = augmentGrammar grammar
-  let Just table = llpParsingTable q k grammar
-  let collection = llpCollection q k augmented_grammar
-  let psls_table = psls collection
-  let unwrapped = (\[a] -> a) . S.toList <$> psls_table
-  let llTableParse' = llTableParse k augmented_grammar
-  let ll_table = llTable k grammar
-  let nt = "T"
-  let aug_nt = AugmentedNonterminal "T"
-  let first' = first k grammar [Nonterminal nt]
-  let extended_grammar = extendGrammar k grammar
-  let follow' = follow k followExtendedGrammar
-  let naiveFollow' = naiveFollow k followExtendedGrammar
-  let aug_first' = first k augmented_grammar [Nonterminal aug_nt]
-  let aug_follow' = follow k augmented_grammar aug_nt
-  putStrLn "LLP Table"
-  mapM_ print $ M.toList table
-  -- mapM_ (\x -> do putStrLn " "; mapM_ print x) collection
-  -- putStrLn "Missing parses"
-  -- mapM_ print . M.toList . M.filterWithKey ((isNothing . ).  auxiliary llTableParse') $ unwrapped
-  putStrLn "LL Table"
-  mapM_ print . M.toList $ ll_table
-  -- putStrLn $ "first(" ++ nt ++ ")"
-  -- let strings = symbols <$> productions grammar
-  -- putStrLn "Correct Follow sets"
-  -- mapM_ print $ (\a -> (a, naiveFollow' a)) <$> nonterminals followExtendedGrammar
-  -- putStrLn "Computed Follow sets"
-  -- mapM_ print $ (\a -> (a, follow' a)) <$> nonterminals followExtendedGrammar
+  let parser = llpParse q k grammar
+  print $ parser <$> toList (derivableNLengths 10 grammar)

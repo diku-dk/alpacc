@@ -50,19 +50,22 @@ listProduct n zs = [x:y | x <- zs, y <- listProduct (n - 1) zs]
 derivableNLengths :: (Ord t, Ord nt, Show nt, Show t) => Int -> Grammar nt t -> Set [t]
 derivableNLengths n grammar =
   Set.fromList
-    . bfs
+    . bfs Set.empty
     . Seq.singleton
     . List.singleton
     . Nonterminal
     $ start grammar
   where
     unpackT (Terminal t) = t
-    leftmostDerive' = leftmostDerive grammar
-    bfs Empty = []
-    bfs (top :<| queue)
-      | length top > n = bfs queue
-      | all isTerminal top = (unpackT <$> top) : bfs (queue >< leftmostDerive' top)
-      | otherwise = bfs (queue >< leftmostDerive' top)
+    derivations' = derivations grammar
+    bfs _ Empty = []
+    bfs visited (top :<| queue)
+      | n_terms `Set.member` visited = bfs visited queue
+      | all isTerminal top = (unpackT <$> top) : bfs visited' (queue >< derivations' top)
+      | otherwise = bfs visited' (queue >< derivations' top)
+      where
+        n_terms = take (n + 1) top
+        visited' = Set.insert n_terms visited
 
 nonderivableNLengths :: (Ord nt, Show nt, Show t, Ord t) => Int -> Grammar nt t -> Set [t]
 nonderivableNLengths n grammar = nonderivable

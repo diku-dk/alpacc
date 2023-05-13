@@ -636,7 +636,7 @@ admissibleStrings ::
   Int ->
   Grammar nt t ->
   Set [t]
-admissibleStrings q k grammar = leftmostDerivations (1 + 2 * (q + k)) grammar init_start
+admissibleStrings q k grammar = leftmostDerivations (2 * (1 + q + k)) grammar init_start
   where
     init_start = List.singleton . Nonterminal $ start grammar
 
@@ -680,7 +680,7 @@ llpParsingTable q k grammar
 
 -- | Given a lsit create all the pairs with q lookback and k lookahead which
 -- will be used as keys in the table.
-pairLookup :: Ord t => Map ([t], [t]) v -> Int -> Int -> [t] -> [Maybe v]
+pairLookup :: (Ord t, Show t) => Map ([t], [t]) v -> Int -> Int -> [t] -> [Maybe v]
 pairLookup table q k = toList . auxiliary Seq.empty Seq.empty . Seq.fromList
   where
     auxiliary es _ Empty = es
@@ -700,7 +700,7 @@ glue ::
   ([Symbol nt t], [Symbol nt t], [Int]) ->
   Maybe ([Symbol nt t], [Symbol nt t], [Int])
 glue (alpha_l, omega_l, pi_l) (alpha_r, omega_r, pi_r)
-  | omega_l == alpha_r = Just (alpha_l, omega_l, pi)
+  | omega_l == alpha_r = Just (alpha_l, omega_r, pi)
   | omega_l `List.isPrefixOf` alpha_r = Just (alpha_l ++ beta_0, omega_r, pi)
   | alpha_r `List.isPrefixOf` omega_l = Just (alpha_l, omega_r ++ beta_1, pi)
   | otherwise = Nothing
