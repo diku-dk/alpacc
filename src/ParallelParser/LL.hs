@@ -43,11 +43,16 @@ import Debug.Trace (traceShow)
 
 debug x = traceShow x x
 
-listProduct :: Int -> [t] -> [[t]]
-listProduct 1 zs = map (:[]) zs
-listProduct n zs = [x:y | x <- zs, y <- result]
+listProducts :: Int -> [a] -> [[a]]
+listProducts = snd .: auxiliary
   where
-    result = listProduct (n - 1) zs
+    auxiliary 1 zs = (result, result)
+      where
+        result = map (:[]) zs
+    auxiliary n zs = (next, result ++ next)
+      where
+        (prev, result) = auxiliary (n - 1) zs
+        next = [x:y | x <- zs, y <- prev]
     
 
 derivableNLengths :: (Ord t, Ord nt, Show nt, Show t) => Int -> Grammar nt t -> Set [t]
@@ -74,7 +79,7 @@ nonderivableNLengths :: (Ord nt, Show nt, Show t, Ord t) => Int -> Grammar nt t 
 nonderivableNLengths n grammar = nonderivable
   where
     ts = terminals grammar
-    combs = Set.fromList $ concatMap (`listProduct` ts) [1..n]
+    combs = Set.fromList $ listProducts n ts
     derivable = derivableNLengths (n + 1) grammar
     nonderivable = combs `Set.difference` derivable
 
