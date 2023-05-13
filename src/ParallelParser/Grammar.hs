@@ -36,6 +36,8 @@ import qualified Data.Set as Set
 import Data.Tuple.Extra (both)
 import Debug.Trace (traceShow)
 import Text.ParserCombinators.ReadP
+import Control.DeepSeq
+import GHC.Generics
 
 debug x = traceShow x x
 
@@ -48,7 +50,9 @@ data AugmentedTerminal t
   = AugmentedTerminal t
   | RightTurnstile
   | LeftTurnstile
-  deriving (Ord, Eq)
+  deriving (Ord, Eq, Generic)
+
+instance NFData t => NFData (AugmentedTerminal t)
 
 -- | Prints whats inside the augmented terminal structure.
 instance Show t => Show (AugmentedTerminal t) where
@@ -60,7 +64,9 @@ instance Show t => Show (AugmentedTerminal t) where
 data AugmentedNonterminal nt
   = AugmentedNonterminal nt
   | Start
-  deriving (Ord, Eq)
+  deriving (Ord, Eq, Generic)
+
+instance NFData nt => NFData (AugmentedNonterminal nt)
 
 -- | Prints whats inside the augmented nonterminal structure.
 instance Show nt => Show (AugmentedNonterminal nt) where
@@ -91,7 +97,9 @@ instance Read NT where
 data Symbol nt t
   = Nonterminal nt
   | Terminal t
-  deriving (Ord, Eq, Read, Functor)
+  deriving (Ord, Eq, Read, Functor, Generic)
+
+instance (NFData t, NFData nt) => NFData (Symbol nt t)
 
 -- | Shows whats inside the symbol.
 instance (Show nt, Show t) => Show (Symbol nt t) where
@@ -108,7 +116,9 @@ instance Bifunctor Symbol where
 -- | An algebraic data structure which describes a production.
 data Production nt t
   = Production nt [Symbol nt t]
-  deriving (Ord, Eq, Show, Read, Functor)
+  deriving (Ord, Eq, Show, Read, Functor, Generic)
+
+instance (NFData t, NFData nt) => NFData (Production nt t)
 
 -- | Bifunctor for production where first is the Nonterminal and second is
 -- Terminal.
@@ -139,7 +149,9 @@ data Grammar nt t = Grammar
     nonterminals :: [nt],
     productions :: [Production nt t]
   }
-  deriving (Ord, Eq, Show)
+  deriving (Ord, Eq, Show, Generic)
+
+instance (NFData t, NFData nt) => NFData (Grammar nt t)
 
 -- | Skips white spaces.
 skipWhiteSpaces :: ReadP ()

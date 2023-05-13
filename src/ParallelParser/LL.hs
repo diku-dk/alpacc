@@ -40,6 +40,8 @@ import Data.Foldable
 import qualified Data.Bifunctor as Bifunctor
 import Data.Composition
 import Debug.Trace (traceShow)
+import Control.DeepSeq
+import GHC.Generics
 
 debug x = traceShow x x
 
@@ -296,7 +298,9 @@ mkMemoAlphaBetaProducts k grammar = memoAlphaBetaProducts k first_map
 data AlphaBetaMemoizedContext nt t = AlphaBetaMemoizedContext
   { alphaBetaFunction :: MemoFunction [Symbol nt t] (Set [t]),
     alphaBetaState :: Map [Symbol nt t] (Set [t])
-  }
+  } deriving (Generic)
+
+instance (NFData t, NFData nt) => NFData (AlphaBetaMemoizedContext nt t)
 
 -- | Creates the initial context used for the memoized first function.
 initFirstMemoizedContext :: (Ord nt, Ord t) => Int -> Grammar nt t -> AlphaBetaMemoizedContext nt t

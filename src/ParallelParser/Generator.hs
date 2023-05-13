@@ -15,6 +15,9 @@ import Data.Tuple.Extra
 import ParallelParser.Grammar
 import ParallelParser.LLP
 import Debug.Trace (traceShow)
+import Control.DeepSeq
+import GHC.Generics
+
 debug x = traceShow x x
 
 -- | Adds m padding to the left side of a list.
@@ -103,7 +106,7 @@ symbolsToInts grammar = Map.map auxiliary
 -- | Creates a string that is the resulting LLP table which is done by using
 -- pattern matching in Futhark.
 futharkTable ::
-  (Ord nt, Ord t) =>
+  (Ord nt, Show nt, Show t, Ord t, NFData t, NFData nt) =>
   Int ->
   Int ->
   Grammar nt t ->
@@ -128,7 +131,9 @@ futharkTable q k grammar table = (max_alpha_omega, ) . (++last_case_str) . cases
 
 -- | Creates Futhark source code which contains a parallel parser that can
 -- create the productions list for a input which is indexes of terminals.
-futharkKeyGeneration :: (Ord nt, Ord t, Show nt, Show t) => Int -> Int -> Grammar nt t -> Maybe String
+futharkKeyGeneration ::
+  (Ord nt, Ord t, Show nt, Show t, NFData t, NFData nt) =>
+  Int -> Int -> Grammar nt t -> Maybe String
 futharkKeyGeneration q k grammar
   | any_is_nothing = Nothing
   | otherwise =

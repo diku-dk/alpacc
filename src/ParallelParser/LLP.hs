@@ -32,6 +32,8 @@ import ParallelParser.LL
 import Control.Monad (liftM2)
 import Prelude hiding (last)
 import Data.Tuple.Extra (thd3)
+import Control.DeepSeq
+import GHC.Generics
 
 pmap :: NFData b => (a -> b) -> [a] -> [b]
 pmap f ls =
@@ -49,7 +51,9 @@ debugPrint a = traceShow (show a)
 -- it descriped in algorithm 8 in the LLP paper.
 data DotProduction nt t
   = DotProduction nt [Symbol nt t] [Symbol nt t]
-  deriving (Ord, Eq, Read)
+  deriving (Ord, Eq, Read, Generic)
+
+instance (NFData t, NFData nt) => NFData (DotProduction nt t)
 
 -- | Makes the printing of dot productions a bit prettier.
 instance (Show nt, Show t) => Show (DotProduction nt t) where
@@ -70,7 +74,9 @@ data Item nt t = Item
     prefix :: [t],
     shortestPrefix :: [Symbol nt t]
   }
-  deriving (Eq, Ord)
+  deriving (Eq, Ord, Generic)
+
+instance (NFData t, NFData nt) => NFData (Item nt t)
 
 -- | Prints the Record in the form of the 4-tuple in algorithm 8 in the LLP
 -- paper.
@@ -155,7 +161,9 @@ data LlpContext nt t = LlpContext
     follow' :: AugmentedNonterminal nt -> Set [AugmentedTerminal t],
     -- | The before function for the given grammar.
     before' :: AugmentedNonterminal nt -> Set [AugmentedTerminal t]
-  }
+  } deriving (Generic)
+
+instance (NFData t, NFData nt) => NFData (LlpContext nt t)
 
 -- | Computes the first set within the LLP Context such that memoization can be
 -- used.
@@ -227,7 +235,7 @@ initLlpContext q k grammar =
 -- algorithm 8 in the LLP paper. This is done with memoization using the LLP
 -- context.
 newLlpItemsMemo ::
-  (Ord t, Ord nt, Show nt, Show t) =>
+  (Ord nt, Show nt, Show t, Ord t, NFData t, NFData nt) =>
   Item (AugmentedNonterminal nt) (AugmentedTerminal t) ->
   State (LlpContext nt t) (Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t)))
 newLlpItemsMemo old_item = result
@@ -308,7 +316,7 @@ newLlpItems q k grammar old_item
 -- described in the paper, the empty set is returned. This is done with
 -- memozation.
 extraLlpItemMemo ::
-  (Ord t, Ord nt, Show nt, Show t) =>
+  (Ord nt, Show nt, Show t, Ord t, NFData t, NFData nt) =>
   Item (AugmentedNonterminal nt) (AugmentedTerminal t) ->
   State (LlpContext nt t) (Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t)))
 extraLlpItemMemo old_item
@@ -386,7 +394,7 @@ extraLlpItem q grammar old_item
 -- | This function performs step 3 (b) of algorithm 8 in the LLP paper. This is
 -- with memoization.
 extraLlpItemsMemo ::
-  (Ord t, Ord nt, Show nt, Show t) =>
+  (Ord nt, Show nt, Show t, Ord t, NFData t, NFData nt) =>
   Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t)) ->
   State (LlpContext nt t) (Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t)))
 extraLlpItemsMemo = fixedPointIterate
@@ -416,7 +424,7 @@ extraLlpItems q grammar = fixedPointIterate (/=) addedItems
 -- algorithm 8 of the LLP paper. This will create a subset of a item set. This
 -- is done using memoization.
 solveLlpItemMemo ::
-  (Ord t, Ord nt, Show nt, Show t) =>
+  (Ord nt, Show nt, Show t, Ord t, NFData t, NFData nt) =>
   Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t)) ->
   State (LlpContext nt t) (Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t)))
 solveLlpItemMemo items = do
@@ -442,7 +450,7 @@ solveLlpItem q k grammar items =
 -- of the LLP collection. This corrosponds to a single iteration of step 3. This
 -- is done using memoization.
 solveLlpItemsMemo ::
-  (Ord t, Ord nt, Show nt, Show t) =>
+  (Ord t, Ord nt, Show nt, Show t, NFData t, NFData nt) =>
   Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t)) ->
   State (LlpContext nt t) (Set (Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t))))
 solveLlpItemsMemo items = do
@@ -499,10 +507,31 @@ solveLlpItems q k grammar =
         [x] = x'
         x' = auxiliary a
 
+solveLlpItemsMemoRunState ::
+  (Ord t, Ord nt, Show nt, Show t, NFData t, NFData nt) =>
+  LlpContext nt t ->
+  Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t)) ->
+  (Set (Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t))), LlpContext nt t)
+solveLlpItemsMemoRunState ctx set = runState (solveLlpItemsMemo set) ctx
+
+solveLlpItemMemoParallel ::
+  (Ord nt, Show nt, Ord t, Show t, NFData t, NFData nt) =>
+  [Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t))] ->
+  State (LlpContext nt t) (Set (Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t))))
+solveLlpItemMemoParallel sets = do
+  ctx <- get
+  let (sets', ctxs') = unzip $ pmap (solveLlpItemsMemoRunState ctx) sets
+  let first_state = Map.unions $ alphaBetaState . firstContext <$> ctxs'
+  let last_state = Map.unions $ alphaBetaState . lastContext <$> ctxs'
+  let new_ctx = ctx { firstContext = (firstContext ctx) {alphaBetaState = first_state} }
+  let new_ctx' = ctx { lastContext = (lastContext ctx) {alphaBetaState = last_state} }
+  put new_ctx'
+  return $ Set.unions sets'
+
 -- | Creates the LLP collection as described in algorithm 8 from the LLP paper.
 -- This is done using memoization.
 llpCollectionMemo ::
-  (Ord t, Ord nt, Show nt, Show t) =>
+  (Ord t, Ord nt, Show nt, Show t, NFData t, NFData nt) =>
   State (LlpContext nt t) (Set (Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t))))
 llpCollectionMemo = do 
   ctx <- get
@@ -657,7 +686,7 @@ filterAdmissiblePairs q k grammar = Map.filterWithKey (\k _ -> isValid k)
 -- | Creates the LLP parsing table if Nothing is returned then the table could
 -- not be created since the grammar is not LLP(q,k).
 llpParsingTable ::
-  (Ord nt, Ord t, Show nt, Show t) =>
+  (Ord nt, Ord t, Show nt, Show t, NFData t, NFData nt) =>
   Int ->
   Int ->
   Grammar nt t ->
@@ -694,7 +723,7 @@ pairLookup table q k = toList . auxiliary Seq.empty Seq.empty . Seq.fromList
             n = Seq.length seq
 
 -- | glues two stacks together as described in definition 1 of the LLP paper.
-glue :: 
+glue ::
   (Eq nt, Eq t) =>
   ([Symbol nt t], [Symbol nt t], [Int]) ->
   ([Symbol nt t], [Symbol nt t], [Int]) ->
@@ -710,7 +739,7 @@ glue (alpha_l, omega_l, pi_l) (alpha_r, omega_r, pi_r)
     beta_1 = drop (length alpha_r) omega_l
 
 -- | Given a grammar it will parse the string using a LLP table.
-llpParse :: (Ord nt, Show nt, Show t, Ord t) => Int -> Int -> Grammar nt t -> [t] -> Maybe [Int]
+llpParse :: (Ord nt, Show nt, Show t, Ord t, NFData t, NFData nt) => Int -> Int -> Grammar nt t -> [t] -> Maybe [Int]
 llpParse q k grammar string = fmap thd3 . foldl1 glue' . pairLookup table q k . addStoppers $ aug string
   where
     addStoppers = ([RightTurnstile] ++) . (++ [LeftTurnstile])

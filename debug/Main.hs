@@ -1,10 +1,8 @@
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 module Main where
 
 import ParallelParser.Grammar
 import ParallelParser.Generator
 import ParallelParser.LLP
-import qualified Data.Map as M
 import Prelude hiding (last)
 import qualified Data.List as L
 import qualified Data.Char as C
