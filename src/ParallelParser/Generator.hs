@@ -140,19 +140,19 @@ futharkKeyGeneration q k grammar
       Just
         [i|import "lib/github.com/diku-dk/sorts/radix_sort"
 
-def lookbkack_array_to_tuple [n] (arr : [n]u32) : (u32) =
-  (arr[0])
+def lookbkack_array_to_tuple [n] (arr : [n]u32) =
+  #{toTupleIndexArray "arr" q}
 
-def lookahead_array_to_tuple [n] (arr : [n]u32) : (u32) =
-  (arr[0])
+def lookahead_array_to_tuple [n] (arr : [n]u32) =
+  #{toTupleIndexArray "arr" k}
 
 def lookback_chunks [n] (arr : [n]u32) =
-  let arr' = replicate 1 u32.highest ++ arr
-  in iota n |> map (\\i -> arr'[i:i + 1] |> lookbkack_array_to_tuple)
+  let arr' = replicate #{q} u32.highest ++ arr
+  in iota n |> map (\\i -> arr'[i:i + #{q}] |> lookbkack_array_to_tuple)
 
 def lookahead_chunks [n] (arr : [n]u32) =
-  let arr' = arr ++ replicate 1 u32.highest
-  in iota n |> map (\\i -> arr'[i:i + 1] |> lookahead_array_to_tuple)
+  let arr' = arr ++ replicate #{k} u32.highest
+  in iota n |> map (\\i -> arr'[i:i + #{k}] |> lookahead_array_to_tuple)
 
 def keys [n] (arr : [n]u32) =
   let lookback = lookback_chunks arr

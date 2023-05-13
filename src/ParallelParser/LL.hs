@@ -146,18 +146,25 @@ naiveFirst k grammar = Set.fromList . bfs Set.empty . Seq.singleton
 -- | Naïvely creates creates all leftmost derivations which results in
 -- terminals.
 leftmostDerivations :: (Show nt, Show t, Ord nt, Ord t) => Int -> Grammar nt t -> [Symbol nt t] -> Set [t]
-leftmostDerivations k grammar = Set.fromList . bfs Set.empty . Seq.singleton
+leftmostDerivations k grammar = bfs Set.empty Set.empty . Seq.singleton
   where
     unpackT (Terminal t) = t
     leftmostDerive' = leftmostDerive grammar
-    bfs _ Empty = []
-    bfs visited (top :<| queue)
-      | k_terms `Set.member` visited = bfs visited queue
-      | all isTerminal k_terms = (unpackT <$> k_terms) : bfs new_visited (queue >< leftmostDerive' top)
-      | otherwise = bfs new_visited (queue >< leftmostDerive' top)
+    bfs set _ Empty = set
+    bfs set visited (top :<| queue)
+      | k_terms `Set.member` visited = bfs set visited queue
+      | all isTerminal k_terms = bfs new_set new_visited (queue >< leftmostDerive' top)
+      | otherwise = bfs set new_visited (queue >< leftmostDerive' top)
       where
+        new_set = Set.insert (unpackT <$> k_terms) set
         k_terms = take k top
         new_visited = Set.insert k_terms visited
+
+
+isValidString :: Grammar nt t -> [Symbol nt t] -> Bool
+isValidString grammar string = True
+  where
+    ps = symbols <$> productions grammar
 
 -- | Naïvely creates the follow sets for a given string of symbols. This is done
 -- using breadth first search and applying first and to the symbols after the
