@@ -30,6 +30,7 @@ common common
     QuasiQuotes
     DeriveFunctor
     ExtendedDefaultRules
+    DeriveGeneric
   
   build-depends:
     , base
@@ -42,6 +43,8 @@ common common
     , parallel
     , filepath
     , mtl
+    , deepseq-generics
+    , deepseq
 
 library
   import: common
@@ -56,6 +59,7 @@ library
 executable parallel-parser
   import:             common 
   main-is:            Main.hs
+  ghc-options:        -threaded -rtsopts
 
   build-depends:
     optparse-applicative
@@ -64,19 +68,9 @@ executable parallel-parser
 
   hs-source-dirs:     app
 
-executable debug
-  import:             common
-  main-is:            Main.hs
-
-  build-depends:
-    optparse-applicative
-    , parallel-parser
-    , filepath
-
-  hs-source-dirs:     debug
-
 test-suite test-parallel-parser
   import:           common
+  ghc-options:      -threaded -rtsopts
   other-modules:
     LL
     LLP
