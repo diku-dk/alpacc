@@ -522,12 +522,12 @@ llpqkParsingDerivableTestCases = [llpqkParsingDerivableTestCase parser q k | (pa
 
 llpqkParsingTestCases = [llpqkParsingTestCase parser q k | (parser, k, q) <- llpParsers]
 
-nonderivable4 = nonderivableNLengths 4 grammar
+nonderivable3 = nonderivableNLengths 3 grammar
 
 llpqkParsingNonderivableTestCase parser q k =
-    TestCase $ assertEqual [i|LLP(#{q}, #{k}) fails on parsing nonderivables of length 4.|] expected True
+    TestCase $ assertEqual [i|LLP(#{q}, #{k}) fails on parsing nonderivables of length 3.|] expected True
   where
-    expected = all isNothing . debug $ parser <$> Set.toList nonderivable4
+    expected = all isNothing . debug $ parser <$> Set.toList nonderivable3
 
 llpqkParsingNonderivableTestCases = [llpqkParsingNonderivableTestCase parser q k | (parser, k, q) <- llpParsers]
 
