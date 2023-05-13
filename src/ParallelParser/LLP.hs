@@ -4,12 +4,14 @@ module ParallelParser.LLP
     DotProduction (..),
     toDotProduction,
     psls,
-    llpParsingTable,
+    llpParserTableWithStarts,
     llpParse,
     leftRecursiveNonterminals,
     llTableParse,
     initLlpContext,
-    llpCollectionMemo
+    llpCollectionMemo,
+    llpParserTableWithStartsHomomorphisms,
+    Bracket (..)
   )
 where
 
@@ -557,7 +559,7 @@ llpCollectionMemoParallel = do
 llpCollectionMemo ::
   (Ord t, Ord nt, Show nt, Show t, NFData t, NFData nt) =>
   State (LlpContext nt t) (Set (Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t))))
-llpCollectionMemo = do 
+llpCollectionMemo = do
   ctx <- get
   let grammar = theGrammar ctx
   let q = lookback ctx
@@ -707,26 +709,62 @@ filterAdmissiblePairs q k grammar = Map.filterWithKey (\k _ -> isValid k)
     valid_strings = admissibleStrings q k grammar
     isValid (x, y) = any ((x ++ y) `List.isInfixOf`) valid_strings
 
--- | Creates the LLP parsing table if Nothing is returned then the table could
--- not be created since the grammar is not LLP(q,k).
-llpParsingTable ::
+llpParserTableWithStarts ::
   (Ord nt, Ord t, Show nt, Show t, NFData t, NFData nt) =>
   Int ->
   Int ->
   Grammar nt t ->
   Maybe (Map ([AugmentedTerminal t], [AugmentedTerminal t])
   ([Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)], [Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)], [Int]))
-llpParsingTable q k grammar
-  | any ((/= 1) . Set.size) psls_table = Nothing
-  | otherwise = (`Map.union` starts) <$> sequence parsed
+llpParserTableWithStarts q k grammar = (`Map.union` starts) <$> maybe_table
   where
+    init_context = initLlpContext q k grammar
+    maybe_table = llpParserTable init_context
+    starts = allStarts q k (theGrammar init_context)
+
+data Bracket a = LBracket a | RBracket a deriving (Eq, Ord, Show, Functor)
+
+llpParserTableWithStartsHomomorphisms ::
+  (NFData t, NFData nt, Ord nt, Show nt, Show t, Ord t) =>
+  Int ->
+  Int -> 
+  Grammar nt t ->
+  Maybe
+    (Map
+      ([AugmentedTerminal t], [AugmentedTerminal t])
+      ([Bracket (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t))], 
+       [Int]))
+llpParserTableWithStartsHomomorphisms q k grammar = result
+  where
+    result = (`Map.union` starts) <$> maybe_table
+    init_context = initLlpContext q k grammar
+    maybe_table = fmap homomorphisms <$> llpParserTable init_context
+    starts = start_homomorphisms <$> allStarts q k (theGrammar init_context)
+    start_homomorphisms (_, omega, pi) = (LBracket <$> reverse omega, pi)
+    homomorphisms (alpha, omega, pi) = (right ++ left, pi)
+      where
+        left = LBracket <$> reverse omega
+        right = RBracket <$> alpha
+
+-- | Creates the LLP parsing table if Nothing is returned then the table could
+-- not be created since the grammar is not LLP(q,k).
+llpParserTable ::
+  (Ord nt, Ord t, Show nt, Show t, NFData t, NFData nt) =>
+  LlpContext nt t ->
+  Maybe (Map ([AugmentedTerminal t], [AugmentedTerminal t])
+  ([Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)], [Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)], [Int]))
+llpParserTable context
+  | any ((/= 1) . Set.size) psls_table = Nothing
+  | otherwise = sequence parsed
+  where
+    q = lookback context
+    k = lookahead context
+    grammar = theGrammar context
     parsed = Map.mapWithKey auxiliary unwrapped
     unwrapped = (\[a] -> a) . Set.toList <$> psls_table
-    starts = allStarts q k (theGrammar init_context)
-    init_context = initLlpContext q k grammar
-    collection = evalState llpCollectionMemo init_context
-    psls_table = filterAdmissiblePairs q k (augmentGrammar grammar) $ psls collection
-    llTableParse' = llTableParse k (theGrammar init_context)
+    collection = evalState llpCollectionMemo context
+    psls_table = filterAdmissiblePairs q k grammar $ psls collection
+    llTableParse' = llTableParse k (theGrammar context)
     auxiliary (x, y) alpha = f <$> llTableParse' y alpha
       where
         f (epsilon, omega, pi) = (alpha, omega, pi)
@@ -769,7 +807,7 @@ llpParse q k grammar string = fmap thd3 . foldl1 glue' . pairLookup table q k . 
     addStoppers = ([RightTurnstile] ++) . (++ [LeftTurnstile])
     aug = fmap AugmentedTerminal
     augmented_grammar = augmentGrammar grammar
-    Just table = llpParsingTable q k grammar
+    Just table = llpParserTableWithStarts q k grammar
     glue' a b = do
       a' <- a
       b' <- b
