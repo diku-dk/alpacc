@@ -763,7 +763,7 @@ llpParserTable context
     parsed = Map.mapWithKey auxiliary unwrapped
     unwrapped = (\[a] -> a) . Set.toList <$> psls_table
     collection = evalState llpCollectionMemo context
-    psls_table = debug . filterAdmissiblePairs q k grammar $ psls collection
+    psls_table = filterAdmissiblePairs q k grammar $ psls collection
     llTableParse' = llTableParse k (theGrammar context)
     auxiliary (x, y) alpha = f <$> llTableParse' y alpha
       where

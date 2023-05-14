@@ -56,7 +56,6 @@ listProducts = snd .: auxiliary
         (prev, result) = auxiliary (n - 1) zs
         next = [x:y | x <- zs, y <- prev]
     
-
 derivableNLengths :: (Ord t, Ord nt, Show nt, Show t) => Int -> Grammar nt t -> Set [t]
 derivableNLengths n grammar =
   Set.fromList
