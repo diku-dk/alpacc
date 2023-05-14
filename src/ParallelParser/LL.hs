@@ -136,12 +136,13 @@ naiveFirst k grammar = Set.fromList . bfs Set.empty . Seq.singleton
     derivations' = derivations grammar
     bfs _ Empty = []
     bfs visited (top :<| queue)
-      | k_terms `Set.member` visited = bfs visited queue
+      | k_plus_one_terms `Set.member` visited = bfs visited queue
       | all isTerminal k_terms = (unpackT <$> k_terms) : bfs new_visited (queue >< derivations' top)
       | otherwise = bfs new_visited (queue >< derivations' top)
       where
         k_terms = take k top
-        new_visited = Set.insert k_terms visited
+        k_plus_one_terms = take (k + 1) top
+        new_visited = Set.insert k_plus_one_terms visited
 
 -- | Naïvely creates creates all leftmost derivations which results in
 -- terminals.
