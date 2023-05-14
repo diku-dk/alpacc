@@ -145,30 +145,31 @@ ll1ParseFailTestCase = TestCase $ assertEqual "LL(1) parsing test" expected resu
     result = llkParse' (input, [Nonterminal $ start extendedGrammar], [])
     expected = Nothing
 
-firstkTestCase k = TestCase $ assertEqual [i|First k=#{k} set test|] expected result
+firstkTestCase :: (Show a, Show t, Ord a, Ord t) => Grammar a t -> Int -> Test
+firstkTestCase grammar' k = TestCase $ assertEqual [i|First k=#{k} set test|] expected result
   where
-    firstsTuples string = (naiveFirst k extendedGrammar string, first k extendedGrammar string)
-    strings = symbols <$> productions extendedGrammar
+    firstsTuples string = (naiveFirst k grammar' string, first k grammar' string)
+    strings = List.singleton . Nonterminal <$> nonterminals grammar'
     (expected, result) = unzip $ firstsTuples <$> strings
 
-firstkTestCases = [firstkTestCase k | k <- [1..20]]
+firstkTestCases grammar' m = [firstkTestCase grammar' k | k <- [1..m]]
 
-followkTestCase k = TestCase $ assertEqual [i|Follow k=#{k} set test|] expected result
+followkTestCase grammar' k = TestCase $ assertEqual [i|Follow k=#{k} set test|] expected result
   where
-    followsTuples string = (naiveFollow k extendedGrammar string, follow k extendedGrammar string)
-    nonterminals' = nonterminals extendedGrammar
+    followsTuples string = (naiveFollow k grammar' string, follow k grammar' string)
+    nonterminals' = nonterminals grammar'
     (expected, result) = unzip $ followsTuples <$> nonterminals'
 
-followkTestCases = [followkTestCase k | k <- [1..7]]
+followkTestCases grammar' m = [followkTestCase grammar' k | k <- [1..m]]
 
-firstMemokTestCase k = TestCase $ assertEqual [i|First k=#{k} set test|] expected result
+firstMemokTestCase grammar' k = TestCase $ assertEqual [i|First k=#{k} set test|] expected result
   where
-    ctx = initFirstMemoizedContext k grammar
-    firstsTuples string = (naiveFirst k extendedGrammar string, fst $ firstMemoized ctx string)
-    strings = symbols <$> productions extendedGrammar
+    ctx = initFirstMemoizedContext k grammar'
+    firstsTuples string = (naiveFirst k grammar' string, fst $ firstMemoized ctx string)
+    strings = symbols <$> productions grammar'
     (expected, result) = unzip $ firstsTuples <$> strings
 
-firstMemokTestCases = [firstMemokTestCase k | k <- [1..20]]
+firstMemokTestCases grammar' m = [firstMemokTestCase grammar' k | k <- [1..m]]
 
 extendedGrammarDerivations10 = derivableNLengths 20 extendedGrammar
 
@@ -190,8 +191,11 @@ tests =
         followSmallTestCase,
         followLargeTestCase,
         ll1ParseFailTestCase
-      ] ++ firstkTestCases
-        ++ followkTestCases
+      ] ++ firstkTestCases followExtendedGrammar 4
+        ++ followkTestCases followExtendedGrammar 4
+        ++ firstMemokTestCases followExtendedGrammar 4
+        ++ firstkTestCases bookGrammar 4
+        ++ followkTestCases bookGrammar 4
+        ++ firstMemokTestCases bookGrammar 4
         ++ canParseDerivedTestCases
         ++ llkParseTestCases
-        ++ firstMemokTestCases
