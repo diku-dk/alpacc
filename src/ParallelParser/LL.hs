@@ -43,6 +43,7 @@ import Debug.Trace (traceShow)
 import Control.DeepSeq
 import GHC.Generics
 
+
 debug x = traceShow x x
 
 listProducts :: Int -> [a] -> [[a]]

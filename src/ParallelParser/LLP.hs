@@ -37,6 +37,7 @@ import Data.Tuple.Extra (thd3)
 import Control.DeepSeq
 import GHC.Generics
 
+
 pmap :: NFData b => (a -> b) -> [a] -> [b]
 pmap f ls =
   let bs = map f ls
@@ -532,30 +533,6 @@ solveLlpItemMemoParallel sets = do
 
 -- | Creates the LLP collection as described in algorithm 8 from the LLP paper.
 -- This is done using memoization.
-llpCollectionMemoParallel ::
-  (Ord t, Ord nt, Show nt, Show t, NFData t, NFData nt) =>
-  State (LlpContext nt t) (Set (Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t))))
-llpCollectionMemoParallel = do
-  ctx <- get
-  let grammar = theGrammar ctx
-  let q = lookback ctx
-  let d_init = initD q grammar
-  let d_init_set = Set.singleton d_init
-  let d_init_list = [d_init]
-  removeNull <$> auxiliary Set.empty d_init_set d_init_list
-  where
-    removeNull = Set.filter (not . null)
-    auxiliary _ items [] = return items
-    auxiliary visited items queue = do
-      let not_visited = filter (`Set.notMember` visited) queue
-      new_items' <- solveLlpItemMemoParallel not_visited
-      let new_queue = toList new_items'
-      let new_items = items `Set.union` new_items'
-      let new_visited = Set.union (Set.fromList queue) visited
-      auxiliary new_visited new_items new_queue
-
--- | Creates the LLP collection as described in algorithm 8 from the LLP paper.
--- This is done using memoization.
 llpCollectionMemo ::
   (Ord t, Ord nt, Show nt, Show t, NFData t, NFData nt) =>
   State (LlpContext nt t) (Set (Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t))))
@@ -581,6 +558,72 @@ llpCollectionMemo = do
           let new_items = Set.union new_item items
           let new_queue = queue ++ toList new_item
           auxiliary new_visited new_items new_queue
+
+type LlpCollectionState nt t =
+  (Set (Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t))),
+   Set (Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t))),
+   [Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t))])
+
+nextLlpCollectMemo ::
+  (Show nt, Show t, NFData t, NFData nt, Ord t, Ord nt) =>
+  LlpCollectionState nt t -> 
+  State (LlpContext nt t) (LlpCollectionState nt t)
+nextLlpCollectMemo (visited, items, top : queue) = do
+  if top `Set.member` visited
+    then return (visited, items, queue)
+    else new
+  where
+    new_visited = Set.insert top visited
+    new = do
+      new_item <- solveLlpItemsMemo top
+      let new_items = Set.union new_item items
+      let new_queue = queue ++ toList new_item
+      return (new_visited, new_items, new_queue)
+
+finalLlpCollectMemo ::
+  (Show nt, Show t, NFData t, NFData nt, Ord t, Ord nt) =>
+  LlpCollectionState nt t ->
+  State (LlpContext nt t) (Set (Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t))))
+finalLlpCollectMemo (_, items, []) = return items
+finalLlpCollectMemo state = do
+  state' <- nextLlpCollectMemo state
+  finalLlpCollectMemo state'
+
+initParallelLlpCollection ::
+  (Ord t, Ord nt, Show nt, Show t, NFData t, NFData nt) =>
+  Int ->
+  State (LlpContext nt t) (LlpCollectionState nt t)
+initParallelLlpCollection n = do
+  ctx <- get
+  let grammar = theGrammar ctx
+  let q = lookback ctx
+  let d_init = initD q grammar
+  let d_init_set = Set.singleton d_init
+  let d_init_list = [d_init]
+  auxiliary Set.empty d_init_set d_init_list
+  where
+    removeNull = Set.filter (not . null)
+    auxiliary visited items [] = return (visited, items, [])
+    auxiliary visited items queue = do
+      (new_visited, new_items, new_queue) <- nextLlpCollectMemo (visited, items, queue)
+      if length new_queue >= n
+        then return (new_visited, new_items, new_queue)
+        else auxiliary new_visited new_items new_queue
+
+llpCollectionMemoParallel ::
+  (Show nt, Show t, NFData t, NFData nt, Ord t, Ord nt) =>
+  Int ->
+  LlpContext nt t ->
+  Set (Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t)))
+llpCollectionMemoParallel n ctx
+  | null queue = items
+  | otherwise = Set.unions $ pmap solve new_states
+  where
+    (state, ctx') = runState (initParallelLlpCollection n) ctx
+    (visited, items, queue) = state
+    unwrap (a, b, s) = (a, b, ) . List.singleton <$> s
+    new_states = unwrap state
+    solve s = evalState (finalLlpCollectMemo s) ctx'
 
 -- | Creates the LLP collection as described in algorithm 8 from the LLP paper.
 llpCollection ::
@@ -762,7 +805,7 @@ llpParserTable context
     grammar = theGrammar context
     parsed = Map.mapWithKey auxiliary unwrapped
     unwrapped = (\[a] -> a) . Set.toList <$> psls_table
-    collection = evalState llpCollectionMemo context
+    collection = evalState llpCollectionMemo context -- llpCollectionMemoParallel 4 context
     psls_table = filterAdmissiblePairs q k grammar $ psls collection
     llTableParse' = llTableParse k (theGrammar context)
     auxiliary (x, y) alpha = f <$> llTableParse' y alpha

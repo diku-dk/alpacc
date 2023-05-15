@@ -18,7 +18,21 @@ import Data.String.Interpolate (i)
 import System.FilePath.Posix (stripExtension, takeFileName)
 import qualified Data.List as List
 import ParallelParser.LL (before, follow, first, last, llTable)
-import Prelude hiding (last)
+import Control.ThreadPool (threadPoolIO)
+import Control.Concurrent.Chan
+import Control.Monad (forM_)
+import Control.Parallel.Strategies
+import Control.DeepSeq
+import GHC.Generics
+import Control.Monad
+import Control.Concurrent
+import Control.Concurrent.STM
+
+pmap :: NFData b => (a -> b) -> [a] -> [b]
+pmap f ls =
+  let bs = map f ls
+      cs = bs `using` parList rdeepseq
+   in cs
 
 data Parametars = Parametars
   { path      :: String
@@ -53,8 +67,19 @@ opts = info (parametars <**> helper)
 
 writeFutharkProgram :: String -> String -> IO ()
 writeFutharkProgram program_path program = do
-  writeFile (program_path ++ ".fut") program 
+  writeFile (program_path ++ ".fut") program
   putStrLn ("The parser " ++ program_path ++ ".fut was created.")
+
+fib 0 = 0
+fib 1 = 1
+fib n = fib (n - 1) + fib (n - 2)
+
+
+-- https://lotz84.github.io/haskellbyexample/ex/worker-pools
+-- main :: IO ()
+-- main = do
+--     print $ pmap fib (List.replicate 16 40)
+
 
 main :: IO ()
 main = do
@@ -69,9 +94,9 @@ main = do
   let left_recursive_nonterminals = leftRecursiveNonterminals grammar 
   let trouble_makers = List.intercalate ", " left_recursive_nonterminals
   if [] /= left_recursive_nonterminals
-  then
-    putStrLn [i|The given grammar contains left recursion due to the following nonterminals #{trouble_makers}.|]
-  else
-    case maybe_program of
-      Nothing -> putStrLn [i|The given Grammar may not be LLP(#{q}, #{k}).|]
-      Just program -> writeFutharkProgram program_path program
+    then
+      putStrLn [i|The given grammar contains left recursion due to the following nonterminals #{trouble_makers}.|]
+    else
+      case maybe_program of
+        Nothing -> putStrLn [i|The given Grammar may not be LLP(#{q}, #{k}).|]
+        Just program -> writeFutharkProgram program_path program

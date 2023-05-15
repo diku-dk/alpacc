@@ -19,8 +19,8 @@ maintainer:         williamhenrichdue@gmail.com
 category:           Language
 extra-source-files: CHANGELOG.md
 
-common common
-  default-language: Haskell2010
+library
+  default-language:   Haskell2010
   default-extensions:
     DeriveGeneric
     FlexibleContexts
@@ -45,9 +45,8 @@ common common
     , mtl
     , deepseq-generics
     , deepseq
-
-library
-  import: common
+    , Control-Engine
+  
   exposed-modules:
     ParallelParser.Grammar
     ParallelParser.LL
@@ -57,23 +56,54 @@ library
   hs-source-dirs:     src
 
 executable parallel-parser
-  import:             common 
-  main-is:            Main.hs
+  default-language:   Haskell2010
   ghc-options:        -threaded -rtsopts
+  main-is:            Main.hs
+
+  default-extensions:
+    DeriveGeneric
+    FlexibleContexts
+    FlexibleInstances
+    OverloadedStrings
+    TupleSections
+    QuasiQuotes
+    DeriveFunctor
+    ExtendedDefaultRules
+    DeriveGeneric
 
   build-depends:
     optparse-applicative
     , parallel-parser
     , filepath
+    , deepseq-generics
+    , deepseq
+    , Control-Engine
+    , interpolate
+    , containers
+    , parallel
+    , resource-pool
+    , stm
+    , base
 
   hs-source-dirs:     app
 
 test-suite test-parallel-parser
-  import:           common
-  ghc-options:      -threaded -rtsopts
+  default-language:   Haskell2010
+  ghc-options:        -threaded -rtsopts
   other-modules:
     LL
     LLP
+
+  default-extensions:
+    DeriveGeneric
+    FlexibleContexts
+    FlexibleInstances
+    OverloadedStrings
+    TupleSections
+    QuasiQuotes
+    DeriveFunctor
+    ExtendedDefaultRules
+    DeriveGeneric
 
   type:             exitcode-stdio-1.0
   hs-source-dirs:   test
@@ -81,3 +111,6 @@ test-suite test-parallel-parser
   build-depends:
     , HUnit
     , parallel-parser
+    , interpolate
+    , containers
+    , base
