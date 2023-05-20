@@ -19,7 +19,10 @@ module ParallelParser.LL
     initLastMemoizedContext,
     AlphaBetaMemoizedContext (..),
     derivableNLengths,
-    nonderivableNLengths
+    nonderivableNLengths,
+    validLlSubstrings,
+    firstAndFollow,
+    lastAndBefore
   )
 where
 
@@ -42,7 +45,6 @@ import Data.Composition
 import Debug.Trace (traceShow)
 import Control.DeepSeq
 import GHC.Generics
-
 
 debug x = traceShow x x
 
@@ -108,6 +110,23 @@ leftmostDerive grammar = derive Seq.empty . Seq.fromList
       where
         smallDerive e = ys >< e >< xs
         ps = Seq.fromList $ toList . smallDerive <$> (production_map Map.! x)
+
+validLlSubstrings ::
+  (Show nt , Show t, Ord nt, Ord t) =>
+  Int ->
+  Grammar nt t ->
+  Set [t]
+validLlSubstrings k grammar = Set.fromList . concatMap headAndTail $ toList string_set
+  where
+    string_set =  Set.unions $ Map.unionWith Set.union follow_map first_map
+    headAndTail a = if null a then [] else [init a, tail a]
+    substring_grammar = substringGrammar grammar
+    filterNullables = Map.filterWithKey (\key _ -> isNullable key)
+    (first_map, follow_map) = firstAndFollowMaps (1 + k) substring_grammar
+    isNullable nt =
+      case Map.lookup nt first_map of
+        Just a -> [] `Set.member` a
+        Nothing -> False
 
 -- | Given a string of symbols create all derivations.
 derivations ::
@@ -299,7 +318,8 @@ mkMemoAlphaBetaProducts k grammar = memoAlphaBetaProducts k first_map
 -- current state it is in.
 data AlphaBetaMemoizedContext nt t = AlphaBetaMemoizedContext
   { alphaBetaFunction :: MemoFunction [Symbol nt t] (Set [t]),
-    alphaBetaState :: Map [Symbol nt t] (Set [t])
+    alphaBetaState :: Map [Symbol nt t] (Set [t]),
+    look :: Int
   } deriving (Generic)
 
 instance (NFData t, NFData nt) => NFData (AlphaBetaMemoizedContext nt t)
@@ -309,7 +329,8 @@ initFirstMemoizedContext :: (Ord nt, Ord t) => Int -> Grammar nt t -> AlphaBetaM
 initFirstMemoizedContext k grammar =
   AlphaBetaMemoizedContext {
     alphaBetaFunction = mkMemoAlphaBetaProducts k grammar,
-    alphaBetaState = Map.empty
+    alphaBetaState = Map.empty,
+    look = k
   }
 
 -- | Creates the initial context used for the memoized last function.
@@ -321,7 +342,8 @@ initLastMemoizedContext ::
 initLastMemoizedContext q grammar =
   AlphaBetaMemoizedContext {
     alphaBetaFunction = mkMemoAlphaBetaProducts q (reverseGrammar grammar),
-    alphaBetaState = Map.empty
+    alphaBetaState = Map.empty,
+    look = q
   }
 
 -- | Every possible way to split a string in two.
@@ -355,10 +377,10 @@ firstMemoized ::
   (Set [t], AlphaBetaMemoizedContext nt t)
 firstMemoized ctx [] = (Set.singleton [], ctx)
 firstMemoized ctx wi = updatCtx $ runMemoized alphaBetaProducts wi state
-      where
-        state = alphaBetaState ctx
-        alphaBetaProducts = alphaBetaFunction ctx
-        updatCtx = Bifunctor.second (\state' -> ctx { alphaBetaState = state' })
+  where
+    state = alphaBetaState ctx
+    alphaBetaProducts = alphaBetaFunction ctx
+    updatCtx = Bifunctor.second (\state' -> ctx { alphaBetaState = state' })
 
 -- | Given a first map which maps nonterminals to their first sets and a string
 -- of symbols compute the first set of that string.
@@ -391,30 +413,130 @@ rightSymbols [] = []
 rightSymbols ((Terminal _) : xs) = rightSymbols xs
 rightSymbols ((Nonterminal x) : xs) = (x, xs) : rightSymbols xs
 
--- | Creates the follow map which maps nonterminals to their follow sets.
-followMap :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> Map nt (Set [t])
-followMap k grammar = unextendMap $ fixedPointIterate (/=) f init_follow_map
+unextendMap :: (Ord nt, Ord t) =>
+  Map (ExtendedNonterminal nt) (Set [ExtendedTerminal t]) ->
+  Map nt (Set [t])
+unextendMap = unextendValues . unextendKeys
   where
     unextendKeys =
       Map.mapKeys unextendNT
-      . Map.filterWithKey (\k _ -> k/=start extended_grammar)
+      . Map.filterWithKey (\k _ -> k/=ExtendedStart)
     unextendValues = fmap (Set.map (fmap unextendT . filter (/=End)))
-    unextendMap = unextendValues . unextendKeys
+
+initFollowMap ::
+  Ord nt =>
+  Int ->
+  Grammar (ExtendedNonterminal nt) (ExtendedTerminal t) ->
+  ExtendedNonterminal nt ->
+  Map (ExtendedNonterminal nt) (Set [ExtendedTerminal t])
+initFollowMap k grammar old_start =
+  Map.insert old_start stopper
+    . Map.fromList
+    . map (,Set.empty)
+    $ nonterminals grammar
+  where
+    stopper = Set.singleton $ replicate k End
+
+-- | Computes the first set within the LLP Context such that memoization can be
+-- used.
+useFirst ::
+  (Ord nt, Ord t) =>
+  [Symbol nt t] ->
+  State (AlphaBetaMemoizedContext nt t) (Set [t])
+useFirst symbols = do
+  ctx <- get
+  let (set, ctx') = firstMemoized ctx symbols
+  put ctx'
+  return set
+
+followMap' ::
+  (Ord nt, Ord t, Show nt, Show t) =>
+  Int ->
+  Grammar (ExtendedNonterminal nt) (ExtendedTerminal t) ->
+  ExtendedNonterminal nt ->
+  State (AlphaBetaMemoizedContext (ExtendedNonterminal nt) (ExtendedTerminal t))
+  (Map (ExtendedNonterminal nt) (Set [ExtendedTerminal t]))
+followMap' k grammar old_start = fixedPointIteration init_follow_map
+  where
+    init_follow_map = initFollowMap k grammar old_start
+    right_productions = concatMap rightProductons $ productions grammar
+    
+    fixedPointIteration follow_map = do
+      result <- mapM (auxiliary follow_map) right_productions
+      let new_follow_map = Map.unionsWith Set.union result
+      if follow_map == new_follow_map
+        then return new_follow_map
+        else fixedPointIteration new_follow_map
+    
+    auxiliary follow_map' (aj, (ai, w')) = do
+      first_set <- useFirst w'
+      let subset = truncatedProduct k first_set (follow_map' Map.! aj)
+      return $ Map.adjust (Set.union subset) ai follow_map'
+
+-- | Creates the follow map which maps nonterminals to their follow sets.
+followMap :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> Map nt (Set [t])
+followMap k grammar = unextendMap first_map
+  where
+    first_ctx = initFirstMemoizedContext k extended_grammar
+    first_map = evalState (followMap' k extended_grammar old_start) first_ctx
     extended_grammar = extendGrammar k grammar
     old_start = ExtendedNonterminal $ start grammar
-    first' = first k extended_grammar
-    stopper = Set.singleton $ replicate k End
-    init_follow_map =
-      Map.insert old_start stopper
-        . Map.fromList
-        . map (,Set.empty)
-        $ nonterminals extended_grammar
-    f follow_map = Map.unionsWith Set.union $ map (auxiliary follow_map) right_productions
-    right_productions = concatMap rightProductons $ productions extended_grammar
-    auxiliary follow_map' (aj, (ai, w')) = Map.adjust (Set.union subset) ai follow_map'
-      where
-        first_set = first' w'
-        subset = truncatedProduct k first_set (follow_map' Map.! aj)
+
+lastAndBefore ::
+  (Show nt, Show t, Ord nt, Ord t) =>
+  Int ->
+  Grammar nt t ->
+  (AlphaBetaMemoizedContext nt t, nt -> Set [t])
+lastAndBefore q grammar = (last_ctx, (before_map Map.!))
+  where
+    reversed_grammar = reverseGrammar grammar
+    before_map = Set.map reverse <$> follow_map
+    (last_ctx, follow_map) = firstAndFollow' q reversed_grammar 
+
+firstAndFollow ::
+  (Show nt, Show t, Ord nt, Ord t) =>
+  Int ->
+  Grammar nt t ->
+  (AlphaBetaMemoizedContext nt t, nt -> Set [t])
+firstAndFollow k grammar = (first_ctx, (follow_map Map.!))
+  where
+    (first_ctx, follow_map) = firstAndFollow' k grammar
+
+firstAndFollow' ::
+  (Show nt, Show t, Ord nt, Ord t) =>
+  Int ->
+  Grammar nt t ->
+  (AlphaBetaMemoizedContext nt t, Map nt (Set [t]))
+firstAndFollow' k grammar = (first_ctx, follow_map)
+  where
+    (first_map, follow_map) = firstAndFollowMaps k grammar
+    first_ctx = AlphaBetaMemoizedContext 
+      {
+        alphaBetaFunction = memoAlphaBetaProducts k first_map,
+        alphaBetaState = Map.empty,
+        look = k
+      }
+
+firstAndFollowMaps ::
+  (Show nt, Show t, Ord nt, Ord t) =>
+  Int ->
+  Grammar nt t ->
+  (Map nt (Set [t]), Map nt (Set [t]))
+firstAndFollowMaps k grammar = (first_map, follow_map)
+  where
+    extended_first_map = firstMap k extended_grammar
+    old_start = ExtendedNonterminal $ start grammar
+    extended_grammar = extendGrammar k grammar
+    initFollowMap = followMap' k extended_grammar old_start
+    extended_follow_map = evalState initFollowMap extended_first_ctx
+    follow_map = unextendMap extended_follow_map
+    first_map = unextendMap extended_first_map
+    extended_first_ctx = AlphaBetaMemoizedContext 
+      {
+        alphaBetaFunction = memoAlphaBetaProducts k extended_first_map,
+        alphaBetaState = Map.empty,
+        look = k
+      }
 
 -- | Computes the follow set for a given nonterminal.
 follow :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> nt -> Set [t]

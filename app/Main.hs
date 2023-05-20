@@ -2,7 +2,7 @@ module Main where
 
 import ParallelParser.Grammar
 import ParallelParser.Generator
-import ParallelParser.LLP
+import ParallelParser.LLP ( leftRecursiveNonterminals )
 import qualified Data.Map as M
 import Prelude hiding (last)
 import qualified Data.List as L
@@ -17,7 +17,6 @@ import Data.Semigroup ((<>))
 import Data.String.Interpolate (i)
 import System.FilePath.Posix (stripExtension, takeFileName)
 import qualified Data.List as List
-import ParallelParser.LL (before, follow, first, last, llTable)
 import Control.Concurrent.Chan
 import Control.Parallel.Strategies
 import Control.DeepSeq
@@ -26,6 +25,7 @@ import Control.Concurrent
 import Control.Concurrent.STM
 import Control.Monad
 import Control.Exception
+import ParallelParser.LL (validLlSubstrings)
 
 data Parametars = Parametars
   { path      :: String

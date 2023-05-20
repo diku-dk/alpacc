@@ -21,10 +21,12 @@ module ParallelParser.Grammar
     unextendT,
     extendGrammar,
     unpackNonterminal,
-    unpackTerminal
+    unpackTerminal,
+    substringGrammar,
   )
 where
 
+import Control.DeepSeq
 import Data.Bifunctor (Bifunctor (bimap, first, second))
 import Data.Composition
 import qualified Data.List as List
@@ -35,9 +37,8 @@ import Data.Set (Set (..))
 import qualified Data.Set as Set
 import Data.Tuple.Extra (both)
 import Debug.Trace (traceShow)
-import Text.ParserCombinators.ReadP
-import Control.DeepSeq
 import GHC.Generics
+import Text.ParserCombinators.ReadP
 
 debug x = traceShow x x
 
@@ -266,7 +267,7 @@ data ExtendedTerminal t
   | End
   deriving (Ord, Eq)
 
--- | Shows whats inside the terminals or the End terminal. 
+-- | Shows whats inside the terminals or the End terminal.
 instance Show t => Show (ExtendedTerminal t) where
   show End = "End"
   show (ExtendedTerminal t) = show t
@@ -278,7 +279,7 @@ data ExtendedNonterminal nt
   | ExtendedStart
   deriving (Ord, Eq)
 
--- | Shows whats inside the nonterminals or the Start nonterminal. 
+-- | Shows whats inside the nonterminals or the Start nonterminal.
 instance Show nt => Show (ExtendedNonterminal nt) where
   show ExtendedStart = "Start"
   show (ExtendedNonterminal t) = show t
@@ -373,3 +374,31 @@ unpackNTTGrammar grammar =
   where
     unpackT (T s) = s
     unpackNT (NT s) = s
+
+data SubstringNonterminal nt
+  = ExistingNT nt
+  | ArbitraryNT Integer
+  deriving (Eq, Ord, Show)
+
+substringGrammar :: Grammar nt t -> Grammar (SubstringNonterminal nt) t
+substringGrammar grammar =
+  grammar
+    { nonterminals = new_nts,
+      productions = new_productions,
+      start = new_start
+    }
+  where
+    nts' = ExistingNT <$> nonterminals grammar
+    nts_without_start = nts' ++ arbitrary_nts
+    productions' = first ExistingNT <$> productions grammar
+    new_symbols = concatMap extraSubstrings $ symbols <$> productions'
+    arbitrary_nts = take (length new_symbols) $ ArbitraryNT <$> [1 ..]
+    new_productions_without_start = zipWith Production arbitrary_nts new_symbols
+    nts_symbols = List.singleton . Nonterminal <$> nts_without_start
+    new_start_productions = map (Production new_start) nts_symbols
+    new_start = ArbitraryNT 0
+    new_productions = new_start_productions ++ new_productions_without_start ++ productions'
+    new_nts = new_start : nts_without_start
+    extraSubstrings [] = []
+    extraSubstrings [a] = [[a]]
+    extraSubstrings (x : xs) = xs : extraSubstrings xs
