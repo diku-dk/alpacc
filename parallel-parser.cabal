@@ -81,7 +81,6 @@ executable parallel-parser
     , interpolate
     , containers
     , parallel
-    , resource-pool
     , stm
     , base
 

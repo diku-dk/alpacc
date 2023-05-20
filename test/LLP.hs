@@ -516,7 +516,7 @@ derivable10 = derivableNLengths 10 grammar
 llpqkParsingDerivableTestCase parser q k =
     TestCase $ assertEqual [i|LLP(#{q}, #{k}) can parse derivables of length 10.|] expected True
   where
-    expected = all isJust . debug $ parser <$> Set.toList derivable10
+    expected = all isJust $ parser <$> Set.toList derivable10
 
 llpqkParsingDerivableTestCases = [llpqkParsingDerivableTestCase parser q k | (parser, k, q) <- llpParsers]
 
@@ -527,7 +527,7 @@ nonderivable3 = nonderivableNLengths 3 grammar
 llpqkParsingNonderivableTestCase parser q k =
     TestCase $ assertEqual [i|LLP(#{q}, #{k}) fails on parsing nonderivables of length 3.|] expected True
   where
-    expected = all isNothing . debug $ parser <$> Set.toList nonderivable3
+    expected = all isNothing $ parser <$> Set.toList nonderivable3
 
 llpqkParsingNonderivableTestCases = [llpqkParsingNonderivableTestCase parser q k | (parser, k, q) <- llpParsers]
 
