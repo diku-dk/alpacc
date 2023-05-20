@@ -80,5 +80,5 @@ main = do
       putStrLn [i|The given grammar contains left recursion due to the following nonterminals #{trouble_makers}.|]
     else
       case maybe_program of
-        Nothing -> putStrLn [i|The given Grammar may not be LLP(#{q}, #{k}).|]
+        Nothing -> putStrLn [i|The given Grammar is not a LLP(#{q}, #{k}).|]
         Just program -> writeFutharkProgram program_path program
