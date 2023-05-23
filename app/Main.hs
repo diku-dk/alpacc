@@ -25,7 +25,7 @@ import Control.Concurrent
 import Control.Concurrent.STM
 import Control.Monad
 import Control.Exception
-import ParallelParser.LL (validLlSubstrings)
+import ParallelParser.LL (validLlSubstrings, leftmostDerivations, firstMap)
 
 data Parametars = Parametars
   { path      :: String
@@ -73,7 +73,7 @@ main = do
   contents <- readFile grammar_path
   let grammar = unpackNTTGrammar (read contents :: Grammar NT T)
   let maybe_program = futharkKeyGeneration q k grammar
-  let left_recursive_nonterminals = leftRecursiveNonterminals grammar 
+  let left_recursive_nonterminals = leftRecursiveNonterminals grammar
   let trouble_makers = List.intercalate ", " left_recursive_nonterminals
   if [] /= left_recursive_nonterminals
     then
