@@ -774,8 +774,9 @@ filterAdmissiblePairs ::
   Map ([t], [t]) a
 filterAdmissiblePairs q k grammar = Map.filterWithKey (\k _ -> isValid k)
   where
-    valid_strings = admissibleStrings q k grammar -- validLlSubstrings (1 + q + k) grammar
-    isValid (x, y) = any (xy `List.isInfixOf`) valid_strings
+    valid_strings = validLlSubstrings (q + k) grammar
+    isValid (x, y) =
+        xy `Set.member` valid_strings || any (xy `List.isInfixOf`) valid_strings
       where
         xy = x ++ y
 

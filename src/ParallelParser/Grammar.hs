@@ -23,6 +23,7 @@ module ParallelParser.Grammar
     unpackNonterminal,
     unpackTerminal,
     substringGrammar,
+    rightSymbols
   )
 where
 
@@ -356,11 +357,9 @@ toProductionsMap ::
   (Ord nt, Ord t) =>
   [Production nt t] ->
   Map nt [[Symbol nt t]]
-toProductionsMap = Map.fromList . fmap toPair . groupSort
+toProductionsMap = Map.unionsWith (++) . fmap toMap
   where
-    groupSort = List.groupBy nonterminalEq . List.sort
-    nonterminalEq a b = nonterminal a == nonterminal b
-    toPair a = (nonterminal $ head a, symbols <$> a)
+    toMap p = Map.singleton (nonterminal p) [symbols p]
 
 -- | Given a grammar using NT and T convert it to a grammar using strings.
 unpackNTTGrammar :: Grammar NT T -> Grammar String String
@@ -380,25 +379,42 @@ data SubstringNonterminal nt
   | ArbitraryNT Integer
   deriving (Eq, Ord, Show)
 
-substringGrammar :: Grammar nt t -> Grammar (SubstringNonterminal nt) t
+substringGrammar ::
+  (Ord nt, Ord t, Show nt, Show t) =>
+  Grammar nt t ->
+  Grammar (SubstringNonterminal nt) t
 substringGrammar grammar =
   grammar
     { nonterminals = new_nts,
-      productions = new_productions,
+      productions = new_prods,
       start = new_start
     }
   where
     nts' = ExistingNT <$> nonterminals grammar
-    nts_without_start = nts' ++ arbitrary_nts
-    productions' = first ExistingNT <$> productions grammar
-    new_symbols = concatMap extraSubstrings $ symbols <$> productions'
-    arbitrary_nts = take (length new_symbols) $ ArbitraryNT <$> [1 ..]
-    new_productions_without_start = zipWith Production arbitrary_nts new_symbols
-    nts_symbols = List.singleton . Nonterminal <$> nts_without_start
-    new_start_productions = map (Production new_start) nts_symbols
+    prods' = first ExistingNT <$> productions grammar
+    prods_map = toProductionsMap prods'
+    substr_prods_map = Map.mapKeys toAnt $ concatMap extraSubstrings <$> prods_map
+    mapEntryToProds = Map.mapWithKey (\k v -> Production k <$> v)
+    substr_prods = concat . Map.elems $ mapEntryToProds substr_prods_map
+    to_substr_prods = Production new_start . List.singleton . Nonterminal <$> (nts' ++ Map.keys substr_prods_map)
+    nt_to_ant_map = Map.fromList . zip nts' $ ArbitraryNT <$> [1 ..]
+    toAnt = (nt_to_ant_map Map.!)
+    right_tuples = concatMap (rightSymbols . symbols) prods'
+    right_symbols = uncurry (:) . first (Nonterminal . toAnt) <$> right_tuples
+    right_prods = Production new_start <$> right_symbols
+    new_symbols = concatMap extraSubstrings $ symbols <$> prods'
     new_start = ArbitraryNT 0
-    new_productions = new_start_productions ++ new_productions_without_start ++ productions'
-    new_nts = new_start : nts_without_start
+    new_prods = prods' ++ fmap firstChange substr_prods ++ right_prods ++ to_substr_prods
+    new_nts = new_start : (nts' ++ Map.keys substr_prods_map)
     extraSubstrings [] = []
-    extraSubstrings [a] = [[a]]
-    extraSubstrings (x : xs) = xs : extraSubstrings xs
+    extraSubstrings s@(x : xs) = s : extraSubstrings xs
+    firstChange (Production nt ((Nonterminal x):xs)) = Production nt (Nonterminal (toAnt x):xs)
+    firstChange a = a
+
+-- | Given a string of symbols, find all the nonterminals and make tuples where
+-- each nonterminal is the first element of the tuple and the second element is
+-- the symbols which comes after that nonterminal.
+rightSymbols :: [Symbol nt t] -> [(nt, [Symbol nt t])]
+rightSymbols [] = []
+rightSymbols ((Terminal _) : xs) = rightSymbols xs
+rightSymbols ((Nonterminal x) : xs) = (x, xs) : rightSymbols xs

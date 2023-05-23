@@ -22,7 +22,8 @@ module ParallelParser.LL
     nonderivableNLengths,
     validLlSubstrings,
     firstAndFollow,
-    lastAndBefore
+    lastAndBefore,
+    firstMap
   )
 where
 
@@ -58,7 +59,10 @@ listProducts = snd .: auxiliary
       where
         (prev, result) = auxiliary (n - 1) zs
         next = [x:y | x <- zs, y <- prev]
-    
+
+validLlSubstrings :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> Set [t]
+validLlSubstrings k = Set.unions . firstMap k . substringGrammar
+
 derivableNLengths :: (Ord t, Ord nt, Show nt, Show t) => Int -> Grammar nt t -> Set [t]
 derivableNLengths n grammar =
   Set.fromList
@@ -111,23 +115,6 @@ leftmostDerive grammar = derive Seq.empty . Seq.fromList
         smallDerive e = ys >< e >< xs
         ps = Seq.fromList $ toList . smallDerive <$> (production_map Map.! x)
 
-validLlSubstrings ::
-  (Show nt , Show t, Ord nt, Ord t) =>
-  Int ->
-  Grammar nt t ->
-  Set [t]
-validLlSubstrings k grammar = Set.fromList . concatMap headAndTail $ toList string_set
-  where
-    string_set =  Set.unions $ Map.unionWith Set.union follow_map first_map
-    headAndTail a = if null a then [] else [init a, tail a]
-    substring_grammar = substringGrammar grammar
-    filterNullables = Map.filterWithKey (\key _ -> isNullable key)
-    (first_map, follow_map) = firstAndFollowMaps (1 + k) substring_grammar
-    isNullable nt =
-      case Map.lookup nt first_map of
-        Just a -> [] `Set.member` a
-        Nothing -> False
-
 -- | Given a string of symbols create all derivations.
 derivations ::
   (Ord t, Ord nt, Show nt, Show t) =>
@@ -166,7 +153,7 @@ naiveFirst k grammar = Set.fromList . bfs Set.empty . Seq.singleton
 -- | Naïvely creates creates all leftmost derivations which results in
 -- terminals.
 leftmostDerivations :: (Show nt, Show t, Ord nt, Ord t) => Int -> Grammar nt t -> [Symbol nt t] -> Set [t]
-leftmostDerivations k grammar = bfs Set.empty Set.empty . Seq.singleton
+leftmostDerivations k grammar = Set.map (take k) . bfs Set.empty Set.empty . Seq.singleton
   where
     unpackT (Terminal t) = t
     leftmostDerive' = leftmostDerive grammar
@@ -177,7 +164,7 @@ leftmostDerivations k grammar = bfs Set.empty Set.empty . Seq.singleton
       | otherwise = bfs set new_visited (queue >< leftmostDerive' top)
       where
         new_set = Set.insert (unpackT <$> k_terms) set
-        k_terms = take k top
+        k_terms = take (k + 1) top
         new_visited = Set.insert k_terms visited
 
 -- | Naïvely creates the follow sets for a given string of symbols. This is done
@@ -404,14 +391,6 @@ first :: (Show nt, Show t, Ord nt, Ord t) => Int -> Grammar nt t -> [Symbol nt t
 first k grammar = first' k first_map
   where
     first_map = firstMap k grammar
-
--- | Given a string of symbols, find all the nonterminals and make tuples where
--- each nonterminal is the first element of the tuple and the second element is
--- the symbols which comes after that nonterminal.
-rightSymbols :: [Symbol nt t] -> [(nt, [Symbol nt t])]
-rightSymbols [] = []
-rightSymbols ((Terminal _) : xs) = rightSymbols xs
-rightSymbols ((Nonterminal x) : xs) = (x, xs) : rightSymbols xs
 
 unextendMap :: (Ord nt, Ord t) =>
   Map (ExtendedNonterminal nt) (Set [ExtendedTerminal t]) ->
