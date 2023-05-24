@@ -4,7 +4,7 @@
     {S, A, B},
     {
         S -> a A,
-        S -> b A,
+        S -> b B,
         A -> c A d A,
         A -> f,
         B -> e B d B,
