@@ -23,7 +23,8 @@ module ParallelParser.Grammar
     unpackNonterminal,
     unpackTerminal,
     substringGrammar,
-    rightSymbols
+    rightSymbols,
+    grammarDuplicates
   )
 where
 
@@ -357,9 +358,16 @@ toProductionsMap ::
   (Ord nt, Ord t) =>
   [Production nt t] ->
   Map nt [[Symbol nt t]]
-toProductionsMap = Map.unionsWith (++) . fmap toMap
+toProductionsMap = auxiliary Map.empty
   where
     toMap p = Map.singleton (nonterminal p) [symbols p]
+    auxiliary prod_map [] = prod_map
+    auxiliary prod_map ((Production nt s) : as)
+      | nt `Map.member` prod_map = auxiliary new_prod_map as
+      | otherwise = auxiliary new_prod_map' as
+      where
+        new_prod_map = Map.adjust (s:) nt prod_map
+        new_prod_map' = Map.insert nt [s] prod_map
 
 -- | Given a grammar using NT and T convert it to a grammar using strings.
 unpackNTTGrammar :: Grammar NT T -> Grammar String String
@@ -399,12 +407,9 @@ substringGrammar grammar =
     to_substr_prods = Production new_start . List.singleton . Nonterminal <$> (nts' ++ Map.keys substr_prods_map)
     nt_to_ant_map = Map.fromList . zip nts' $ ArbitraryNT <$> [1 ..]
     toAnt = (nt_to_ant_map Map.!)
-    right_tuples = concatMap (rightSymbols . symbols) prods'
-    right_symbols = uncurry (:) . first (Nonterminal . toAnt) <$> right_tuples
-    right_prods = Production new_start <$> right_symbols
     new_symbols = concatMap extraSubstrings $ symbols <$> prods'
     new_start = ArbitraryNT 0
-    new_prods = prods' ++ fmap firstChange substr_prods ++ right_prods ++ to_substr_prods
+    new_prods = prods' ++ fmap firstChange substr_prods ++ to_substr_prods
     new_nts = new_start : (nts' ++ Map.keys substr_prods_map)
     extraSubstrings [] = []
     extraSubstrings s@(x : xs) = s : extraSubstrings xs
@@ -418,3 +423,21 @@ rightSymbols :: [Symbol nt t] -> [(nt, [Symbol nt t])]
 rightSymbols [] = []
 rightSymbols ((Terminal _) : xs) = rightSymbols xs
 rightSymbols ((Nonterminal x) : xs) = (x, xs) : rightSymbols xs
+
+grammarDuplicates :: (Ord t, Ord nt) => Grammar nt t -> ([nt], [t], [Production nt t])
+grammarDuplicates grammar = (hasDuplicates nts, hasDuplicates ts, hasDuplicates ps)
+  where
+    nts = nonterminals grammar
+    ts = terminals grammar
+    ps = productions grammar
+
+hasDuplicates :: Ord a => [a] -> [a]
+hasDuplicates = Set.toList . auxiliary Set.empty Set.empty
+  where
+    auxiliary dups _ [] = dups
+    auxiliary dups visited (x:xs)
+      | x `Set.member` visited = auxiliary new_dups new_visited xs
+      | otherwise = auxiliary dups new_visited xs
+      where
+        new_visited = Set.insert x visited
+        new_dups = Set.insert x dups

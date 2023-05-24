@@ -41,11 +41,10 @@ library
     , interpolate
     , extra
     , parallel
-    , filepath
     , mtl
+    , filepath
     , deepseq-generics
     , deepseq
-    , Control-Engine
   
   exposed-modules:
     ParallelParser.Grammar
@@ -77,11 +76,9 @@ executable parallel-parser
     , filepath
     , deepseq-generics
     , deepseq
-    , Control-Engine
     , interpolate
     , containers
     , parallel
-    , stm
     , base
 
   hs-source-dirs:     app

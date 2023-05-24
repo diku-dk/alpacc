@@ -23,7 +23,9 @@ module ParallelParser.LL
     validLlSubstrings,
     firstAndFollow,
     lastAndBefore,
-    firstMap
+    firstMap,
+    closureAlgorithm,
+    leftFactorNonterminals
   )
 where
 
@@ -200,7 +202,7 @@ naiveFollow k grammar = (follow_map Map.!)
     follow_map = naiveFollows k grammar
 
 -- | Performs fixed point iteration until a predicate holds true.
-fixedPointIterate :: Eq b => (b -> b -> Bool) -> (b -> b) -> b -> b
+fixedPointIterate :: (Show b, Eq b) => (b -> b -> Bool) -> (b -> b) -> b -> b
 fixedPointIterate cmp f = fst . head . dropWhile (uncurry cmp) . iterateFunction
   where
     iterateFunction = drop 1 . iterate swapApply . dupe
@@ -208,7 +210,7 @@ fixedPointIterate cmp f = fst . head . dropWhile (uncurry cmp) . iterateFunction
 
 -- | Determines the nullablity of each nonterminal using the algorithm described
 -- in Introduction to Compiler Design.
-nullables :: (Ord nt, Ord t) => Grammar nt t -> Map nt Bool
+nullables :: (Show nt, Show t, Ord nt, Ord t) => Grammar nt t -> Map nt Bool
 nullables grammar = fixedPointIterate (/=) nullableNtProd init_nullable_map
   where
     nullableNtProd = nullableNt productions_map
@@ -222,7 +224,7 @@ nullables grammar = fixedPointIterate (/=) nullableNtProd init_nullable_map
 
 -- | Determines the nullablity of each symbol using the algorithm described
 -- in Introduction to Compiler Design.
-nullableOne :: (Ord nt, Ord t) => Grammar nt t -> Symbol nt t -> Bool
+nullableOne :: (Show nt, Show t, Ord nt, Ord t) => Grammar nt t -> Symbol nt t -> Bool
 nullableOne _ (Terminal t) = False
 nullableOne grammar (Nonterminal nt) = nullable_map Map.! nt
   where
@@ -230,7 +232,7 @@ nullableOne grammar (Nonterminal nt) = nullable_map Map.! nt
 
 -- | Determines the nullablity of a string of symbols using the algorithm
 -- described in Introduction to Compiler Design.
-nullable :: (Ord nt, Ord t) => Grammar nt t -> [Symbol nt t] -> Bool
+nullable :: (Show nt, Show t, Ord nt, Ord t) => Grammar nt t -> [Symbol nt t] -> Bool
 nullable grammar = all nullableOne'
   where
     nullableOne' = nullableOne grammar
@@ -296,7 +298,7 @@ alphaBetaProducts k first_map string = Set.unions $ map subProducts alpha_betas
     subProducts = uncurry (truncatedProduct k) . both subProduct
 
 -- | Creates a memoized alphaBeta function given a the lookahead and grammar. 
-mkMemoAlphaBetaProducts :: (Ord nt, Ord t) => Int -> Grammar nt t -> MemoFunction [Symbol nt t] (Set [t])
+mkMemoAlphaBetaProducts :: (Show nt, Show t, Ord nt, Ord t) => Int -> Grammar nt t -> MemoFunction [Symbol nt t] (Set [t])
 mkMemoAlphaBetaProducts k grammar = memoAlphaBetaProducts k first_map
   where
     first_map = firstMap k grammar
@@ -312,7 +314,7 @@ data AlphaBetaMemoizedContext nt t = AlphaBetaMemoizedContext
 instance (NFData t, NFData nt) => NFData (AlphaBetaMemoizedContext nt t)
 
 -- | Creates the initial context used for the memoized first function.
-initFirstMemoizedContext :: (Ord nt, Ord t) => Int -> Grammar nt t -> AlphaBetaMemoizedContext nt t
+initFirstMemoizedContext :: (Show nt, Show t, Ord nt, Ord t) => Int -> Grammar nt t -> AlphaBetaMemoizedContext nt t
 initFirstMemoizedContext k grammar =
   AlphaBetaMemoizedContext {
     alphaBetaFunction = mkMemoAlphaBetaProducts k grammar,
@@ -322,7 +324,7 @@ initFirstMemoizedContext k grammar =
 
 -- | Creates the initial context used for the memoized last function.
 initLastMemoizedContext ::
-  (Ord nt, Ord t) =>
+  (Show nt, Show t, Ord nt, Ord t) =>
   Int ->
   Grammar nt t ->
   AlphaBetaMemoizedContext nt t
@@ -377,7 +379,7 @@ first' k first_map wi = alphaBetaProducts k first_map wi
 
 -- | Computes the first map for a given grammar, which maps nonterminals to
 -- their first sets.
-firstMap :: (Ord nt, Ord t) => Int -> Grammar nt t -> Map nt (Set [t])
+firstMap :: (Show nt, Show t, Ord nt, Ord t) => Int -> Grammar nt t -> Map nt (Set [t])
 firstMap k grammar = fixedPointIterate (/=) f init_first_map
   where
     init_first_map = Map.fromList . map (,Set.empty) $ nonterminals grammar
@@ -595,3 +597,28 @@ llParse k grammar = auxiliary
           return (index, symbols production)
 
         Just (index, production) = maybeTuple
+
+-- https://zerobone.net/blog/cs/non-productive-cfg-rules/
+closureAlgorithm :: (Ord nt, Ord t, Show nt, Show t) => Grammar nt t -> Set nt
+closureAlgorithm grammar = fixedPointIterate (/=) (`newProductives` prods) Set.empty
+  where
+    prods = productions grammar
+    isProductive1 set (Nonterminal nt) = nt `Set.member` set
+    isProductive1 _ (Terminal t) = True
+    isProductive set = all (isProductive1 set) . symbols
+    newProductives set = Set.fromList . fmap nonterminal . List.filter (isProductive set)
+
+-- Note: I am not sure if this is one hundred percent correct.
+leftFactorNonterminals :: (Ord nt, Ord t) => Grammar nt t -> [nt]
+leftFactorNonterminals grammar = Map.keys left_factor_map
+  where
+    productions_map = toProductionsMap $ productions grammar
+    left_factor_map = Map.filter (auxiliary []) productions_map
+    commonLeftFactor [] [] = False
+    commonLeftFactor [] _ = False
+    commonLeftFactor _ [] = False
+    commonLeftFactor (a:_) (b:_) = a == b
+    auxiliary _ [] = False
+    auxiliary ys (x:xs)
+      | any (x `commonLeftFactor`) xs || any (x `commonLeftFactor`) ys = True 
+      | otherwise = auxiliary (x:ys) xs

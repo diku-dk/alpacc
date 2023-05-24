@@ -751,18 +751,6 @@ allStarts = do
   let zero_keys = Map.fromList $ (,([Nonterminal start'], tail s, [0])) . ([],) <$> zero_symbols
   return zero_keys
 
--- | Creates all strings of length 2 * (q + k) using the first set. This can be
--- used to find the admissable pairs.
-admissibleStrings ::
-  (Show nt, Show t, Ord nt, Ord t) =>
-  Int ->
-  Int ->
-  Grammar nt t ->
-  Set [t]
-admissibleStrings q k grammar = leftmostDerivations (2 * (1 + q + k)) grammar init_start
-  where
-    init_start = List.singleton . Nonterminal $ start grammar
-
 -- | Removes the keys of a LLP table if the pairs are not admissable i.e. cannot
 -- be created with the grammar.
 filterAdmissiblePairs ::
@@ -851,7 +839,7 @@ llpParserTable = do
   let auxiliary (x, y) alpha = f <$> llTableParse' y alpha
         where
           f (epsilon, omega, pi) = (alpha, omega, pi)
-  collection <- llpCollectionMemo -- llpCollectionMemoParallel 4 context
+  collection <- llpCollectionMemoParallel -- llpCollection q k (theGrammar context)
   let psls_table = filterAdmissiblePairs q k grammar $ psls collection
   let unwrapped = (\[a] -> a) . Set.toList <$> psls_table
   let parsed = Map.mapWithKey auxiliary unwrapped
