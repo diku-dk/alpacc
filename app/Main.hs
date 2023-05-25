@@ -90,8 +90,8 @@ grammarError grammar
   | not $ null t_dups = Just [i|The given grammar contains duplicate terminals because of #{t_dups_str}.|]
   | not $ null p_dups = Just [i|The given grammar contains duplicate productions because of #{p_dups_str}.|]
   | not $ null left_recursive_nonterminals = Just [i|The given grammar contains left recursion due to the following nonterminals #{trouble_makers}.|]
-  | not $ null reverse_left_recursive_nonterminals = Just [i|The given grammar contains left recursion when productions right-hands sides are reversed due to the following nonterminals #{reverse_trouble_makers}.|]
-  | not $ null (debug left_factors) = Just [i|The given grammar contains productions that has common left factors due to the following nonterminals #{left_factors_str}.|]
+  -- | not $ null reverse_left_recursive_nonterminals = Just [i|The given grammar contains left recursion when productions right-hands sides are reversed due to the following nonterminals #{reverse_trouble_makers}.|]
+  | not $ null left_factors = Just [i|The given grammar contains productions that has common left factors due to the following nonterminals #{left_factors_str}.|]
   | not $ null nonproductive = Just [i|The given grammar contains nonproductive productions due to the following nonterminals #{nonproductive_str}.|]
   | otherwise = Nothing
   where

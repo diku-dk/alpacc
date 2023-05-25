@@ -38,12 +38,6 @@ import ParallelParser.Grammar
 import ParallelParser.LL
 import Prelude hiding (last)
 
-pmap :: NFData b => (a -> b) -> [a] -> [b]
-pmap f ls =
-  let bs = map f ls
-      cs = bs `using` parList rdeepseq
-   in cs
-
 debug x = traceShow x x
 
 debugBreak = traceShow "BREAK:"
@@ -149,7 +143,7 @@ solveShortestsPrefix k grammar ts string = solveShortestsPrefix' string
     safeHead (x : xs) = x
 
 solveShortestsPrefixTest ::
-  (Ord nt, Ord t) =>
+  (Show nt, Show t, Ord nt, Ord t) =>
   [AugmentedTerminal t] ->
   [Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)] ->
   State (LlpContext nt t) (Maybe [Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)])
@@ -190,7 +184,7 @@ instance (NFData t, NFData nt) => NFData (LlpContext nt t)
 -- | Computes the first set within the LLP Context such that memoization can be
 -- used.
 useFirst ::
-  (Ord nt, Ord t) =>
+  (Show nt, Show t, Ord nt, Ord t) =>
   [Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)] ->
   State (LlpContext nt t) (Set [AugmentedTerminal t])
 useFirst symbols = do
@@ -204,7 +198,7 @@ useFirst symbols = do
 -- | Computes the first k=1 set within the LLP Context such that memoization can
 -- be used.
 useFirst1 ::
-  (Ord nt, Ord t) =>
+  (Show nt, Show t, Ord nt, Ord t) =>
   [Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)] ->
   State (LlpContext nt t) (Set [AugmentedTerminal t])
 useFirst1 symbols = do
@@ -218,7 +212,7 @@ useFirst1 symbols = do
 -- | Computes the last set within the LLP Context such that memoization can be
 -- used.
 useLast ::
-  (Ord nt, Ord t) =>
+  (Show nt, Show t, Ord nt, Ord t) =>
   [Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)] ->
   State (LlpContext nt t) (Set [AugmentedTerminal t])
 useLast symbols = do
@@ -304,12 +298,15 @@ newLlpItemsMemo old_item = result
         then return Set.empty
         else Set.fromList <$> mapM (uncurry newItem') products'
 
-    solveShortestsPrefix' v x_delta = do
-      result <- solveShortestsPrefixTest v x_delta
-      return $ fromJust result
+    -- solveShortestsPrefix' v x_delta = do
+    --   result <- solveShortestsPrefixTest v x_delta
+    --   return $ fromJust result
 
     newItem u v new_dot_production x_delta = do
-      shortest_prefix <- solveShortestsPrefix' v x_delta
+      ctx <- get
+      let grammar = theGrammar ctx
+      let shortest_prefix = solveShortestsPrefix 1 grammar v x_delta
+      -- shortest_prefix <- solveShortestsPrefix' v x_delta
       return
         Item
           { dotProduction = new_dot_production,

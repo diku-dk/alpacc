@@ -155,7 +155,7 @@ naiveFirst k grammar = Set.fromList . bfs Set.empty . Seq.singleton
 -- | Naïvely creates creates all leftmost derivations which results in
 -- terminals.
 leftmostDerivations :: (Show nt, Show t, Ord nt, Ord t) => Int -> Grammar nt t -> [Symbol nt t] -> Set [t]
-leftmostDerivations k grammar = Set.map (take k) . bfs Set.empty Set.empty . Seq.singleton
+leftmostDerivations k grammar = bfs Set.empty Set.empty . Seq.singleton
   where
     unpackT (Terminal t) = t
     leftmostDerive' = leftmostDerive grammar
@@ -166,7 +166,7 @@ leftmostDerivations k grammar = Set.map (take k) . bfs Set.empty Set.empty . Seq
       | otherwise = bfs set new_visited (queue >< leftmostDerive' top)
       where
         new_set = Set.insert (unpackT <$> k_terms) set
-        k_terms = take (k + 1) top
+        k_terms = take k top
         new_visited = Set.insert k_terms visited
 
 -- | Naïvely creates the follow sets for a given string of symbols. This is done
@@ -239,7 +239,7 @@ nullable grammar = all nullableOne'
 
 -- | Concatenates each element of set a on the front of each element of set b
 -- and then takes the first k symbols.
-truncatedProduct :: Ord t => Int -> Set [t] -> Set [t] -> Set [t]
+truncatedProduct :: (Show t, Ord t) => Int -> Set [t] -> Set [t] -> Set [t]
 truncatedProduct k a b = Set.fromList token_product
   where
     token_product = [take k $ ts ++ ts' | ts <- a_list, ts' <- b_list]
@@ -266,13 +266,13 @@ memoize f k = do
 
 -- | Given a memoized function a value and a initial state return the result
 -- and the resulting state.
-runMemoized :: Ord k => MemoFunction k v -> k -> Map.Map k v -> (v, Map.Map k v)
+runMemoized :: (Show k, Show v, Ord k) => MemoFunction k v -> k -> Map.Map k v -> (v, Map.Map k v)
 runMemoized f arg = runState (memoize f arg)
 
 -- | Given a string of symbols it creates every way to split the string in two
 -- computes the first value of those pairs and performs the truncated product
 -- on them. This is a memoized function.
-memoAlphaBetaProducts :: (Ord nt, Ord t) => Int -> Map nt (Set [t]) -> MemoFunction [Symbol nt t] (Set [t])
+memoAlphaBetaProducts :: (Show nt, Show t, Ord nt, Ord t) => Int -> Map nt (Set [t]) -> MemoFunction [Symbol nt t] (Set [t])
 memoAlphaBetaProducts _ _ _ [] = error "Input string cannot be empty."
 memoAlphaBetaProducts _ _ _ [Terminal t] = return $ Set.singleton [t]
 memoAlphaBetaProducts _ first_map _ [Nonterminal nt] = return $ first_map Map.! nt
@@ -287,7 +287,7 @@ memoAlphaBetaProducts k _ self string = Set.unions <$> mapM bothSubProducts alph
 -- | Given a string of symbols it creates every way to split the string in two
 -- computes the first value of those pairs and performs the truncated product
 -- on them.
-alphaBetaProducts :: (Ord nt, Ord t) => Int -> Map nt (Set [t]) -> [Symbol nt t] -> Set [t]
+alphaBetaProducts :: (Show nt, Show t, Ord nt, Ord t) => Int -> Map nt (Set [t]) -> [Symbol nt t] -> Set [t]
 alphaBetaProducts _ _ [] = error "Input string cannot be empty."
 alphaBetaProducts k first_map [Terminal t] = Set.singleton [t]
 alphaBetaProducts k first_map [Nonterminal nt] = first_map Map.! nt
@@ -349,7 +349,7 @@ alphaBeta string
 
 -- | Computes the last set with memoization.
 lastMemoized ::
-  (Ord nt, Ord t) =>
+  (Show nt, Show t, Ord nt, Ord t) =>
   AlphaBetaMemoizedContext nt t ->
   [Symbol nt t] ->
   (Set [t], AlphaBetaMemoizedContext nt t)
@@ -360,7 +360,7 @@ lastMemoized ctx =
 
 -- | Computes the first set with memoization.
 firstMemoized ::
-  (Ord nt, Ord t) =>
+  (Show nt, Show t, Ord nt, Ord t) =>
   AlphaBetaMemoizedContext nt t ->
   [Symbol nt t] ->
   (Set [t], AlphaBetaMemoizedContext nt t)
@@ -373,7 +373,7 @@ firstMemoized ctx wi = updatCtx $ runMemoized alphaBetaProducts wi state
 
 -- | Given a first map which maps nonterminals to their first sets and a string
 -- of symbols compute the first set of that string.
-first' :: (Ord nt, Ord t) => Int -> Map nt (Set [t]) -> [Symbol nt t] -> Set [t]
+first' :: (Show nt, Show t, Ord nt, Ord t) => Int -> Map nt (Set [t]) -> [Symbol nt t] -> Set [t]
 first' _ _ [] = Set.singleton []
 first' k first_map wi = alphaBetaProducts k first_map wi
 
@@ -421,7 +421,7 @@ initFollowMap k grammar old_start =
 -- | Computes the first set within the LLP Context such that memoization can be
 -- used.
 useFirst ::
-  (Ord nt, Ord t) =>
+  (Show nt, Show t, Ord nt, Ord t) =>
   [Symbol nt t] ->
   State (AlphaBetaMemoizedContext nt t) (Set [t])
 useFirst symbols = do
