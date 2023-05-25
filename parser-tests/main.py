@@ -73,6 +73,9 @@ def main():
 # (A,{a,l},{E,A},{E -> l A A,A -> l a E,A -> ,E -> })
 # (Q,{o,y},{N,Q},{N -> y Q,Q -> N N,N -> ,Q -> y})
 # (E,{t,s},{V,E},{V -> t E E,E -> ,E -> s V,E -> V})
+# (N,{o,m},{N,X},{N -> o N X,X -> o N,N -> ,X -> })
+# (X,{g,v},{X,C},{X -> v X X,C -> ,C -> g,X -> C})
+# (Z,{x,e},{Z,V},{Z -> x Z V,V -> ,Z -> V x e,Z -> })
 if __name__ == '__main__':
     os.chdir(os.path.dirname(__file__))
     main()
