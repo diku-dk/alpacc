@@ -45,4 +45,4 @@ jobs:
       uses: cachix/install-nix-action@v20
 
     - name: Run tests
-      run: chmod +x futhark-test.sh && ./futhark-test.sh
+      run: sudo nix-shell --pure --run "cabal update && cabal install && python3 futhark-parser-tests"
