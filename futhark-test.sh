@@ -1,0 +1,1 @@
+nix-shell --pure --run "cabal update && cabal install && python3 futhark-parser-tests"
