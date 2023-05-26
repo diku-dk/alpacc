@@ -1,11 +1,10 @@
 import random
-import itertools
 import os
 import tempfile
 
 class Production:
 
-    def __init__(self, nonterminal, symbols) -> None:
+    def __init__(self, nonterminal: str, symbols: list[str]) -> None:
         self.nonterminal = nonterminal
         self.symbols = symbols
     
@@ -14,12 +13,69 @@ class Production:
 
 class Grammar:
 
-    def __init__(self, start, terminals, nonterminals, productions) -> None:
+    def __init__(
+        self,
+        start: str,
+        terminals: list[str],
+        nonterminals: list[str],
+        productions: list[Production]
+        ) -> None:
         self.start = start
         self.terminals = terminals
         self.nonterminals = nonterminals
         self.productions = productions
+        self.production_map = self.create_production_map()
     
+    def create_production_map(self):
+        
+        result = {nt: [] for nt in self.nonterminals}
+        for production in self.productions:
+            result[production.nonterminal].append(''.join(production.symbols))
+
+        return result
+    
+    def left_derive(self, idx, string):
+
+        result = []
+        for symbols in self.production_map[string[idx]]:
+            print(string[:idx], symbols, string[idx+1:])
+            temp = string[:idx] + symbols + string[idx+1:] 
+            for i in range(idx, len(temp)):
+                if temp[i] in self.nonterminals:
+                    result.append((i, temp))
+                    break
+            else:
+                result.append((-1, temp))
+        
+        return result
+
+    def leftmost_derivations(self, k: int) -> set[str]:
+        visisted = set()
+        derivable = set()
+        queue = [(0, self.start)]
+
+        while 0 < len(queue):
+            (idx, item) = queue.pop()
+
+            if item[:k] in visisted:
+                continue
+
+            visisted.add(item[:k])
+
+            if all(map(lambda s: s in self.terminals, item)):
+                derivable.add(item)
+                continue
+
+            queue.extend(self.left_derive(idx, item))
+        
+        return derivable
+
+    def leftmost_derivations_index(self, k):
+        left_derivations = list(self.leftmost_derivations(k))
+        to_index_map = dict(zip(self.terminals, range(len(self.terminals))))
+        to_index_string = lambda s : list(map(to_index_map.get, s))
+        return list(map(to_index_string, left_derivations))
+
     def __str__(self) -> str:
         return (f'({self.start},'
                 f'{{{",".join(self.terminals)}}},'
@@ -66,16 +122,16 @@ def generate_random_llp_grammar(k_ter, k_nonter, extra_prod, m, q=1, k=1):
                 return grammar
 
 def main():
-    os.system('cd .. && cabal install --overwrite-policy=always')
-    [generate_random_llp_grammar(2, 2, 2, 3) for _ in range(20)]
-# (N,{c,x},{N,H},{N -> ,H -> ,H -> x N H,N -> x H})
-# (Q,{x,n},{Q,A},{Q -> A,A -> ,A -> n Q A,A -> n Q})
-# (A,{a,l},{E,A},{E -> l A A,A -> l a E,A -> ,E -> })
-# (Q,{o,y},{N,Q},{N -> y Q,Q -> N N,N -> ,Q -> y})
-# (E,{t,s},{V,E},{V -> t E E,E -> ,E -> s V,E -> V})
-# (N,{o,m},{N,X},{N -> o N X,X -> o N,N -> ,X -> })
-# (X,{g,v},{X,C},{X -> v X X,C -> ,C -> g,X -> C})
-# (Z,{x,e},{Z,V},{Z -> x Z V,V -> ,Z -> V x e,Z -> })
+    # os.system('cd .. && cabal install --overwrite-policy=always')
+    # grammar = generate_random_llp_grammar(2, 2, 2, 3)
+    grammar = Grammar(
+        'S',
+        ['a'],
+        ['S'],
+        [Production('S', ['a', 'a', 'S']), Production('S', [])]
+    )
+    print(grammar.leftmost_derivations_index(3))
+
 if __name__ == '__main__':
     os.chdir(os.path.dirname(__file__))
     main()
