@@ -509,7 +509,6 @@ llpqkParsingTestCase parser q k = TestCase $ assertEqual [i|LLP(#{q}, #{k}) pars
     result = parser input
     expected = Just [0, 1, 4, 2, 5, 1, 4, 2, 4, 3, 3]
 
-llpParsers :: [([String] -> Maybe [Int], Int, Int)]
 llpParsers = [(llpParse q k grammar, q, k) | q <- [1..3], k <- [1..3]]
 
 derivable10 = derivableNLengths 10 grammar
