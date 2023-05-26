@@ -129,7 +129,8 @@ def main():
     #     ['S'],
     #     [Production('S', ['a', 'a', 'S']), Production('S', [])]
     # )
-    os.system('parallel-parser')
+    os.system(f'cd .. && cabal install --installdir={os.path.dirname(__file__)} --install-method=copy --enable-executable-stripping')
+    os.system('./parallel-parser')
     # print(grammar.leftmost_derivations_index(3))
 
 if __name__ == '__main__':
