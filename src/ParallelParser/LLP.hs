@@ -309,7 +309,9 @@ newLlpItemsMemo old_item = result
       return $ fromJust result
 
     newItem u v new_dot_production x_delta = do
-      shortest_prefix <- solveShortestsPrefix' v x_delta
+      ctx <- get
+      let grammar = theGrammar ctx
+      let shortest_prefix = solveShortestsPrefix 1 grammar v x_delta
       return
         Item
           { dotProduction = new_dot_production,

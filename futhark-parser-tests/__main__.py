@@ -38,7 +38,6 @@ class Grammar:
 
         result = []
         for symbols in self.production_map[string[idx]]:
-            print(string[:idx], symbols, string[idx+1:])
             temp = string[:idx] + symbols + string[idx+1:] 
             for i in range(idx, len(temp)):
                 if temp[i] in self.nonterminals:
@@ -116,7 +115,7 @@ def generate_random_llp_grammar(k_ter, k_nonter, extra_prod, m, q=1, k=1):
         while True:
             grammar = generate_grammar(k_ter, k_nonter, extra_prod, m)
             print(grammar)
-            cmd = f'cd {folder} && printf "{grammar}" | parallel-parser --stdin -q {q} -k {k}'
+            cmd = f'printf "{grammar}" | ./parallel-parser --stdin -q {q} -k {k}'
             exitcode = os.system(cmd)
             if exitcode == 0:
                 return grammar
