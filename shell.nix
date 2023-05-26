@@ -1,5 +1,8 @@
 with import <nixpkgs> { };
 pkgs.mkShell {
+  shellHook = ''
+    export PATH=${toString ./.}
+  '';
   buildInputs = [
     python3
     python3Packages.mypy
