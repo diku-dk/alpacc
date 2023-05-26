@@ -3,6 +3,7 @@
 !/*/
 # This parser is used for futhark tests and should not be included.
 /futhark-parser-tests/parallel-parser
+/futhark-parser-tests/*.fut
 
 #########
 #Haskell#
