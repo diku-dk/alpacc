@@ -4,7 +4,7 @@ on:
   push:
 
 jobs:
-  test:
+  haskell-test:
     runs-on: ubuntu-22.04
 
     steps:
@@ -34,3 +34,15 @@ jobs:
 
       - name: Run tests
         run: cabal test all
+  
+  futhark-test:
+    runs-on: ubuntu-22.04
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Install Nix
+      uses: cachix/install-nix-action@v20
+
+    - name: Run tests
+      run: chmod +x && ./futhark-test.sh
