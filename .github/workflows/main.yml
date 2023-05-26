@@ -43,6 +43,8 @@ jobs:
 
     - name: Install Nix
       uses: cachix/install-nix-action@v20
+      with:
+        nix_path: nixpkgs=channel:nixos-stable
 
     - name: Run tests
       run: nix-shell --pure --run "cabal update && cabal install && python3 futhark-parser-tests"
