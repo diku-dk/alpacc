@@ -45,4 +45,4 @@ jobs:
       uses: cachix/install-nix-action@v20
 
     - name: Run tests
-      run: sudo nix-shell --pure --run "cabal update && cabal install && python3 futhark-parser-tests"
+      run: nix-shell --pure --run "cabal update && cabal install && python3 futhark-parser-tests"
