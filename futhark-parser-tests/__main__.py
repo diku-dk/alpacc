@@ -123,14 +123,14 @@ def generate_random_llp_grammar(k_ter, k_nonter, extra_prod, m, q=1, k=1):
 
 def main():
     # os.system('cd .. && cabal install --overwrite-policy=always')
-    # grammar = generate_random_llp_grammar(2, 2, 2, 3)
-    grammar = Grammar(
-        'S',
-        ['a'],
-        ['S'],
-        [Production('S', ['a', 'a', 'S']), Production('S', [])]
-    )
-    print(grammar.leftmost_derivations_index(3))
+    grammars = [generate_random_llp_grammar(2, 2, 2, 3) for _ in range(20)]
+    # grammar = Grammar(
+    #     'S',
+    #     ['a'],
+    #     ['S'],
+    #     [Production('S', ['a', 'a', 'S']), Production('S', [])]
+    # )
+    # print(grammar.leftmost_derivations_index(3))
 
 if __name__ == '__main__':
     os.chdir(os.path.dirname(__file__))
