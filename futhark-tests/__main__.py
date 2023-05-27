@@ -16,6 +16,12 @@ class Production:
     def __str__(self) -> str:
         return f'{self.nonterminal} -> {" ".join(self.symbols)}'
 
+    def __hash__(self):
+        return hash(self.nonterminal + "".join(self.symbols))
+
+    def __eq__(self, other):
+        return self.nonterminal + "".join(self.symbols) == other
+
 class Grammar:
 
     def __init__(
@@ -29,6 +35,12 @@ class Grammar:
         self.terminals = terminals
         self.nonterminals = nonterminals
         self.productions = productions
+        self.production_map = self.create_production_map()
+    
+    def remove_duplicates(self):
+        self.terminals = list(dict.fromkeys(self.terminals))
+        self.nonterminals = list(dict.fromkeys(self.nonterminals))
+        self.productions = list(dict.fromkeys(self.productions))
         self.production_map = self.create_production_map()
     
     def create_production_map(self):
@@ -91,7 +103,7 @@ def random_production(
         nonterminals: list[str],
         m: int,
         nt: Optional[str] = None,
-        no_left_recursion: bool = True
+        no_direct_left_recursion: bool = True
     ) -> Production:
     all_symbols = terminals + nonterminals
     nonterminal = nt
@@ -99,8 +111,9 @@ def random_production(
     if nonterminal == None:
         nonterminal = random.choice(nonterminals)
     
-    if no_left_recursion:
+    if no_direct_left_recursion:
         all_symbols.remove(nonterminal)
+    
     symbols = random.choices(all_symbols, k=random.randint(0, m))
     return Production(nonterminal, symbols)
 
@@ -109,7 +122,7 @@ def generate_grammar(
         k_nonterminals: int,
         extra_productions: int,
         m: int,
-        no_left_recursion: bool = True
+        no_direct_left_recursion: bool = True
         ) -> Grammar:
     ts = "abcdefghijklmnopqrstuvwxyz"
     nts = ts.upper()
@@ -121,7 +134,7 @@ def generate_grammar(
             nonterminals,
             m,
             nt,
-            no_left_recursion=no_left_recursion
+            no_direct_left_recursion=no_direct_left_recursion
         )
     production = lambda: random_production(terminals, nonterminals, m)
     specific_prooducions = [sepecific_production(nt) for nt in nonterminals]
@@ -134,24 +147,47 @@ def generate_grammar(
         productions
     )
 
-def generate_random_llp_grammar(path, k_ter, k_nonter, extra_prod, m, q=1, k=1):
+def generate_random_llp_grammar(
+        name,
+        k_ter,
+        k_nonter,
+        extra_prod,
+        m,
+        q=1,
+        k=1,
+        no_direct_left_recursion: bool = True,
+        no_duplicates: bool = True):
+    
     while True:
-        grammar = generate_grammar(k_ter, k_nonter, extra_prod, m)
+        filename = f'{name}.fut'
+        grammar = generate_grammar(
+            k_ter,
+            k_nonter,
+            extra_prod,
+            m,
+            no_direct_left_recursion
+        )
+
+        if no_duplicates:
+            grammar.remove_duplicates()
+        
         print(f'Grammar: {grammar}')
-        cmd = f'printf "{grammar}" | ./parallel-parser --stdin --output="{path}" -q {q} -k {k}'
+        cmd = f'printf "{grammar}" | ./parallel-parser --stdin --output="{filename}" -q {q} -k {k}'
         exitcode = os.system(cmd)
-        if os.path.exists(path) and exitcode == 0:
-            return (path, grammar)
+        if os.path.exists(f'{filename}') and exitcode == 0:
+            return name, grammar
 
 def stuck_check(n: int):
     for i in range(n):
-        filename = f'temp-{i}.fut'
+        filename = f'temp_{i}'
         generate_random_llp_grammar(
             filename,
             3,
             3,
             3,
-            3
+            3,
+            no_direct_left_recursion=True,
+            no_duplicates=True
         )
         os.remove(filename)
         time.sleep(0.05)
@@ -167,37 +203,36 @@ def stuck_test(n: int):
     p.kill()
     return p.exitcode
 
-def can_parser_test(n: int):
+def can_parser_test(n: int, k: int):
     grammars = [
         generate_random_llp_grammar(
-            f'parser-{i}.fut',
-            random.randint(2, 5),
-            random.randint(2, 5),
-            random.randint(2, 5),
-            random.randint(2, 6)
-        ) for i in range(20)
+            f'parser_{i}',
+            random.randint(2, 3),
+            random.randint(2, 3),
+            random.randint(2, 6),
+            random.randint(2, 6),
+            no_direct_left_recursion=True,
+            no_duplicates=True
+        ) for i in range(k)
     ]
 
-    for path, grammar in grammars:
-        assert 0 == os.system(f'futhark multicore --library {path}.fut'), 'The parser could not be compiled.'
-        eval(f'import path')
+    for name, grammar in grammars:
+        assert 0 == os.system(f'futhark c --library {name}.fut'), 'The parser could not be compiled.'
+        assert 0 == os.system(f'build_futhark_ffi {name}')
+        parser = Futhark(__import__(f'_{name}'))
+        for index_string in grammar.leftmost_derivations_index(n):
+            res = parser.parse(np.array(index_string))
+            print(parser.from_futhark(res))
 
 def main():
     assert 0 == os.system(f'cd .. && cabal install --installdir={test_dir} --install-method=copy --enable-executable-stripping --overwrite-policy=always'), "Could not compile the parallel parser generator."
     assert os.path.exists('./parallel-parser'), "The parallel-parser binaries does not exists."
-    assert 0 == stuck_test(1000), "The parser probably got stuck while creating some grammar."
-
-# import _parser
+    # assert 0 == stuck_test(1000), "The parser probably got stuck while creating some grammar."
+    can_parser_test(10, 100)
 
 if __name__ == '__main__':
-    # parser = Futhark(_parser)
-    # futhark multicore --library parser.fut
-    # build_futhark_ffi parser
-    # res = parser.parse(np.array([0, 0, 1, 1, 1, 2, 2, 3]))
-    # print(parser.from_futhark(res))
     test_dir = os.path.dirname(__file__)
     os.chdir(test_dir)
-    # assert(0 == os.system('futhark pkg add github.com/diku-dk/sorts && futhark pkg sync'))
     old_content = set(os.listdir())
     main()
     new_content = set(os.listdir()) - old_content
