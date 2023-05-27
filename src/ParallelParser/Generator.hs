@@ -68,7 +68,7 @@ toArray = squareBrackets . List.intercalate ", "
 -- | Creates a string that is a array in the Futhark language which corresponds
 -- to the resulting productions list. This is used in the pattern matching.
 futharkProductions :: Int -> Int -> ([Bracket Int], [Int]) -> String
-futharkProductions max_alpha_omega max_pi = toTuple . toArr . snd' . fst'
+futharkProductions max_alpha_omega max_pi = ("#just " ++) . toTuple . toArr . snd' . fst'
   where
     toArr (a, b) = [a, b]
     snd' = BI.second (toArray . rpad "u32.highest" max_pi . map show)
@@ -111,8 +111,8 @@ futharkTable ::
   Int ->
   Grammar nt t ->
   Map ([t], [t]) ([Bracket (Symbol nt t)], [Int]) ->
-  String
-futharkTable q k grammar table = (++last_case_str) . cases . prods . keys $ symbolsToInts' table
+  (String, String)
+futharkTable q k grammar table = (ne,) . (++last_case_str) . cases . prods . keys $ symbolsToInts' table
   where
     symbolsToInts' = symbolsToInts grammar
     cases = futharkTablesCases . Map.toList
@@ -121,8 +121,8 @@ futharkTable q k grammar table = (++last_case_str) . cases . prods . keys $ symb
     max_pi = maximum $ length . snd <$> values
     stacks = toArray $ replicate max_alpha_omega "#epsilon"
     rules = toArray $ replicate max_pi "u32.highest"
-    last_case = toTuple [stacks, rules]
-    last_case_str = [i|\n  case _ -> assert false #{last_case}|]
+    ne = toTuple [stacks, rules]
+    last_case_str = [i|\n  case _ -> #nothing|]
     prods = fmap (futharkProductions max_alpha_omega max_pi)
     keys = Map.mapKeys (uncurry (futharkTableKey q k grammar))
 
@@ -159,7 +159,7 @@ def keys [n] (arr : [n]u32) =
   let lookahead = lookahead_chunks arr
   in zip lookback lookahead
 
-def key_to_config (key : (#{lookback_type}, #{lookahead_type})) : ([]bracket, []u32) =
+def key_to_config (key : (#{lookback_type}, #{lookahead_type})) : maybe ([]bracket, []u32) =
   match key
   #{futhark_table}
 
@@ -180,7 +180,7 @@ def depths [n] (input : [n]bracket) : maybe ([n]i64) =
   let result =
     bracket_scan
     |> map2 (\\a b -> b - i64.bool a) left_brackets
-  in if any (<0) bracket_scan
+  in if any (<0) bracket_scan || last bracket_scan != 0
   then #nothing
   else #just result
 
@@ -210,9 +210,24 @@ def brackets_matches [n] (brackets : [n]bracket) =
       |> and
   case #nothing -> false
 
-def parse [n] (arr : [n]u32) =
+def is_nothing 'a (m : maybe a) : bool =
+  match m
+  case #just _ -> false
+  case #nothing -> true
+
+def from_just 'a (ne : a) (m : maybe a) : a =
+  match m
+  case #just a -> a
+  case _ -> ne
+
+entry parse [n] (arr : [n]u32) : []u32 =
   let arr' = [0] ++ (map (+2) arr) ++ [1]
-  let (brackets, productions) = keys arr' |> map key_to_config |> unzip
+  let configs = keys arr' |> map key_to_config
+  in if any (is_nothing) configs
+  then []
+  else
+  let ne = #{ne}
+  let (brackets, productions) = configs |> map (from_just ne) |> unzip
   in if brackets 
         |> flatten
         |> filter (!=#epsilon)
@@ -237,4 +252,4 @@ def parse [n] (arr : [n]u32) =
     terminals' = terminals augmented_grammar
     lookback_type = toTuple $ replicate q "u32"
     lookahead_type = toTuple $ replicate k "u32"
-    futhark_table = futharkTable q k augmented_grammar table
+    (ne, futhark_table) = futharkTable q k augmented_grammar table

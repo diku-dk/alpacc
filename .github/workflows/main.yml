@@ -50,6 +50,10 @@ jobs:
       run:  |
         nix-shell shell.nix --pure --run "
         cabal update &&
+        cd futhark-parser-tests &&
+        futhark pkg add github.com/diku-dk/sorts &&
+        futhark pkg sync &&
+        cd .. &&
         virtualenv venv &&
         source ./venv/bin/activate &&
         python -m pip install --upgrade pip &&
