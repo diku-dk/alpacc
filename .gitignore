@@ -1,9 +1,8 @@
 # Ignore non-directories in root, so you can use it as scratch space.
 /*
 !/*/
-# This parser is used for futhark tests and should not be included.
-/futhark-parser-tests/parallel-parser
-/futhark-parser-tests/*.fut
+# Do not include futhark test files.
+/futhark-parser-tests/*
 
 #########
 #Haskell#
@@ -18,7 +17,7 @@ cabal-dev
 *.chs.h
 *.dyn_o
 *.dyn_hi
-.hpc
+.hpc 
 .hsenv
 .cabal-sandbox/
 cabal.sandbox.config

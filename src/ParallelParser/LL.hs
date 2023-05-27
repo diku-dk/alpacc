@@ -1,5 +1,6 @@
 module ParallelParser.LL
-  ( nullable,
+  ( nullableOne,
+    nullable,
     first,
     follow,
     last,

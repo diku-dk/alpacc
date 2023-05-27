@@ -1,6 +1,9 @@
 import random
 import os
-import tempfile
+import multiprocessing
+import shutil
+import time
+from typing import Optional
 
 class Production:
 
@@ -81,24 +84,43 @@ class Grammar:
                 f'{{{",".join(self.nonterminals)}}},'
                 f'{{{",".join(map(str, self.productions))}}})')
 
-def random_production(terminals, nonterminals, m, nt=None):
+def random_production(
+        terminals: list[str],
+        nonterminals: list[str],
+        m: int,
+        nt: Optional[str] = None,
+        no_left_recursion: bool = True
+    ) -> Production:
     all_symbols = terminals + nonterminals
+    nonterminal = nt
+
+    if nonterminal == None:
+        nonterminal = random.choice(nonterminals)
+    
+    if no_left_recursion:
+        all_symbols.remove(nonterminal)
     symbols = random.choices(all_symbols, k=random.randint(0, m))
-    
-    if nt != None:
-        return Production(nt, symbols)
-    
-    nonterminal = random.choice(nonterminals)
     return Production(nonterminal, symbols)
 
-def generate_grammar(k_terminals, k_nonterminals, extra_productions, m):
+def generate_grammar(
+        k_terminals: int,
+        k_nonterminals: int,
+        extra_productions: int,
+        m: int,
+        no_left_recursion: bool = True
+        ) -> Grammar:
     ts = "abcdefghijklmnopqrstuvwxyz"
     nts = ts.upper()
     terminals = random.sample(ts, k_terminals)
     nonterminals = random.sample(nts, k_nonterminals)
     start = random.choice(nonterminals)
-    sepecific_production = lambda nt: \
-        random_production(terminals, nonterminals, m, nt)
+    sepecific_production = lambda nt: random_production(
+            terminals,
+            nonterminals,
+            m,
+            nt,
+            no_left_recursion=no_left_recursion
+        )
     production = lambda: random_production(terminals, nonterminals, m)
     specific_prooducions = [sepecific_production(nt) for nt in nonterminals]
     extra_productions = [production() for _ in range(extra_productions)]
@@ -110,28 +132,64 @@ def generate_grammar(k_terminals, k_nonterminals, extra_productions, m):
         productions
     )
 
-def generate_random_llp_grammar(k_ter, k_nonter, extra_prod, m, q=1, k=1):
-    with tempfile.TemporaryDirectory() as folder:
-        while True:
-            grammar = generate_grammar(k_ter, k_nonter, extra_prod, m)
-            print(grammar)
-            cmd = f'printf "{grammar}" | ./parallel-parser --stdin -q {q} -k {k}'
-            exitcode = os.system(cmd)
-            if exitcode == 0:
-                return grammar
+def generate_random_llp_grammar(path, k_ter, k_nonter, extra_prod, m, q=1, k=1):
+    while True:
+        grammar = generate_grammar(k_ter, k_nonter, extra_prod, m)
+        print(f'Grammar: {grammar}')
+        cmd = f'printf "{grammar}" | ./parallel-parser --stdin --output="{path}" -q {q} -k {k}'
+        exitcode = os.system(cmd)
+        if os.path.exists(path) and exitcode == 0:
+            return (path, grammar)
+
+def stuck_check(n: int):
+    for i in range(n):
+        filename = f'temp-{i}.fut'
+        generate_random_llp_grammar(
+            filename,
+            3,
+            3,
+            3,
+            3
+        )
+        os.remove(filename)
+        time.sleep(0.05)
+
+def stuck_test(n: int):
+    p = multiprocessing.Process(
+        target=stuck_check,
+        name="stuck_check",
+        args=(n,)
+        )
+    p.start()
+    p.join(n * 5)
+    p.kill()
+    return p.exitcode
+
+def can_parser_test(n: int):
+    grammars = [
+        generate_random_llp_grammar(
+            f'parser-{i}.fut',
+            random.randint(2, 5),
+            random.randint(2, 5),
+            random.randint(2, 5),
+            random.randint(2, 6)
+        ) for i in range(20)
+    ]
+    # (S,{a,l,y},{C,S,H},{C -> ,S -> C C H,H -> C S,H -> l,S -> y,H -> })
 
 def main():
-    # grammar = Grammar(
-    #     'S',
-    #     ['a'],
-    #     ['S'],
-    #     [Production('S', ['a', 'a', 'S']), Production('S', [])]
-    # )
-    os.system(f'cd .. && cabal install --installdir={os.path.dirname(__file__)} --install-method=copy --enable-executable-stripping --overwrite-policy=always')
-    os.system('./parallel-parser')
-    grammars = [generate_random_llp_grammar(2, 2, 2, 3) for _ in range(20)]
-    # print(grammar.leftmost_derivations_index(3))
+    assert 0 == os.system(f'cd .. && cabal install --installdir={os.path.dirname(__file__)} --install-method=copy --enable-executable-stripping --overwrite-policy=always'), "Could not compile the parallel parser generator."
+    assert os.path.exists('./parallel-parser'), "The parallel-parser binaries does not exists."
+    assert 0 == stuck_test(1000), "The parser probably got stuck while creating some grammar."
 
 if __name__ == '__main__':
     os.chdir(os.path.dirname(__file__))
+    assert(0 == os.system('futhark pkg add github.com/diku-dk/sorts && futhark pkg sync'))
+    old_content = set(os.listdir())
     main()
+    new_content = set(os.listdir()) - old_content
+    for content in new_content:
+        if os.path.isdir(content):
+            shutil.rmtree(content)
+        elif os.path.isfile(content):
+            os.remove(content)
