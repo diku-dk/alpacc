@@ -179,10 +179,10 @@ def can_parser_test(n: int):
     ]
 
     for path, grammar in grammars:
-        assert 0 == os.system(f'futhark c --library {path}.fut'), 'The parser could not be compiled.'
+        assert 0 == os.system(f'futhark multicore --library {path}.fut'), 'The parser could not be compiled.'
+        eval(f'import path')
 
 def main():
-    assert 0 == os.system(f'cd .. && cabal install --installdir={os.path.dirname(__file__)} --install-method=copy --enable-executable-stripping --overwrite-policy=always'), "Could not compile the parallel parser generator."
     assert os.path.exists('./parallel-parser'), "The parallel-parser binaries does not exists."
     assert 0 == stuck_test(1000), "The parser probably got stuck while creating some grammar."
 
@@ -194,8 +194,10 @@ if __name__ == '__main__':
     # build_futhark_ffi parser
     # res = parser.parse(np.array([0, 0, 1, 1, 1, 2, 2, 3]))
     # print(parser.from_futhark(res))
+    test_dir = os.path.dirname(__file__)
     
-    os.chdir(os.path.dirname(__file__))
+    assert 0 == os.system(f'cabal install --installdir={test_dir} --install-method=copy --enable-executable-stripping --overwrite-policy=always'), "Could not compile the parallel parser generator."
+    os.chdir(test_dir)
     assert(0 == os.system('futhark pkg add github.com/diku-dk/sorts && futhark pkg sync'))
     old_content = set(os.listdir())
     main()

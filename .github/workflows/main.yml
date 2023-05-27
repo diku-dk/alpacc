@@ -68,7 +68,7 @@ jobs:
     - name: Run tests
       shell: bash
       run:  |
-        sudo apt install python pip
+        sudo apt install python3 pip
         pip install --upgrade pip
         pip install -r futhark-parser-tests/requirements.txt
         python futhark-parser-tests
