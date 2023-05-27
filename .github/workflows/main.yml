@@ -47,4 +47,4 @@ jobs:
         nix_path: nixpkgs=channel:nixos-unstable
 
     - name: Run tests
-      run: nix-shell shell.nix --pure --run "cabal update && python3 futhark-parser-tests"
+      run: nix-shell shell.nix --pure --run "pip install futhark-ffi && cabal update && python3 futhark-parser-tests"
