@@ -62,7 +62,7 @@ jobs:
       run: |
           wget http://futhark-lang.org/releases/futhark-0.24.3-linux-x86_64.tar.xz
           tar xf futhark-0.24.3-linux-x86_64.tar.xz
-          (cd futhark-0.24.3-linux-x86_64.tar.xz && PREFIX=$HOME/.local make install)
+          (cd futhark-0.24.3-linux-x86_64 && PREFIX=$HOME/.local make install)
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
     - name: Run tests
