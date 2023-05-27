@@ -53,5 +53,5 @@ jobs:
         virtualenv venv &&
         source ./venv/bin/activate &&
         python -m pip install --upgrade pip &&
-        python -m pip install -r futhark-parser-tests/requirements.txt &&
+        python -m pip install futhark_ffi &&
         python futhark-parser-tests"
