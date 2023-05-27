@@ -181,8 +181,6 @@ def can_parser_test(n: int):
     for path, grammar in grammars:
         assert 0 == os.system(f'futhark c --library {path}.fut'), 'The parser could not be compiled.'
 
-
-
 def main():
     assert 0 == os.system(f'cd .. && cabal install --installdir={os.path.dirname(__file__)} --install-method=copy --enable-executable-stripping --overwrite-policy=always'), "Could not compile the parallel parser generator."
     assert os.path.exists('./parallel-parser'), "The parallel-parser binaries does not exists."
