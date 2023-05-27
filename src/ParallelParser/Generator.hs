@@ -235,6 +235,8 @@ entry parse [n] (arr : [n]u32) : []u32 =
   then productions
     |> flatten
     |> filter (!=u32.highest)
+    |> tail
+    |> map (\\a -> a - 1)
   else []
 |]
   where
