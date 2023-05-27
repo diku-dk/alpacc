@@ -70,8 +70,7 @@ jobs:
       run:  |
         sudo apt install python3 pip
         pip install --upgrade pip
-        pip install -r futhark-parser-tests/requirements.txt
-        cd futhark-parser-tests
-        futhark pkg add github.com/diku-dk/sorts
-        futhark pkg sync
+        pip install -r futhark-tests/requirements.txt
+        chmod +x futhark-tests.sh 
+        ./futhark-tests.sh
         python .
