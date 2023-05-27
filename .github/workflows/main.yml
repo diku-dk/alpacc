@@ -50,8 +50,8 @@ jobs:
       run:  |
         nix-shell shell.nix --pure --run "
         cabal update &&
-        pip install --upgrade pip &&
         virtualenv venv &&
         source ./venv/bin/activate &&
-        pip install -r futhark-parser-tests/requirements.txt &&
-        python3 futhark-parser-tests"
+        python -m pip install --upgrade pip &&
+        python -m pip install -r futhark-parser-tests/requirements.txt &&
+        python futhark-parser-tests"
