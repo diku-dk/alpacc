@@ -6,7 +6,7 @@ module ParallelParser.LLP
     psls,
     llpParserTableWithStarts,
     llpParse,
-    leftRecursiveNonterminals,
+    isLeftRecursive,
     llTableParse,
     initLlpContext,
     llpCollectionMemo,
@@ -31,7 +31,7 @@ import qualified Data.Sequence as Seq hiding (Seq (..), (<|), (><), (|>))
 import Data.Set (Set (..))
 import qualified Data.Set as Set hiding (Set (..))
 import Data.String.Interpolate (i)
-import Data.Tuple.Extra (thd3)
+import Data.Tuple.Extra (thd3, both)
 import Debug.Trace (traceShow)
 import GHC.Generics
 import ParallelParser.Grammar
@@ -674,7 +674,7 @@ psls = Map.unionsWith Set.union . fmap auxiliary . toList . Set.unions
         z = List.last alpha_z
 
 
--- | Creates a LL(k) table for a given grammar.
+-- | Creates a LL(k) table for a given grammar. It does not check for conflicts.
 llTableLlpContext ::
   (Ord nt, Ord t, Show nt, Show t) =>
   State (LlpContext nt t) (Map (AugmentedNonterminal nt, [AugmentedTerminal t]) Int)
@@ -695,7 +695,7 @@ llTableLlpContext = do
 -- paper.
 llTableParse ::
   (Ord nt, Ord t, Show nt, Show t) =>
-  Map (nt, [t]) Int -> 
+  Map (nt, [t]) Int ->
   Int ->
   Grammar nt t ->
   [t] ->
@@ -893,23 +893,49 @@ llpParse q k grammar string = fmap thd3 . foldl1 glue' . pairLookup table q k . 
       b' <- b
       glue a' b'
 
--- | Checks if a grammar is left recursive and returns all the nonterminals
--- which causes the left recursion.
-leftRecursiveNonterminals :: (Ord nt, Ord t, Show nt, Show t) => Grammar nt t -> [nt]
-leftRecursiveNonterminals grammar = mapMaybe (auxiliary . Nonterminal) nonterminals'
+data Mark = Unmarked | Temporary | Permanent deriving (Eq, Ord, Show)
+
+-- | Checks if a grammar contains left recursion.
+-- It uses dfs topological sorting https://en.wikipedia.org/wiki/Topological_sorting
+isLeftRecursive :: (Ord nt, Ord t, Show nt, Show t) => Grammar nt t -> Bool
+isLeftRecursive grammar = isNothing $ foldM dfs unmarked_map nonterminals'
   where
     nonterminals' = nonterminals grammar
     leftmostDerive' = leftmostDerive grammar
-    auxiliary nt = bfs Set.empty init_queue
+    nullableOne' = nullableOne grammar
+    toNTSingleton = Set.singleton . unpackNonterminal . head
+    left_rec_graph = Map.unionsWith Set.union $ makeRecGraph <$> productions grammar
+
+    makeRecGraph (Production nt []) = Map.singleton nt Set.empty
+    makeRecGraph (Production nt ((Terminal _):_)) = Map.singleton nt Set.empty
+    makeRecGraph (Production nt s@((Nonterminal nt'):_)) = all_nodes
       where
-        init_queue = leftmostDerive' [nt]
-        bfs _ Empty = Nothing
-        bfs visited (top :<| queue)
-          | null top = bfs visited queue
-          | head_top `Set.member` visited = bfs visited queue
-          | isTerminal head_top = bfs new_visited queue
-          | nt == head_top = Just . unpackNonterminal $ nt
-          | otherwise = bfs new_visited (queue >< leftmostDerive' top)
-          where
-            head_top = head top
-            new_visited = Set.insert head_top visited
+        toMap a b = Map.singleton a $ Set.singleton b
+        first_node = toMap nt nt'
+        tail' = tail s
+        init' = init s
+        zipped = takeWhile (uncurry predicate) $ zip init' tail'
+        predicate a b = isNonterminal a && isNonterminal b && nullableOne' a
+        other_maps = toMap nt . unpackNonterminal . snd <$> zipped
+        other_nodes = Map.unionsWith Set.union other_maps
+        all_nodes = Map.unionWith Set.union first_node other_nodes
+
+    unmarked_map = Map.fromList $ map (, Unmarked) nonterminals'
+
+    -- compute_unmarked old_marks = do
+    --   new_marks <- foldM dfs old_marks nonterminals'
+    --   if Unmarked `elem` new_marks
+    --     then compute_unmarked new_marks
+    --     else return new_marks
+
+    dfs marks node
+      | node_mark == Permanent = Just marks
+      | node_mark == Temporary = Nothing
+      | otherwise = do
+        new_marks <- mapM (dfs marks_with_temp) neighbours
+        let pre_perm_marks = Map.unionsWith max new_marks `Map.union` marks
+        return $ Map.insert node Permanent pre_perm_marks
+      where
+        node_mark = marks Map.! node
+        marks_with_temp = Map.insert node Temporary marks
+        neighbours = toList $ left_rec_graph Map.! node

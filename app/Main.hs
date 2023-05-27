@@ -2,7 +2,7 @@ module Main where
 
 import ParallelParser.Grammar
 import ParallelParser.Generator
-import ParallelParser.LLP ( leftRecursiveNonterminals )
+import ParallelParser.LLP ( isLeftRecursive )
 import Prelude hiding (last)
 import Data.Maybe
 import Options.Applicative
@@ -24,8 +24,9 @@ data Input
   = FileInput FilePath
   | StdInput
 
-data Parametars = Parametars
+data Parameters = Parameters
   { input     :: Input
+  , output    :: Maybe String
   , lookback  :: Int
   , lookahead :: Int}
 
@@ -49,6 +50,14 @@ lookaheadParameter =
     <> value 1
     <> metavar "INT")
 
+outputParameter :: Parser (Maybe String)
+outputParameter =
+    optional $ strOption
+      ( long "output"
+    <> short 'o'
+    <> help "The name of the output file."
+    <> metavar "FILE" )
+
 fileInput :: Parser Input
 fileInput = FileInput <$> argument str (metavar "FILE")
 
@@ -58,18 +67,18 @@ stdInput = flag' StdInput
     <> short 's'
     <> help "Read from stdin.")
 
-inputs :: Parser Input
-inputs = fileInput <|> stdInput
+inputParameter :: Parser Input
+inputParameter = fileInput <|> stdInput
 
-fileParametars :: Parser Parametars
-fileParametars = Parametars
-  <$> inputs
+parameters :: Parser Parameters
+parameters = Parameters
+  <$> inputParameter
+  <*> outputParameter
   <*> lookbackParameter
   <*> lookaheadParameter
 
-
-opts :: ParserInfo Parametars
-opts = info (fileParametars <**> helper)
+opts :: ParserInfo Parameters
+opts = info (parameters <**> helper)
   ( fullDesc
   <> progDesc "Creates a parallel parser in Futhark using FILE."
   <> header "ParallelParser" )
@@ -77,8 +86,8 @@ opts = info (fileParametars <**> helper)
 
 writeFutharkProgram :: String -> String -> IO ()
 writeFutharkProgram program_path program = do
-  writeFile (program_path ++ ".fut") program
-  putStrLn ("The parser " ++ program_path ++ ".fut was created.")
+  writeFile program_path program
+  putStrLn ("The parser " ++ program_path ++ " was created.")
 
 isFileInput :: Input -> Bool
 isFileInput StdInput = False
@@ -89,16 +98,14 @@ grammarError grammar
   | not $ null nt_dups = Just [i|The given grammar contains duplicate nonterminals because of #{nt_dups_str}.|]
   | not $ null t_dups = Just [i|The given grammar contains duplicate terminals because of #{t_dups_str}.|]
   | not $ null p_dups = Just [i|The given grammar contains duplicate productions because of #{p_dups_str}.|]
-  | not $ null left_recursive_nonterminals = Just [i|The given grammar contains left recursion due to the following nonterminals #{trouble_makers}.|]
-  | not $ null (debug left_factors) = Just [i|The given grammar contains productions that has common left factors due to the following nonterminals #{left_factors_str}.|]
+  | isLeftRecursive grammar = Just [i|The given grammar contains left recursion.|]
+  | not $ null  left_factors = Just [i|The given grammar contains productions that has common left factors due to the following nonterminals #{left_factors_str}.|]
   | not $ null nonproductive = Just [i|The given grammar contains nonproductive productions due to the following nonterminals #{nonproductive_str}.|]
   | otherwise = Nothing
   where
     nts = Set.fromList $ nonterminals grammar
     nonproductive = nts `Set.difference` closureAlgorithm grammar
     nonproductive_str = List.intercalate ", " $ Set.toList nonproductive
-    left_recursive_nonterminals = leftRecursiveNonterminals grammar
-    trouble_makers = List.intercalate ", " left_recursive_nonterminals
     left_factors = leftFactorNonterminals grammar
     left_factors_str = List.intercalate ", " left_factors
     (nt_dups, t_dups, p_dups) = grammarDuplicates grammar
@@ -115,9 +122,12 @@ main = do
   let input_method = input options
   let q = lookback options
   let k = lookahead options
-  let program_path = case input_method of
-        StdInput -> "parser"
-        FileInput path -> fromJust . stripExtension "cg" $ takeFileName path
+  let outfile = output options
+  let program_path = case outfile of
+        Just path -> path
+        Nothing -> case input_method of
+          StdInput -> "parser.fut"
+          FileInput path -> (++".fut") . fromJust . stripExtension "cg" $ takeFileName path
   contents <- case input_method of
         StdInput -> getContents
         FileInput path -> readFile path
