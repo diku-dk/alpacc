@@ -188,22 +188,22 @@ def main():
     assert os.path.exists('./parallel-parser'), "The parallel-parser binaries does not exists."
     assert 0 == stuck_test(1000), "The parser probably got stuck while creating some grammar."
 
-import _parser
+# import _parser
 
 if __name__ == '__main__':
-    parser = Futhark(_parser)
+    # parser = Futhark(_parser)
     # futhark multicore --library parser.fut
     # build_futhark_ffi parser
-    res = parser.parse(np.array([0, 0, 1, 1, 1, 2, 2, 3]))
-    print(parser.from_futhark(res))
+    # res = parser.parse(np.array([0, 0, 1, 1, 1, 2, 2, 3]))
+    # print(parser.from_futhark(res))
     
-    # os.chdir(os.path.dirname(__file__))
-    # assert(0 == os.system('futhark pkg add github.com/diku-dk/sorts && futhark pkg sync'))
-    # old_content = set(os.listdir())
-    # main()
-    # new_content = set(os.listdir()) - old_content
-    # for content in new_content:
-    #     if os.path.isdir(content):
-    #         shutil.rmtree(content)
-    #     elif os.path.isfile(content):
-    #         os.remove(content)
+    os.chdir(os.path.dirname(__file__))
+    assert(0 == os.system('futhark pkg add github.com/diku-dk/sorts && futhark pkg sync'))
+    old_content = set(os.listdir())
+    main()
+    new_content = set(os.listdir()) - old_content
+    for content in new_content:
+        if os.path.isdir(content):
+            shutil.rmtree(content)
+        elif os.path.isfile(content):
+            os.remove(content)

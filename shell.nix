@@ -4,10 +4,10 @@ pkgs.mkShell {
     python3
     futhark
     git
-    python3Packages.mypy
-    python3Packages.black
-    python3Packages.futhark-ffi
-    python3Packages.numpy
+    python310Packages.mypy
+    python310Packages.black
+    python310Packages.pip
+    python310Packages.numpy
     haskell.compiler.ghc927
     cabal-install
   ];
