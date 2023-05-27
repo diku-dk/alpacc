@@ -41,21 +41,32 @@ jobs:
     steps:
     - uses: actions/checkout@v3
 
-    - name: Install Nix
-      uses: cachix/install-nix-action@v20
-      with:
-        nix_path: nixpkgs=channel:nixos-unstable
+    - name: Set up GHC 9.2.7
+        uses: haskell/actions/setup@v2
+        id: setup
+        with:
+          ghc-version: '9.2.7'
+          cabal-version: '3.10.1.0'
+          cabal-update: true
+
+    - name: Installed versions of GHC and Cabal
+      shell: bash
+      run: |
+        GHC_VERSION=$(ghc --numeric-version)
+        CABAL_VERSION=$(cabal --numeric-version)
+        echo "GHC_VERSION=${GHC_VERSION}"     >> "${GITHUB_ENV}"
+        echo "CABAL_VERSION=${CABAL_VERSION}" >> "${GITHUB_ENV}"
+
+    - name: Install Futhark
+      run: |
+          wget http://futhark-lang.org/releases/futhark-0.24.3-linux-x86_64.tar.xz
+          tar xf futhark-0.24.3-linux-x86_64.tar.xz
+          (cd futhark-0.24.3-linux-x86_64.tar.xz && PREFIX=$HOME/.local make install)
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
 
     - name: Run tests
       run:  |
-        nix-shell shell.nix --pure --run "
-        cabal update &&
-        cd futhark-parser-tests &&
-        futhark pkg add github.com/diku-dk/sorts &&
-        futhark pkg sync &&
-        cd .. &&
-        virtualenv venv &&
-        source ./venv/bin/activate &&
-        python -m pip install --upgrade pip &&
-        python -m pip install futhark_ffi &&
-        python futhark-parser-tests"
+        sudo apt install python pip
+        pip install --upgrade pip
+        pip install -r futhark-parser-tests/requirements.txt
+        python futhark-parser-tests

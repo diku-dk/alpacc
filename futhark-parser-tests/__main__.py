@@ -198,6 +198,7 @@ if __name__ == '__main__':
     # print(parser.from_futhark(res))
     
     os.chdir(os.path.dirname(__file__))
+    assert(0 == os.system('futhark pkg add github.com/diku-dk/sorts && futhark pkg sync'))
     old_content = set(os.listdir())
     main()
     new_content = set(os.listdir()) - old_content
