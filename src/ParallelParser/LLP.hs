@@ -6,20 +6,22 @@ module ParallelParser.LLP
     psls,
     llpParserTableWithStarts,
     llpParse,
-    isLeftRecursive,
     llTableParse,
     initLlpContext,
     llpCollectionMemo,
     llpParserTableWithStartsHomomorphisms,
     Bracket (..),
     LlpContext (..),
+    rightNullableDoubleNT,
   )
 where
 
 import Control.DeepSeq
 import Control.Monad (liftM2)
+import Control.Monad.Extra (findM)
 import Control.Monad.State
 import Control.Parallel.Strategies
+import qualified Data.Bifunctor as Bifunctor
 import Data.Foldable
 import Data.Function (flip, on, ($), (.))
 import qualified Data.List as List
@@ -31,7 +33,7 @@ import qualified Data.Sequence as Seq hiding (Seq (..), (<|), (><), (|>))
 import Data.Set (Set (..))
 import qualified Data.Set as Set hiding (Set (..))
 import Data.String.Interpolate (i)
-import Data.Tuple.Extra (thd3, both)
+import Data.Tuple.Extra (both, thd3)
 import Debug.Trace (traceShow)
 import GHC.Generics
 import ParallelParser.Grammar
@@ -149,20 +151,17 @@ solveShortestsPrefix k grammar ts string = solveShortestsPrefix' string
     safeHead (x : xs) = x
 
 solveShortestsPrefixTest ::
-  (Ord nt, Ord t) =>
+  (Show nt, Show t, Ord nt, Ord t) =>
   [AugmentedTerminal t] ->
   [Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)] ->
   State (LlpContext nt t) (Maybe [Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)])
-solveShortestsPrefixTest a' gamma = do
-  let ps = prefixes gamma
-  prefix_result <- mapM helper ps
-  return . join $ find isJust prefix_result
+solveShortestsPrefixTest vj = findM hasPrefix . prefixes
   where
-    a = take 1 a'
-    prefixes str = zipWith take [0 ..] $ replicate (1 + length str) str
-    helper w = do
-      set <- useFirst1 w
-      return $ if a `Set.member` set then Just w else Nothing
+    a = take 1 vj
+    hasPrefix w = do
+      first_set <- useFirst1 (toList w)
+      return $ a `Set.member` first_set
+    prefixes = reverse . takeWhile (not . List.null) . iterate init
 
 -- | The context needed for the LLP collection can be created.
 data LlpContext nt t = LlpContext
@@ -304,20 +303,17 @@ newLlpItemsMemo old_item = result
         then return Set.empty
         else Set.fromList <$> mapM (uncurry newItem') products'
 
-    solveShortestsPrefix' v x_delta = do
-      result <- solveShortestsPrefixTest v x_delta
-      return $ fromJust result
-
     newItem u v new_dot_production x_delta = do
-      ctx <- get
-      let grammar = theGrammar ctx
-      let shortest_prefix = solveShortestsPrefix 1 grammar v x_delta
+      -- ctx <- get
+      -- let grammar = theGrammar ctx
+      -- let shortest_prefix = solveShortestsPrefix 1 grammar v x_delta
+      shortest_prefix <- solveShortestsPrefixTest v x_delta
       return
         Item
           { dotProduction = new_dot_production,
             suffix = u,
             prefix = v,
-            shortestPrefix = shortest_prefix
+            shortestPrefix = fromJust shortest_prefix
           }
 
 -- | From a single LLP item it creates a subset of the set in step 3 (a) of
@@ -673,15 +669,30 @@ psls = Map.unionsWith Set.union . fmap auxiliary . toList . Set.unions
           } = old_item
         z = List.last alpha_z
 
+unionIfDisjoint :: Ord a => Set a -> Set a -> Maybe (Set a)
+unionIfDisjoint a b = 
+  if a `Set.disjoint` b
+    then Just $ a `Set.union` b
+    else Nothing 
+
+unionsIfDisjoint :: Ord a =>  [Set a] -> Maybe (Set a)
+unionsIfDisjoint = foldM unionIfDisjoint Set.empty
 
 -- | Creates a LL(k) table for a given grammar. It does not check for conflicts.
 llTableLlpContext ::
   (Ord nt, Ord t, Show nt, Show t) =>
-  State (LlpContext nt t) (Map (AugmentedNonterminal nt, [AugmentedTerminal t]) Int)
+  State (LlpContext nt t) (Maybe (Map (AugmentedNonterminal nt, [AugmentedTerminal t]) Int))
 llTableLlpContext = do
   ctx <- get
   let prods = productions (theGrammar ctx)
-  Map.unions <$> zipWithM tableEntry [0 ..] prods
+  maybe_tables <- sequence <$> zipWithM tableEntry [0 ..] prods
+  return $ do
+    tables <- maybe_tables
+    let keys = Map.keysSet <$> tables
+    let result = unionsIfDisjoint keys
+    case result of
+      Just _ -> Just $ Map.unions tables
+      _ -> Nothing
   where
     tableEntry i (Production nt a) = do
       first_set <- useFirst a
@@ -689,7 +700,12 @@ llTableLlpContext = do
       let nts = Set.toList . Set.filter (not . null) $ follow_set
       let ts = Set.toList . Set.filter (not . null) $ first_set
       let is_nullable = [] `Set.member` first_set
-      return $ Map.fromList ([((nt, y), i) | is_nullable, y <- nts] ++ [((nt, y), i) | y <- ts])
+      let follow_map = Map.fromList [((nt, y), i) | is_nullable, y <- nts]
+      let first_map = Map.fromList [((nt, y), i) | y <- ts]
+      let keys = Map.keysSet follow_map `Set.intersection` Map.keysSet first_map
+      return $ if null keys
+        then Just $ follow_map `Map.union` first_map
+        else Nothing
 
 -- | Performance the parsing described in step 2 of algorithm 13 of the LLP
 -- paper.
@@ -766,7 +782,7 @@ filterAdmissiblePairs q k grammar = Map.filterWithKey (\k _ -> isValid k)
   where
     valid_strings = validLlSubstrings (q + k) grammar
     isValid (x, y) =
-        xy `Set.member` valid_strings || any (xy `List.isInfixOf`) valid_strings
+      xy `Set.member` valid_strings || any (xy `List.isInfixOf`) valid_strings
       where
         xy = x ++ y
 
@@ -836,18 +852,43 @@ llpParserTable = do
   let q = lookback context
   let k = lookahead context
   let grammar = theGrammar context
-  table <- llTableLlpContext
+  maybe_table <- llTableLlpContext
+  let Just table = maybe_table
   let llTableParse' = llTableParse table k (theGrammar context)
   let auxiliary (x, y) alpha = f <$> llTableParse' y alpha
         where
           f (epsilon, omega, pi) = (alpha, omega, pi)
-  collection <- llpCollectionMemoParallel -- llpCollection q k (theGrammar context)
+  collection <- llpCollectionMemo -- llpCollectionMemoParallel -- llpCollection q k (theGrammar context)
   let psls_table = filterAdmissiblePairs q k grammar $ psls collection
   let unwrapped = (\[a] -> a) . Set.toList <$> psls_table
   let parsed = Map.mapWithKey auxiliary unwrapped
-  return $ if any ((/= 1) . Set.size) psls_table
-            then Nothing
-            else sequence parsed
+  is_ambiguous <- isAmbiguous
+  let result
+        | is_ambiguous = Nothing
+        | isNothing maybe_table = Nothing
+        | any ((/= 1) . Set.size) psls_table = Nothing
+        | otherwise = sequence parsed
+  return result
+
+isAmbiguous ::
+  (Ord nt, Ord t, Show nt, Show t, NFData t, NFData nt) =>
+  State (LlpContext nt t) Bool
+isAmbiguous = do
+  ctx <- get
+  let grammar = theGrammar ctx
+  let prods = productions grammar
+  let prods_map = toProductionsMap prods
+  let isNullable = nullable grammar
+  let nullable_prods_map = List.filter isNullable <$> prods_map
+  let nullable_prods_count_map = List.length <$> nullable_prods_map
+  let over_one_nullable_prod = any (1<) nullable_prods_count_map
+  first_set_map <- mapM (mapM useFirst) prods_map
+  let firsts_union = unionsIfDisjoint <$> first_set_map
+  let overlapping_first_sets = any isNothing firsts_union
+  let not_nullable_prods_map  = List.filter (not . isNullable) <$> prods_map
+  return $
+    over_one_nullable_prod ||
+    overlapping_first_sets
 
 -- | Given a lsit create all the pairs with q lookback and k lookahead which
 -- will be used as keys in the table.
@@ -893,49 +934,77 @@ llpParse q k grammar string = fmap thd3 . foldl1 glue' . pairLookup table q k . 
       b' <- b
       glue a' b'
 
-data Mark = Unmarked | Temporary | Permanent deriving (Eq, Ord, Show)
-
--- | Checks if a grammar contains left recursion.
--- It uses dfs topological sorting https://en.wikipedia.org/wiki/Topological_sorting
-isLeftRecursive :: (Ord nt, Ord t, Show nt, Show t) => Grammar nt t -> Bool
-isLeftRecursive grammar = isNothing $ foldM dfs unmarked_map nonterminals'
+rightNullableDoubleNT :: (Show nt, Show t, Ord t, Ord nt) => Grammar nt t -> Bool
+rightNullableDoubleNT grammar = any isProblem prods
   where
-    nonterminals' = nonterminals grammar
-    leftmostDerive' = leftmostDerive grammar
-    nullableOne' = nullableOne grammar
-    toNTSingleton = Set.singleton . unpackNonterminal . head
-    left_rec_graph = Map.unionsWith Set.union $ makeRecGraph <$> productions grammar
+    consecNt (Nonterminal a) (Nonterminal b) = a == b
+    consecNt _ _ = False
 
-    makeRecGraph (Production nt []) = Map.singleton nt Set.empty
-    makeRecGraph (Production nt ((Terminal _):_)) = Map.singleton nt Set.empty
-    makeRecGraph (Production nt s@((Nonterminal nt'):_)) = all_nodes
+    nts = nonterminals grammar
+    prods = productions grammar
+    nullable' = nullable grammar
+    production_set = Set.fromList $ productions grammar
+    problem_nts = Set.map nonterminal $ Set.filter isProblem production_set
+    graph = makeGraph $ productions grammar
+    empty_graph = Map.unions $ map (`Map.singleton` Set.empty) nts
+    addMissing = Map.unionWith Set.union empty_graph
+
+    leftNode (Production nt s) = rightNode (Production nt (reverse s))
+    rightNode (Production nt s) =
+      Map.singleton nt
+        . Set.insert nt
+        . Set.fromList
+        $ fst <$> right_symbols
       where
-        toMap a b = Map.singleton a $ Set.singleton b
-        first_node = toMap nt nt'
-        tail' = tail s
-        init' = init s
-        zipped = takeWhile (uncurry predicate) $ zip init' tail'
-        predicate a b = isNonterminal a && isNonterminal b && nullableOne' a
-        other_maps = toMap nt . unpackNonterminal . snd <$> zipped
-        other_nodes = Map.unionsWith Set.union other_maps
-        all_nodes = Map.unionWith Set.union first_node other_nodes
+        right_symbols = List.filter (nullable' . snd) $ rightSymbols s
 
-    unmarked_map = Map.fromList $ map (, Unmarked) nonterminals'
+    left_graph = addMissing . Map.unionsWith Set.union $ leftNode <$> prods
+    right_graph = addMissing . Map.unionsWith Set.union $ rightNode <$> prods
+    left_graph_trans = fixedPointIterate (/=) closure left_graph
+    right_graph_trans = fixedPointIterate (/=) closure right_graph
 
-    -- compute_unmarked old_marks = do
-    --   new_marks <- foldM dfs old_marks nonterminals'
-    --   if Unmarked `elem` new_marks
-    --     then compute_unmarked new_marks
-    --     else return new_marks
-
-    dfs marks node
-      | node_mark == Permanent = Just marks
-      | node_mark == Temporary = Nothing
-      | otherwise = do
-        new_marks <- mapM (dfs marks_with_temp) neighbours
-        let pre_perm_marks = Map.unionsWith max new_marks `Map.union` marks
-        return $ Map.insert node Permanent pre_perm_marks
+    isProblem (Production nt s)
+      | null s = False
+      | otherwise =
+          any predicate
+            . catMaybes
+            $ List.zipWith createPairs init' tails
       where
-        node_mark = marks Map.! node
-        marks_with_temp = Map.insert node Temporary marks
-        neighbours = toList $ left_rec_graph Map.! node
+        seq = Seq.fromList s
+        tails = toList . fmap toList . Seq.drop 1 $ Seq.tails seq
+        init' = List.init s
+        createPairs (Nonterminal before) ((Nonterminal head) : tail) =
+          Just ((before, head), tail)
+        createPairs _ _ = Nothing
+        predicate ((a, b), tail) =
+          nullable' tail
+            && shares_a_nt
+          where
+            right_set = right_graph_trans Map.! a
+            left_set = left_graph_trans Map.! b
+            shares_a_nt = not . null $ Set.intersection right_set left_set
+
+    makeGraph =
+      addMissing
+        . Map.unionsWith Set.union
+        . fmap makeNode
+      where
+        nts = nonterminals grammar
+
+    makeNode (Production nt s) = Map.singleton nt end_nts
+      where
+        seq = Seq.fromList s
+        tails = toList . fmap toList $ Seq.tails seq
+        end_nts = Set.fromList $ mapMaybe endNt tails
+        endNt ((Nonterminal nt) : xs)
+          | nullable' xs = Just nt
+          | otherwise = Nothing
+        endNt _ = Nothing
+
+    closure old_map = addOldMap $ addMissing <$> old_map
+      where
+        addOldMap = Map.unionWith Set.union old_map
+        addMissing = Set.unions . Set.map (old_map Map.!)
+
+    reachable_graph = fixedPointIterate (/=) closure graph
+    containsProblem = flip Set.member (reachable_graph Map.! start grammar)
