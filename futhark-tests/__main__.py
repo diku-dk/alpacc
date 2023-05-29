@@ -278,18 +278,16 @@ def parser_test(
             stdout=open(os.devnull, 'wb'),
             stderr=open(os.devnull, 'wb')
         )
+        os.system('ls')
 
         parser = Futhark(__import__(f'_{name}'))
         valid_strings = grammar.leftmost_derivations_index(valid_string_length)
         valid_strings_set = set(map(lambda x: tuple(x[1]), valid_strings))
 
-        continue
-
         for string, indices in valid_strings:
             futhark_result = parser.parse(np.array(list(indices)))
-            print(futhark_result)
             result = parser.from_futhark(futhark_result)
-            print(result)
+
             if len(result) == 0:
                 print(
                     (f'The string {string} from the grammar {grammar} could'
