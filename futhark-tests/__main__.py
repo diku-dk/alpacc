@@ -3,9 +3,27 @@ import os
 import multiprocessing
 import shutil
 import time
+import sys
 import numpy as np
+import itertools
+import subprocess
 from futhark_ffi import Futhark
 from typing import Optional
+
+
+class Mute():
+
+    def __init__(self):
+        self.old_stdout = None
+    
+
+    def __enter__(self):
+        self.old_stdout = sys.stdout
+        sys.stdout = open(os.devnull, "w")
+    
+    
+    def __exit__(self, *args, **kwargs):
+        sys.stdout = self.old_stdout
 
 class Production:
 
@@ -90,7 +108,7 @@ class Grammar:
         left_derivations = list(self.leftmost_derivations(k))
         to_index_map = dict(zip(self.terminals, range(len(self.terminals))))
         to_index_string = lambda s : list(map(to_index_map.get, s))
-        return list(map(to_index_string, left_derivations))
+        return list(map(lambda a: (a, to_index_string(a)), left_derivations))
 
     def __str__(self) -> str:
         return (f'({self.start},'
@@ -171,14 +189,26 @@ def generate_random_llp_grammar(
         if no_duplicates:
             grammar.remove_duplicates()
         
-        print(f'Grammar: {grammar}')
         cmd = f'printf "{grammar}" | ./parallel-parser --stdin --output="{filename}" -q {q} -k {k}'
-        exitcode = os.system(cmd)
-        if os.path.exists(f'{filename}') and exitcode == 0:
+
+        could_create = False
+        try:
+            subprocess.check_call(
+                cmd,
+                shell=True,
+                stdout=open(os.devnull, 'wb'),
+                stderr=open(os.devnull, 'wb')
+            )
+            could_create = True
+        except subprocess.CalledProcessError:
+            pass
+
+        if os.path.exists(f'{filename}') and could_create:
+            print(f'{filename} contains a parser for the grammar: {grammar}.')
             return name, grammar
 
-def stuck_check(n: int):
-    for i in range(n):
+def stuck_test(number_of_grammars: int):
+    for i in range(number_of_grammars):
         filename = f'temp_{i}'
         generate_random_llp_grammar(
             filename,
@@ -192,18 +222,36 @@ def stuck_check(n: int):
         os.remove(f'{filename}.fut')
         time.sleep(0.05)
 
-def stuck_test(n: int):
+def stuck_test_timed(number_of_grammars: int):
     p = multiprocessing.Process(
-        target=stuck_check,
+        target=stuck_test,
         name="stuck_check",
-        args=(n,)
+        args=(number_of_grammars,)
         )
     p.start()
-    p.join(n * 5)
+    p.join(18000) # 5 hours.
     p.kill()
+
+    if p.exitcode == 0:
+        print('The parser generator stuck test succeeded.')
+    else:
+        print('The parser generator stuck test failed.')
+
     return p.exitcode
 
-def can_parser_test(n: int, k: int):
+def parser_test(
+        valid_string_length: int,
+        invalid_string_length: int,
+        number_of_grammars: int
+    ):
+    terminal_min = 2
+    terminal_max = 3
+
+    string_combinations = {
+        i: list(itertools.product(range(i), repeat=invalid_string_length))
+        for i in range(terminal_min, terminal_max+1)
+    }
+
     grammars = [
         generate_random_llp_grammar(
             f'parser_{i}',
@@ -213,23 +261,68 @@ def can_parser_test(n: int, k: int):
             random.randint(2, 6),
             no_direct_left_recursion=True,
             no_duplicates=True
-        ) for i in range(k)
+        ) for i in range(number_of_grammars)
     ]
+    error = False
 
     for name, grammar in grammars:
-        assert 0 == os.system(f'futhark c --library {name}.fut'), 'The parser could not be compiled.'
-        assert 0 == os.system(f'build_futhark_ffi {name}')
+        assert 0 == subprocess.check_call(
+            f'futhark c --library {name}.fut',
+            shell=True,
+            stdout=open(os.devnull, 'wb'),
+            stderr=open(os.devnull, 'wb')
+        ), 'The parser could not be compiled.'
+        assert 0 == subprocess.check_call(
+            f'build_futhark_ffi {name}',
+            shell=True,
+            stdout=open(os.devnull, 'wb'),
+            stderr=open(os.devnull, 'wb')
+        )
         parser = Futhark(__import__(f'_{name}'))
-        for index_string in grammar.leftmost_derivations_index(n):
-            res = parser.parse(np.array(index_string))
-            if len(parser.from_futhark(res)) == 0:
-                print(f'Problem Grammar: {grammar}')
+        valid_strings = grammar.leftmost_derivations_index(valid_string_length)
+        valid_strings_set = set(map(lambda x: tuple(x[1]), valid_strings))
+        for string, indices in valid_strings:
+            futhark_result = parser.parse(np.array(list(indices)))
+            result = parser.from_futhark(futhark_result)
+            if len(result) == 0:
+                print(f'The string {string} from the grammar {grammar} could not be parsed.')
+                error = True
+        
+        for indices in string_combinations[len(grammar.nonterminals)]:
+            if indices in valid_strings_set:
+                continue
+
+            futhark_result = parser.parse(np.array(list(indices)))
+            result = parser.from_futhark(futhark_result)
+            if len(result) != 0:
+                print(result)
+                error = True
+    
+    if error:
+        print("Parsing tests failed.")
+    else:
+        print("Parsing tests succeeded.")
+
+    return error
 
 def main():
-    assert 0 == os.system(f'cd .. && cabal install --installdir={test_dir} --install-method=copy --enable-executable-stripping --overwrite-policy=always'), "Could not compile the parallel parser generator."
-    assert os.path.exists('./parallel-parser'), "The parallel-parser binaries does not exists."
-    assert 0 == stuck_test(1000), "The parser probably got stuck while creating some grammar."
-    can_parser_test(10, 100)
+    assert 0 == subprocess.check_call(
+        (f'cd .. && cabal install --installdir={test_dir} '
+         '--install-method=copy --enable-executable-stripping '
+         '--overwrite-policy=always'),
+        shell=True
+    ), "Could not compile the parallel parser generator."
+    assert os.path.exists(
+        './parallel-parser'
+    ), "The parallel-parser binaries does not exists."
+    assert 0 == stuck_test_timed(
+        number_of_grammars=1000
+    ), "The parser probably got stuck while creating some grammar."
+    assert not parser_test(
+        valid_string_length=20,
+        invalid_string_length=10,
+        number_of_grammars=100
+    ), "Not all tested strings for some grammar could be parsed."
 
 if __name__ == '__main__':
     test_dir = os.path.dirname(__file__)

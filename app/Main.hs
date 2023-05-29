@@ -100,7 +100,7 @@ grammarError grammar
   | not $ null p_dups = Just [i|The given grammar contains duplicate productions because of #{p_dups_str}.|]
   | isLeftRecursive grammar = Just [i|The given grammar contains left recursion.|]
   | not $ null  left_factors = Just [i|The given grammar contains productions that has common left factors due to the following nonterminals #{left_factors_str}.|]
-  | rightNullableDoubleNT grammar = Just [i|The given grammar can end in a double nonterminal.|]
+  | rightNullableDoubleNT grammar = Just [i|The given grammar is able to derive two consecutive nonterminals that are nullable.|]
   | not $ null nonproductive = Just [i|The given grammar contains nonproductive productions due to the following nonterminals #{nonproductive_str}.|]
   | otherwise = Nothing
   where
