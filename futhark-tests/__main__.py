@@ -282,10 +282,12 @@ def parser_test(
         parser = Futhark(__import__(f'_{name}'))
         valid_strings = grammar.leftmost_derivations_index(valid_string_length)
         valid_strings_set = set(map(lambda x: tuple(x[1]), valid_strings))
-        
+
         for string, indices in valid_strings:
             futhark_result = parser.parse(np.array(list(indices)))
+            print(futhark_result)
             result = parser.from_futhark(futhark_result)
+            print(result)
             if len(result) == 0:
                 print(
                     (f'The string {string} from the grammar {grammar} could'
@@ -304,7 +306,8 @@ def parser_test(
 
                 print(
                     (f'The string {string} could be parsed by the parser '
-                     f'generated from the grammar {grammar}.')
+                     f'generated from the grammar {grammar} which should not '
+                    'happen.')
                 )
                 error = True
     
