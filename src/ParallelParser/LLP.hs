@@ -685,9 +685,8 @@ llTableLlpContext ::
 llTableLlpContext = do
   ctx <- get
   let prods = productions (theGrammar ctx)
-  maybe_tables <- sequence <$> zipWithM tableEntry [0 ..] prods
+  tables <- zipWithM tableEntry [0 ..] prods
   return $ do
-    tables <- maybe_tables
     let keys = Map.keysSet <$> tables
     let result = unionsIfDisjoint keys
     case result of
@@ -702,10 +701,7 @@ llTableLlpContext = do
       let is_nullable = [] `Set.member` first_set
       let follow_map = Map.fromList [((nt, y), i) | is_nullable, y <- nts]
       let first_map = Map.fromList [((nt, y), i) | y <- ts]
-      let keys = Map.keysSet follow_map `Set.intersection` Map.keysSet first_map
-      return $ if null keys
-        then Just $ follow_map `Map.union` first_map
-        else Nothing
+      return $ follow_map `Map.union` first_map
 
 -- | Performance the parsing described in step 2 of algorithm 13 of the LLP
 -- paper.
