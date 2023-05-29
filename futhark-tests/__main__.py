@@ -291,7 +291,7 @@ def parser_test(
 
             if len(result) == 0:
                 print(
-                    (f'The string {string} from the grammar {grammar} could'
+                    (f'The string "{string}" from the grammar {grammar} could'
                      ' not be parsed.')
                 )
                 error = True
@@ -306,7 +306,7 @@ def parser_test(
                 string = [grammar.terminals[i] for i in indices]
 
                 print(
-                    (f'The string {string} could be parsed by the parser '
+                    (f'The string "{string}" could be parsed by the parser '
                      f'generated from the grammar {grammar} which should not '
                     'happen.')
                 )
