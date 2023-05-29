@@ -228,8 +228,8 @@ def can_parser_test(n: int, k: int):
 def main():
     assert 0 == os.system(f'cd .. && cabal install --installdir={test_dir} --install-method=copy --enable-executable-stripping --overwrite-policy=always'), "Could not compile the parallel parser generator."
     assert os.path.exists('./parallel-parser'), "The parallel-parser binaries does not exists."
-    # assert 0 == stuck_test(1000), "The parser probably got stuck while creating some grammar."
-    can_parser_test(10, 10)
+    assert 0 == stuck_test(1000), "The parser probably got stuck while creating some grammar."
+    can_parser_test(10, 100)
 
 if __name__ == '__main__':
     test_dir = os.path.dirname(__file__)
