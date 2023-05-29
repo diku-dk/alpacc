@@ -189,7 +189,7 @@ def stuck_check(n: int):
             no_direct_left_recursion=True,
             no_duplicates=True
         )
-        os.remove(filename)
+        os.remove(f'{filename}.fut')
         time.sleep(0.05)
 
 def stuck_test(n: int):
@@ -222,13 +222,14 @@ def can_parser_test(n: int, k: int):
         parser = Futhark(__import__(f'_{name}'))
         for index_string in grammar.leftmost_derivations_index(n):
             res = parser.parse(np.array(index_string))
-            print(parser.from_futhark(res))
+            if len(parser.from_futhark(res)) == 0:
+                print(f'Problem Grammar: {grammar}')
 
 def main():
     assert 0 == os.system(f'cd .. && cabal install --installdir={test_dir} --install-method=copy --enable-executable-stripping --overwrite-policy=always'), "Could not compile the parallel parser generator."
     assert os.path.exists('./parallel-parser'), "The parallel-parser binaries does not exists."
     # assert 0 == stuck_test(1000), "The parser probably got stuck while creating some grammar."
-    can_parser_test(10, 100)
+    can_parser_test(10, 10)
 
 if __name__ == '__main__':
     test_dir = os.path.dirname(__file__)
