@@ -57,9 +57,12 @@ jobs:
         echo "GHC_VERSION=${GHC_VERSION}"     >> "${GITHUB_ENV}"
         echo "CABAL_VERSION=${CABAL_VERSION}" >> "${GITHUB_ENV}"
 
-    - name: Install Futhark
+    - name: Installation
       shell: bash
       run: |
+        sudo apt-get update && sudo apt-get install -y libtinfo-dev libgmp-dev zlib1g-dev python3 pip
+        pip install --upgrade pip
+        pip install -r futhark-tests/requirements.txt
         wget http://futhark-lang.org/releases/futhark-0.24.3-linux-x86_64.tar.xz
         tar xf futhark-0.24.3-linux-x86_64.tar.xz
         (cd futhark-0.24.3-linux-x86_64 && PREFIX=$HOME/.local make install)
@@ -69,8 +72,5 @@ jobs:
     - name: Run tests
       shell: bash
       run:  |
-        sudo apt-get update && sudo apt-get install -y python3 pip
-        pip install --upgrade pip
-        pip install -r futhark-tests/requirements.txt
         chmod +x futhark-tests.sh 
         ./futhark-tests.sh
