@@ -279,11 +279,11 @@ def parser_test(
             stdout=open(os.devnull, 'wb'),
             stderr=open(os.devnull, 'wb')
         )
-        time.sleep(1)
-        
+
         parser = Futhark(importlib.import_module(f'_{name}'))
         valid_strings = grammar.leftmost_derivations_index(valid_string_length)
         valid_strings_set = set(map(lambda x: tuple(x[1]), valid_strings))
+        print(parser.__dir__())
 
         for string, indices in valid_strings:
             futhark_result = parser.parse(np.array(list(indices)))
