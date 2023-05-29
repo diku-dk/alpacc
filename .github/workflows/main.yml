@@ -64,6 +64,7 @@ jobs:
           tar xf futhark-0.24.3-linux-x86_64.tar.xz
           (cd futhark-0.24.3-linux-x86_64 && PREFIX=$HOME/.local make install)
           echo "$HOME/.local/bin" >> $GITHUB_PATH
+          futhark --version
 
     - name: Run tests
       shell: bash
@@ -73,4 +74,3 @@ jobs:
         pip install -r futhark-tests/requirements.txt
         chmod +x futhark-tests.sh 
         ./futhark-tests.sh
-        python .
