@@ -279,6 +279,7 @@ def parser_test(
             stdout=open(os.devnull, 'wb'),
             stderr=open(os.devnull, 'wb')
         )
+        time.sleep(1)
         
         parser = Futhark(importlib.import_module(f'_{name}'))
         valid_strings = grammar.leftmost_derivations_index(valid_string_length)
@@ -328,13 +329,13 @@ def main():
     assert os.path.exists(
         './parallel-parser'
     ), "The parallel-parser binaries does not exists."
-    # assert 0 == stuck_test_timed(
-    #     number_of_grammars=1000
-    # ), "The parser probably got stuck while creating some grammar."
+    assert 0 == stuck_test_timed(
+        number_of_grammars=1000
+    ), "The parser probably got stuck while creating some grammar."
     assert not parser_test(
         valid_string_length=20,
         invalid_string_length=10,
-        number_of_grammars=3
+        number_of_grammars=100
     ), "Not all tested strings for some grammar could be parsed."
 
 if __name__ == '__main__':
