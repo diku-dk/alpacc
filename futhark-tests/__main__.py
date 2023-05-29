@@ -283,6 +283,8 @@ def parser_test(
         valid_strings = grammar.leftmost_derivations_index(valid_string_length)
         valid_strings_set = set(map(lambda x: tuple(x[1]), valid_strings))
 
+        continue
+
         for string, indices in valid_strings:
             futhark_result = parser.parse(np.array(list(indices)))
             print(futhark_result)
