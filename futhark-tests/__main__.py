@@ -252,7 +252,7 @@ def parser_test(
         for i in range(terminal_min, terminal_max+1)
     }
 
-    grammars = [
+    grammars = (
         generate_random_llp_grammar(
             f'parser_{i}',
             random.randint(2, 3),
@@ -262,21 +262,27 @@ def parser_test(
             no_direct_left_recursion=True,
             no_duplicates=True
         ) for i in range(number_of_grammars)
-    ]
+    )
     error = False
 
     for name, grammar in grammars:
         assert 0 == subprocess.check_call(
             f'futhark c --library {name}.fut',
-            shell=True
+            shell=True,
+            stdout=open(os.devnull, 'wb'),
+            stderr=open(os.devnull, 'wb')
         ), 'The parser could not be compiled.'
         assert 0 == subprocess.check_call(
             f'build_futhark_ffi {name}',
-            shell=True
+            shell=True,
+            stdout=open(os.devnull, 'wb'),
+            stderr=open(os.devnull, 'wb')
         )
+
         parser = Futhark(__import__(f'_{name}'))
         valid_strings = grammar.leftmost_derivations_index(valid_string_length)
         valid_strings_set = set(map(lambda x: tuple(x[1]), valid_strings))
+        
         for string, indices in valid_strings:
             futhark_result = parser.parse(np.array(list(indices)))
             result = parser.from_futhark(futhark_result)
@@ -294,7 +300,12 @@ def parser_test(
             futhark_result = parser.parse(np.array(list(indices)))
             result = parser.from_futhark(futhark_result)
             if len(result) != 0:
-                print(result)
+                string = [grammar.terminals[i] for i in indices]
+
+                print(
+                    (f'The string {string} could be parsed by the parser '
+                     f'generated from the grammar {grammar}.')
+                )
                 error = True
     
     if error:
