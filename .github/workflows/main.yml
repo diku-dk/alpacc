@@ -60,16 +60,16 @@ jobs:
     - name: Install Futhark
       shell: bash
       run: |
-          wget http://futhark-lang.org/releases/futhark-0.24.3-linux-x86_64.tar.xz
-          tar xf futhark-0.24.3-linux-x86_64.tar.xz
-          (cd futhark-0.24.3-linux-x86_64 && PREFIX=$HOME/.local make install)
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-          futhark --version
+        wget http://futhark-lang.org/releases/futhark-0.24.3-linux-x86_64.tar.xz
+        tar xf futhark-0.24.3-linux-x86_64.tar.xz
+        (cd futhark-0.24.3-linux-x86_64 && PREFIX=$HOME/.local make install)
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+        futhark --version
 
     - name: Run tests
       shell: bash
       run:  |
-        sudo apt install -y python3 pip
+        sudo apt-get update && sudo apt-get install -y python3 pip
         pip install --upgrade pip
         pip install -r futhark-tests/requirements.txt
         chmod +x futhark-tests.sh 
