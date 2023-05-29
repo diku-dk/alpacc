@@ -7,6 +7,7 @@ import sys
 import numpy as np
 import itertools
 import subprocess
+import importlib
 from futhark_ffi import Futhark
 from typing import Optional
 
@@ -278,9 +279,8 @@ def parser_test(
             stdout=open(os.devnull, 'wb'),
             stderr=open(os.devnull, 'wb')
         )
-        os.system('ls')
-
-        parser = Futhark(__import__(f'_{name}'))
+        
+        parser = Futhark(importlib.import_module(f'_{name}'))
         valid_strings = grammar.leftmost_derivations_index(valid_string_length)
         valid_strings_set = set(map(lambda x: tuple(x[1]), valid_strings))
 
