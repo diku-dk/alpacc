@@ -68,7 +68,7 @@ jobs:
     - name: Run tests
       shell: bash
       run:  |
-        sudo apt install python3 pip
+        sudo apt install -y python3 pip
         pip install --upgrade pip
         pip install -r futhark-tests/requirements.txt
         chmod +x futhark-tests.sh 
