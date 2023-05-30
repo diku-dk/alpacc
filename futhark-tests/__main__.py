@@ -197,7 +197,8 @@ def generate_random_llp_grammar(
         q=1,
         k=1,
         no_direct_left_recursion: bool = True,
-        no_duplicates: bool = True):
+        no_duplicates: bool = True,
+        quiet: bool = False):
     
     while True:
         filename = f'{name}.fut'
@@ -227,7 +228,8 @@ def generate_random_llp_grammar(
             pass
 
         if os.path.exists(f'{filename}') and could_create:
-            print(f'{filename} contains a parser for the grammar: {grammar}.')
+            if not quiet:
+                print(f'{filename} contains a parser for the grammar: {grammar}.')
             return name, grammar
 
 def stuck_test(number_of_grammars: int):
@@ -277,6 +279,7 @@ def parser_test(
         for i in range(terminal_min, terminal_max+1)
     }
 
+
     grammars = (
         generate_random_llp_grammar(
             f'parser_{i}',
@@ -287,7 +290,8 @@ def parser_test(
             no_direct_left_recursion=True,
             no_duplicates=True,
             q=q,
-            k=k
+            k=k,
+            quiet=True
         ) for i in range(number_of_grammars)
     )
     error = False
@@ -319,9 +323,10 @@ def parser_test(
                 if len(result) == 0:
                     print(
                         (f'The string "{string}" from the grammar {grammar} '
-                         'could not be parsed.')
+                         f'could not be parsed. The parser is {name}.fut.')
                     )
                     error = True
+                    break
             
             for indices in string_combinations[len(grammar.nonterminals)]:
                 if indices in valid_strings_set:
@@ -331,13 +336,14 @@ def parser_test(
                 result = parser.from_futhark(futhark_result)
                 if len(result) != 0:
                     string = [grammar.terminals[i] for i in indices]
-
+                    
                     print(
                         (f'The string "{string}" could be parsed by the '
                          f'parser generated from the grammar {grammar} which '
-                         f'should not happen.')
+                         f'should not happen. The parser is {name}.fut.')
                     )
                     error = True
+                    break
 
             del sys.modules[f'_{name}']
     
@@ -368,18 +374,27 @@ def main():
     #     q=1,
     #     k=1
     # ), "Not all tested strings for some grammar could be parsed."
-    # assert not parser_test(
-    #     valid_string_length=20,
-    #     invalid_string_length=10,
-    #     number_of_grammars=100,
-    #     q=2,
-    #     k=2
-    # ), "Not all tested strings for some grammar could be parsed."
+    assert not parser_test(
+        valid_string_length=20,
+        invalid_string_length=10,
+        number_of_grammars=100,
+        q=2,
+        k=2
+    ), "Not all tested strings for some grammar could be parsed."
+
+# Problem grammars.
+# (Y,{l,h,y},{Y,U},{Y -> y U y,U -> l y h,U -> ,U -> h y,Y -> l U y y,U -> y})
+# (V,{a,r},{H,J,V},{H -> ,J -> r r r,V -> a J r,V -> r,H -> a,H -> V r,J -> a r a,J -> }) 
+# (B,{e,v},{J,N,B},{J -> e v e,N -> e,B -> e,J -> ,N -> v B,B -> N v N})
+# (I,{h,p,d},{C,I,Z},{C -> p,I -> p h,Z -> h d d,I -> h Z h,Z -> })
+# (C,{v,n,k},{Y,C},{Y -> k,C -> n,C -> Y,Y -> n v n,Y -> v n C v v})
+# (E,{z,g},{O,E,K},{O -> z E g,E -> z g K g g,K -> ,K -> g E g,K -> E})
+# (S,{s,a},{S,Z,C},{S -> Z s,Z -> s s,C -> ,Z -> C s,S -> a})
+# (B,{x,q,h},{M,B},{M -> x q,B -> h M h,M -> h h,M -> ,B -> q q h})
+# (C,{q,n,s},{V,C,B},{V -> q q q n,C -> q V q,B -> ,V -> n n,V -> ,C -> n n n B n s})
+# (L,{r,j,p},{C,L},{C -> ,L -> r C p,C -> p r j,C -> j r p})
 
 if __name__ == '__main__':
     test_dir = os.path.dirname(__file__)
-    # os.environ['LD_LIBRARY_PATH'] = test_dir
     os.chdir(test_dir)
     main()
-    
-    
