@@ -2,9 +2,7 @@
 /*
 !/*/
 # Do not include futhark test files.
-/futhark-parser-tests/*
-/futhark-parser-tests/*
-!/futhark-parser-tests/*/
+
 #########
 #Haskell#
 #########
