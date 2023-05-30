@@ -8,7 +8,7 @@ import numpy as np
 import itertools
 import subprocess
 import importlib
-from futhark_ffi import Futhark
+from futhark_ffi import Futhark, build
 from typing import Optional
 
 
@@ -16,15 +16,19 @@ class Mute():
 
     def __init__(self):
         self.old_stdout = None
+        self.old_stderr = None
     
 
     def __enter__(self):
         self.old_stdout = sys.stdout
         sys.stdout = open(os.devnull, "w")
+        self.old_stderr = sys.stderr
+        sys.stderr = open(os.devnull, "w")
     
     
     def __exit__(self, *args, **kwargs):
         sys.stdout = self.old_stdout
+        sys.stderr = self.old_stderr
 
 class Production:
 
@@ -149,10 +153,10 @@ def generate_grammar(
     nonterminals = random.sample(nts, k_nonterminals)
     start = random.choice(nonterminals)
     sepecific_production = lambda nt: random_production(
-            terminals,
-            nonterminals,
-            m,
-            nt,
+            terminals=terminals,
+            nonterminals=nonterminals,
+            m=m,
+            nt=nt,
             no_direct_left_recursion=no_direct_left_recursion
         )
     production = lambda: random_production(terminals, nonterminals, m)
@@ -180,11 +184,11 @@ def generate_random_llp_grammar(
     while True:
         filename = f'{name}.fut'
         grammar = generate_grammar(
-            k_ter,
-            k_nonter,
-            extra_prod,
-            m,
-            no_direct_left_recursion
+            k_terminals=k_ter,
+            k_nonterminals=k_nonter,
+            extra_productions=extra_prod,
+            m=m,
+            no_direct_left_recursion=no_direct_left_recursion
         )
 
         if no_duplicates:
@@ -243,7 +247,9 @@ def stuck_test_timed(number_of_grammars: int):
 def parser_test(
         valid_string_length: int,
         invalid_string_length: int,
-        number_of_grammars: int
+        number_of_grammars: int, 
+        q: int,
+        k: int
     ):
     terminal_min = 2
     terminal_max = 3
@@ -261,7 +267,9 @@ def parser_test(
             random.randint(2, 6),
             random.randint(2, 6),
             no_direct_left_recursion=True,
-            no_duplicates=True
+            no_duplicates=True,
+            q=q,
+            k=k
         ) for i in range(number_of_grammars)
     )
     error = False
@@ -273,14 +281,13 @@ def parser_test(
             stdout=open(os.devnull, 'wb'),
             stderr=open(os.devnull, 'wb')
         ), 'The parser could not be compiled.'
-        assert 0 == subprocess.check_call(
-            f'build_futhark_ffi {name}',
-            shell=True,
-            stdout=open(os.devnull, 'wb'),
-            stderr=open(os.devnull, 'wb')
-        )
 
+        with Mute():
+            ffi_parser = build.build(name, name)
+
+        ffi_parser.compile(verbose=False, debug=False)
         parser = Futhark(importlib.import_module(f'_{name}'))
+
         valid_strings = grammar.leftmost_derivations_index(valid_string_length)
         valid_strings_set = set(map(lambda x: tuple(x[1]), valid_strings))
         
@@ -328,21 +335,32 @@ def main():
     assert os.path.exists(
         './parallel-parser'
     ), "The parallel-parser binaries does not exists."
-    # assert 0 == stuck_test_timed(
-    #     number_of_grammars=1000
-    # ), "The parser probably got stuck while creating some grammar."
+    assert 0 == stuck_test_timed(
+        number_of_grammars=1000
+    ), "The parser probably got stuck while creating some grammar."
     assert not parser_test(
         valid_string_length=20,
         invalid_string_length=10,
-        number_of_grammars=3
+        number_of_grammars=100,
+        q=1,
+        k=1
     ), "Not all tested strings for some grammar could be parsed."
+    # assert not parser_test(
+    #     valid_string_length=20,
+    #     invalid_string_length=10,
+    #     number_of_grammars=100,
+    #     q=2,
+    #     k=2
+    # ), "Not all tested strings for some grammar could be parsed."
 
 if __name__ == '__main__':
     test_dir = os.path.dirname(__file__)
+    # os.environ['LD_LIBRARY_PATH'] = test_dir
     os.chdir(test_dir)
     old_content = set(os.listdir())
     main()
     new_content = set(os.listdir()) - old_content
+    
     for content in new_content:
         if os.path.isdir(content):
             shutil.rmtree(content)
