@@ -696,8 +696,8 @@ llTableLlpContext = do
     tableEntry i (Production nt a) = do
       first_set <- useFirst a
       follow_set <- useFollow nt
-      let nts = Set.toList . Set.filter (not . null) $ follow_set
-      let ts = Set.toList . Set.filter (not . null) $ first_set
+      let nts = Set.toList follow_set
+      let ts = Set.toList first_set
       let is_nullable = [] `Set.member` first_set
       let follow_map = Map.fromList [((nt, y), i) | is_nullable, y <- nts]
       let first_map = Map.fromList [((nt, y), i) | y <- ts]
@@ -728,6 +728,7 @@ llTableParse table k grammar a b = auxiliary (a, b, [])
         keys =
           filter (`Map.member` table)
             . fmap (y,)
+            . (++[[]])
             . takeWhile (not . null)
             . iterate init
             $ take k input
