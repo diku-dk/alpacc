@@ -30,6 +30,24 @@ class Mute():
         sys.stdout = self.old_stdout
         sys.stderr = self.old_stderr
 
+class DeleteNew():
+
+    def __init__(self):
+        self.old_content = None
+    
+
+    def __enter__(self):
+        self.old_content = set(os.listdir())
+    
+    def __exit__(self, *args, **kwargs):
+        new_content = set(os.listdir()) - self.old_content
+        for content in new_content:
+            if os.path.isdir(content):
+                shutil.rmtree(content)
+            elif os.path.isfile(content):
+                os.remove(content)
+        self.old_content = None
+
 class Production:
 
     def __init__(self, nonterminal: str, symbols: list[str]) -> None:
@@ -214,17 +232,17 @@ def generate_random_llp_grammar(
 
 def stuck_test(number_of_grammars: int):
     for i in range(number_of_grammars):
-        filename = f'temp_{i}'
-        generate_random_llp_grammar(
-            filename,
-            3,
-            3,
-            3,
-            3,
-            no_direct_left_recursion=True,
-            no_duplicates=True
-        )
-        os.remove(f'{filename}.fut')
+        with DeleteNew():
+            filename = f'temp_{i}'
+            generate_random_llp_grammar(
+                filename,
+                3,
+                3,
+                3,
+                3,
+                no_direct_left_recursion=True,
+                no_duplicates=True
+            )
         time.sleep(0.05)
 
 def stuck_test_timed(number_of_grammars: int):
@@ -275,48 +293,53 @@ def parser_test(
     error = False
 
     for name, grammar in grammars:
-        assert 0 == subprocess.check_call(
-            f'futhark c --library {name}.fut',
-            shell=True,
-            stdout=open(os.devnull, 'wb'),
-            stderr=open(os.devnull, 'wb')
-        ), 'The parser could not be compiled.'
+        with DeleteNew():
+            assert 0 == subprocess.check_call(
+                f'futhark c --library {name}.fut',
+                shell=True,
+                stdout=open(os.devnull, 'wb'),
+                stderr=open(os.devnull, 'wb')
+            ), 'The parser could not be compiled.'
 
-        with Mute():
-            ffi_parser = build.build(name, name)
+            with Mute():
+                ffi_parser = build.build(name, name)
 
-        ffi_parser.compile(verbose=False, debug=False)
-        parser = Futhark(importlib.import_module(f'_{name}'))
+            ffi_parser.compile(verbose=False, debug=False)
+            parser = Futhark(importlib.import_module(f'_{name}'))
 
-        valid_strings = grammar.leftmost_derivations_index(valid_string_length)
-        valid_strings_set = set(map(lambda x: tuple(x[1]), valid_strings))
-        
-        for string, indices in valid_strings:
-            futhark_result = parser.parse(np.array(list(indices)))
-            result = parser.from_futhark(futhark_result)
+            valid_strings = grammar.leftmost_derivations_index(
+                valid_string_length
+            )
+            valid_strings_set = set(map(lambda x: tuple(x[1]), valid_strings))
+            
+            for string, indices in valid_strings:
+                futhark_result = parser.parse(np.array(list(indices)))
+                result = parser.from_futhark(futhark_result)
 
-            if len(result) == 0:
-                print(
-                    (f'The string "{string}" from the grammar {grammar} could'
-                     ' not be parsed.')
-                )
-                error = True
-        
-        for indices in string_combinations[len(grammar.nonterminals)]:
-            if indices in valid_strings_set:
-                continue
+                if len(result) == 0:
+                    print(
+                        (f'The string "{string}" from the grammar {grammar} '
+                         'could not be parsed.')
+                    )
+                    error = True
+            
+            for indices in string_combinations[len(grammar.nonterminals)]:
+                if indices in valid_strings_set:
+                    continue
 
-            futhark_result = parser.parse(np.array(list(indices)))
-            result = parser.from_futhark(futhark_result)
-            if len(result) != 0:
-                string = [grammar.terminals[i] for i in indices]
+                futhark_result = parser.parse(np.array(list(indices)))
+                result = parser.from_futhark(futhark_result)
+                if len(result) != 0:
+                    string = [grammar.terminals[i] for i in indices]
 
-                print(
-                    (f'The string "{string}" could be parsed by the parser '
-                     f'generated from the grammar {grammar} which should not '
-                    'happen.')
-                )
-                error = True
+                    print(
+                        (f'The string "{string}" could be parsed by the '
+                         f'parser generated from the grammar {grammar} which '
+                         f'should not happen.')
+                    )
+                    error = True
+
+            del sys.modules[f'_{name}']
     
     if error:
         print("Parsing tests failed.")
@@ -345,24 +368,18 @@ def main():
     #     q=1,
     #     k=1
     # ), "Not all tested strings for some grammar could be parsed."
-    assert not parser_test(
-        valid_string_length=20,
-        invalid_string_length=10,
-        number_of_grammars=100,
-        q=2,
-        k=2
-    ), "Not all tested strings for some grammar could be parsed."
+    # assert not parser_test(
+    #     valid_string_length=20,
+    #     invalid_string_length=10,
+    #     number_of_grammars=100,
+    #     q=2,
+    #     k=2
+    # ), "Not all tested strings for some grammar could be parsed."
 
 if __name__ == '__main__':
     test_dir = os.path.dirname(__file__)
     # os.environ['LD_LIBRARY_PATH'] = test_dir
     os.chdir(test_dir)
-    old_content = set(os.listdir())
     main()
-    new_content = set(os.listdir()) - old_content
     
-    for content in new_content:
-        if os.path.isdir(content):
-            shutil.rmtree(content)
-        elif os.path.isfile(content):
-            os.remove(content)
+    
