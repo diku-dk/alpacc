@@ -100,14 +100,14 @@ grammarError grammar
   | not $ null p_dups = Just [i|The given grammar contains duplicate productions because of #{p_dups_str}.|]
   | isLeftRecursive grammar = Just [i|The given grammar contains left recursion.|]
   | not $ null  left_factors = Just [i|The given grammar contains productions that has common left factors due to the following nonterminals #{left_factors_str}.|]
-  | any isHeadNullable start_symbols = Just [i|The given grammars start nonterminal must not have productions where the first symbol is nullable or results in epsilon.|]
+  | any isHeadNullable start_symbols = Just [i|The given grammars start nonterminal must not have productions where the first symbol is nullable.|]
   | rightNullableDoubleNT grammar = Just [i|The given grammar is able to derive two consecutive nonterminals that are the same and nullable.|]
   | not $ null nonproductive = Just [i|The given grammar contains nonproductive productions due to the following nonterminals #{nonproductive_str}.|]
   | otherwise = Nothing
   where
     start' = start grammar
     nullableOne' = nullableOne grammar
-    isHeadNullable [] = True
+    isHeadNullable [] = False
     isHeadNullable (x:_) = nullableOne' x 
     start_symbols = symbols <$> findProductions grammar start'
     nts = Set.fromList $ nonterminals grammar

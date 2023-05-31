@@ -340,8 +340,8 @@ augmentGrammar q k grammar =
     augmented_terminals = AugmentedTerminal <$> terminals grammar
     terminals' = RightTurnstile : LeftTurnstile : augmented_terminals
     start' = Nonterminal . AugmentedNonterminal $ start grammar
-    leftPad = replicate q $ Terminal RightTurnstile
-    rightPad = replicate k $ Terminal LeftTurnstile
+    leftPad = replicate 1 $ Terminal RightTurnstile
+    rightPad = replicate 1 $ Terminal LeftTurnstile
     symbols' = leftPad ++ [start'] ++ rightPad
     augmentProduction = bimap AugmentedNonterminal AugmentedTerminal
 

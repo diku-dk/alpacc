@@ -221,7 +221,7 @@ def from_just 'a (ne : a) (m : maybe a) : a =
   case _ -> ne
 
 entry parse [n] (arr : [n]u32) : []u32 =
-  let arr' = replicate #{q} #{start_terminal} ++ (map (+2) arr) ++ replicate #{k} #{end_terminal}
+  let arr' = replicate #{1} #{start_terminal} ++ (map (+2) arr) ++ replicate #{1} #{end_terminal}
   let configs = keys arr' |> map key_to_config
   in if any (is_nothing) configs
   then []

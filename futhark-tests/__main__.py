@@ -387,6 +387,11 @@ def main():
 # (H,{k,y},{H,R},{H -> k y,R -> H y,R -> y,R -> k k,H -> y k R,R -> })
 # (X,{t,l},{T,S,X},{T -> l,S -> ,X -> l T,S -> l,T -> S l l})
 # (A,{y,j},{A,Y,E},{A -> y j Y j,Y -> j,E -> j j A,E -> y Y j,A -> j j,Y -> ,Y -> y y})
+# (I,{h,u,t},{I,T},{I -> h t h t u,T -> h t u,T -> ,I -> u t T h h})
+# (K,{h,r,g},{K,V},{K -> g r,V -> K g g r g,K -> h r r V h,V -> })
+# (B,{d,z,w},{W,B},{W -> z,B -> d,B -> z W z z,W -> ,W -> w d w})
+# (M,{j,e,p},{M,R},{M -> j,R -> p,M -> p,M -> e R p,R -> })
+# (U,{b,q},{U,R},{U -> q R b b q,R -> b,R -> ,U -> b q b b b,R -> q})
 
 if __name__ == '__main__':
     test_dir = os.path.dirname(__file__)

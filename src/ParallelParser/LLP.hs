@@ -856,7 +856,7 @@ llpParserTable = do
         where
           f (epsilon, omega, pi) = (alpha, omega, pi)
   collection <- llpCollectionMemo -- llpCollectionMemoParallel -- llpCollection q k (theGrammar context)
-  let psls_table = psls collection -- filterAdmissiblePairs q k grammar $ 
+  let psls_table = filterAdmissiblePairs q k grammar $ psls collection
   let unwrapped = (\[a] -> a) . Set.toList <$> psls_table
   let parsed = Map.mapWithKey auxiliary unwrapped
   is_ambiguous <- isAmbiguous
@@ -922,7 +922,7 @@ glue (alpha_l, omega_l, pi_l) (alpha_r, omega_r, pi_r)
 llpParse :: (Ord nt, Show nt, Show t, Ord t, NFData t, NFData nt) => Int -> Int -> Grammar nt t -> [t] -> Maybe [Int]
 llpParse q k grammar string = fmap thd3 . foldl1 glue' . pairLookup table q k . addStoppers $ aug string
   where
-    addStoppers = (replicate q RightTurnstile ++) . (++ replicate k LeftTurnstile)
+    addStoppers = (replicate 1 RightTurnstile ++) . (++ replicate 1 LeftTurnstile)
     aug = fmap AugmentedTerminal
     augmented_grammar = augmentGrammar q k grammar
     Just table = llpParserTableWithStarts q k grammar
