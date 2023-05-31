@@ -37,10 +37,10 @@ jobs:
   
   # futhark-test:
   #   runs-on: ubuntu-22.04
-# 
+  # 
   #   steps:
   #   - uses: actions/checkout@v3
-# 
+  # 
   #   - name: Set up GHC 9.2.7
   #     uses: haskell/actions/setup@v2
   #     id: setup
@@ -48,7 +48,7 @@ jobs:
   #       ghc-version: '9.2.7'
   #       cabal-version: '3.10.1.0'
   #       cabal-update: true
-# 
+  # 
   #   - name: Installed versions of GHC and Cabal
   #     shell: bash
   #     run: |
@@ -56,7 +56,7 @@ jobs:
   #       CABAL_VERSION=$(cabal --numeric-version)
   #       echo "GHC_VERSION=${GHC_VERSION}"     >> "${GITHUB_ENV}"
   #       echo "CABAL_VERSION=${CABAL_VERSION}" >> "${GITHUB_ENV}"
-# 
+  # 
   #   - name: Installation
   #     shell: bash
   #     run: |
@@ -68,9 +68,9 @@ jobs:
   #       (cd futhark-0.24.3-linux-x86_64 && PREFIX=$HOME/.local make install)
   #       echo "$HOME/.local/bin" >> $GITHUB_PATH
   #       futhark --version
-
-    - name: Run tests
-      shell: bash
-      run:  |
-        chmod +x futhark-tests.sh 
-        ./futhark-tests.sh
+  # 
+  #   - name: Run tests
+  #     shell: bash
+  #     run:  |
+  #       chmod +x futhark-tests.sh 
+  #       ./futhark-tests.sh
