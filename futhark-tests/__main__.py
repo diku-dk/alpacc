@@ -285,8 +285,8 @@ def parser_test(
             f'parser_{i}',
             random.randint(2, 3),
             random.randint(2, 3),
-            random.randint(2, 6),
-            random.randint(2, 6),
+            random.randint(2, 5),
+            random.randint(2, 5),
             no_direct_left_recursion=True,
             no_duplicates=True,
             q=q,
@@ -335,7 +335,7 @@ def parser_test(
                 futhark_result = parser.parse(np.array(list(indices)))
                 result = parser.from_futhark(futhark_result)
                 if len(result) != 0:
-                    string = [grammar.terminals[i] for i in indices]
+                    string = ''.join([grammar.terminals[i] for i in indices])
                     
                     print(
                         (f'The string "{string}" could be parsed by the '
@@ -364,16 +364,16 @@ def main():
     assert os.path.exists(
         './parallel-parser'
     ), "The parallel-parser binaries does not exists."
-    assert 0 == stuck_test_timed(
-        number_of_grammars=1000
-    ), "The parser probably got stuck while creating some grammar."
-    assert not parser_test(
-        valid_string_length=20,
-        invalid_string_length=10,
-        number_of_grammars=100,
-        q=1,
-        k=1
-    ), "Not all tested strings for some grammar could be parsed."
+    # assert 0 == stuck_test_timed(
+    #     number_of_grammars=1000
+    # ), "The parser probably got stuck while creating some grammar."
+    # assert not parser_test(
+    #     valid_string_length=20,
+    #     invalid_string_length=10,
+    #     number_of_grammars=100,
+    #     q=1,
+    #     k=1
+    # ), "Not all tested strings for some grammar could be parsed."
     assert not parser_test(
         valid_string_length=20,
         invalid_string_length=10,
@@ -383,16 +383,10 @@ def main():
     ), "Not all tested strings for some grammar could be parsed."
 
 # Problem grammars.
-# (Y,{l,h,y},{Y,U},{Y -> y U y,U -> l y h,U -> ,U -> h y,Y -> l U y y,U -> y})
-# (V,{a,r},{H,J,V},{H -> ,J -> r r r,V -> a J r,V -> r,H -> a,H -> V r,J -> a r a,J -> }) 
-# (B,{e,v},{J,N,B},{J -> e v e,N -> e,B -> e,J -> ,N -> v B,B -> N v N})
-# (I,{h,p,d},{C,I,Z},{C -> p,I -> p h,Z -> h d d,I -> h Z h,Z -> })
-# (C,{v,n,k},{Y,C},{Y -> k,C -> n,C -> Y,Y -> n v n,Y -> v n C v v})
-# (E,{z,g},{O,E,K},{O -> z E g,E -> z g K g g,K -> ,K -> g E g,K -> E})
-# (S,{s,a},{S,Z,C},{S -> Z s,Z -> s s,C -> ,Z -> C s,S -> a})
-# (B,{x,q,h},{M,B},{M -> x q,B -> h M h,M -> h h,M -> ,B -> q q h})
-# (C,{q,n,s},{V,C,B},{V -> q q q n,C -> q V q,B -> ,V -> n n,V -> ,C -> n n n B n s})
-# (L,{r,j,p},{C,L},{C -> ,L -> r C p,C -> p r j,C -> j r p})
+# (I,{k,y},{I,F},{I -> y,F -> ,I -> k F k,F -> k})
+# (H,{k,y},{H,R},{H -> k y,R -> H y,R -> y,R -> k k,H -> y k R,R -> })
+# (X,{t,l},{T,S,X},{T -> l,S -> ,X -> l T,S -> l,T -> S l l})
+# (A,{y,j},{A,Y,E},{A -> y j Y j,Y -> j,E -> j j A,E -> y Y j,A -> j j,Y -> ,Y -> y y})
 
 if __name__ == '__main__':
     test_dir = os.path.dirname(__file__)

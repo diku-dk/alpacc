@@ -221,7 +221,7 @@ def from_just 'a (ne : a) (m : maybe a) : a =
   case _ -> ne
 
 entry parse [n] (arr : [n]u32) : []u32 =
-  let arr' = [0] ++ (map (+2) arr) ++ [1]
+  let arr' = replicate #{q} #{start_terminal} ++ (map (+2) arr) ++ replicate #{k} #{end_terminal}
   let configs = keys arr' |> map key_to_config
   in if any (is_nothing) configs
   then []
@@ -244,12 +244,12 @@ entry parse [n] (arr : [n]u32) : []u32 =
       isNothing maybe_start_terminal
         || isNothing maybe_end_terminal
         || isNothing maybe_table
-    Just start_terminal = List.singleton <$> maybe_start_terminal
-    Just end_terminal = List.singleton <$> maybe_end_terminal
+    Just start_terminal = maybe_start_terminal
+    Just end_terminal = maybe_end_terminal
     Just table = maybe_table
     maybe_start_terminal = List.elemIndex RightTurnstile terminals'
     maybe_end_terminal = List.elemIndex LeftTurnstile terminals'
-    augmented_grammar = augmentGrammar grammar
+    augmented_grammar = augmentGrammar q k grammar
     maybe_table = llpParserTableWithStartsHomomorphisms q k grammar
     terminals' = terminals augmented_grammar
     lookback_type = toTuple $ replicate q "u32"
