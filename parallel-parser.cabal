@@ -102,7 +102,7 @@ test-suite test-parallel-parser
     DeriveGeneric
 
   type:             exitcode-stdio-1.0
-  hs-source-dirs:   test
+  hs-source-dirs:   haskell-tests
   main-is:          Main.hs
   build-depends:
     , HUnit

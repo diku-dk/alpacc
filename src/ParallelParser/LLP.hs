@@ -157,9 +157,11 @@ solveShortestsPrefixTest ::
   State (LlpContext nt t) (Maybe [Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)])
 solveShortestsPrefixTest vj = findM hasPrefix . prefixes
   where
-    a = take 1 vj
     hasPrefix w = do
-      first_set <- useFirst1 (toList w)
+      ctx <- get
+      let k = lookahead ctx
+      let a = take k vj
+      first_set <- useFirst (toList w)
       return $ a `Set.member` first_set
     prefixes = reverse . takeWhile (not . List.null) . iterate init
 
@@ -684,8 +686,9 @@ llTableLlpContext ::
   State (LlpContext nt t) (Maybe (Map (AugmentedNonterminal nt, [AugmentedTerminal t]) Int))
 llTableLlpContext = do
   ctx <- get
+  let k = lookahead ctx
   let prods = productions (theGrammar ctx)
-  tables <- zipWithM tableEntry [0 ..] prods
+  tables <- zipWithM (tableEntry k) [0 ..] prods
   return $ do
     let keys = Map.keysSet <$> tables
     let result = unionsIfDisjoint keys
@@ -693,15 +696,11 @@ llTableLlpContext = do
       Just _ -> Just $ Map.unions tables
       _ -> Nothing
   where
-    tableEntry i (Production nt a) = do
+    tableEntry k i (Production nt a) = do
       first_set <- useFirst a
       follow_set <- useFollow nt
-      let nts = Set.toList follow_set
-      let ts = Set.toList first_set
-      let is_nullable = [] `Set.member` first_set
-      let follow_map = Map.fromList [((nt, y), i) | is_nullable, y <- nts]
-      let first_map = Map.fromList [((nt, y), i) | y <- ts]
-      return $ follow_map `Map.union` first_map
+      let first_follow_prod = toList $ truncatedProduct k first_set follow_set
+      return $ Map.fromList [((nt, y), i) | y <- first_follow_prod]
 
 -- | Performance the parsing described in step 2 of algorithm 13 of the LLP
 -- paper.
@@ -712,37 +711,24 @@ llTableParse ::
   Grammar nt t ->
   [t] ->
   [Symbol nt t] ->
-  Maybe ([t], [Symbol nt t], [Int])
-llTableParse table k grammar a b = auxiliary (a, b, [])
+  ([t], [Symbol nt t], [Int])
+llTableParse table k grammar a b = parse (a, b, [])
   where
     production_map = Map.fromList . zip [0 ..] $ productions grammar
-    auxiliary ([], stack, parsed) = Just ([], stack, reverse parsed)
-    auxiliary (input, [], parsed) = Just (input, [], reverse parsed)
-    auxiliary (x : xs, (Terminal y) : ys, parsed)
-      | x == y = Just ([], ys, reverse parsed)
-      | otherwise = Nothing
-    auxiliary (input, (Nonterminal y) : ys, parsed)
-      | isNothing maybeTuple = Nothing
-      | otherwise = auxiliary (input, production ++ ys, index : parsed)
+    parse (x : xs, (Terminal y) : ys, parsed)
+      | x == y = ([], ys, reverse parsed)
+      | otherwise = error "Internal error during llTableParse."
+    parse (input, (Nonterminal y) : ys, parsed)
+      | isNothing maybeTuple = error "Internal error during llTableParse."
+      | otherwise = parse (input, production ++ ys, index : parsed)
       where
-        keys =
-          filter (`Map.member` table)
-            . fmap (y,)
-            . (++[[]])
-            . takeWhile (not . null)
-            . iterate init
-            $ take k input
-
-        safeHead [] = Nothing
-        safeHead (x : _) = Just x
-
+        Just (index, production) = maybeTuple
         maybeTuple = do
-          key <- safeHead keys
-          index <- key `Map.lookup` table
+          index <- (y, input) `Map.lookup` table
           production <- index `Map.lookup` production_map
           return (index, symbols production)
-
-        Just (index, production) = maybeTuple
+    parse ([], [], parsed) = ([], [], reverse parsed)
+    parse (_, _, _) = error "Internal error during llTableParse."
 
 -- | Creates all the starting pairs which results in the augmented starting
 -- production.
@@ -852,11 +838,11 @@ llpParserTable = do
   maybe_table <- llTableLlpContext
   let Just table = maybe_table
   let llTableParse' = llTableParse table k (theGrammar context)
-  let auxiliary (x, y) alpha = f <$> llTableParse' y alpha
+  let auxiliary (x, y) alpha = f $ llTableParse' y alpha
         where
           f (epsilon, omega, pi) = (alpha, omega, pi)
   collection <- llpCollectionMemo -- llpCollectionMemoParallel -- llpCollection q k (theGrammar context)
-  let psls_table = filterAdmissiblePairs q k grammar $ psls collection
+  let psls_table = psls collection -- filterAdmissiblePairs q k grammar $ 
   let unwrapped = (\[a] -> a) . Set.toList <$> psls_table
   let parsed = Map.mapWithKey auxiliary unwrapped
   is_ambiguous <- isAmbiguous
@@ -864,7 +850,7 @@ llpParserTable = do
         | is_ambiguous = Nothing
         | isNothing maybe_table = Nothing
         | any ((/= 1) . Set.size) psls_table = Nothing
-        | otherwise = sequence parsed
+        | otherwise = Just parsed
   return result
 
 isAmbiguous ::

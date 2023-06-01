@@ -220,8 +220,8 @@ def generate_random_llp_grammar(
             subprocess.check_call(
                 cmd,
                 shell=True,
-                stdout=open(os.devnull, 'wb'),
-                stderr=open(os.devnull, 'wb')
+                # stdout=open(os.devnull, 'wb'),
+                # stderr=open(os.devnull, 'wb')
             )
             could_create = True
         except subprocess.CalledProcessError:
@@ -275,10 +275,14 @@ def parser_test(
     terminal_max = 3
 
     string_combinations = {
-        i: list(itertools.product(range(i), repeat=invalid_string_length))
+        i: list(
+            itertools.chain(*(
+                itertools.product(range(i), repeat=k) 
+                for k in range(1, invalid_string_length)
+                ))
+            )
         for i in range(terminal_min, terminal_max+1)
     }
-
 
     grammars = (
         generate_random_llp_grammar(
@@ -291,7 +295,7 @@ def parser_test(
             no_duplicates=True,
             q=q,
             k=k,
-            quiet=True
+            # quiet=True
         ) for i in range(number_of_grammars)
     )
     error = False
