@@ -27,7 +27,8 @@ module ParallelParser.LL
     firstMap,
     closureAlgorithm,
     leftFactorNonterminals,
-    isLeftRecursive
+    isLeftRecursive,
+    truncatedProduct
   )
 where
 
