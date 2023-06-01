@@ -349,7 +349,6 @@ alphaBeta string
       where
         new_taken = taken ++ [x]
 
-
 -- | Computes the last set with memoization.
 lastMemoized ::
   (Ord nt, Ord t) =>
