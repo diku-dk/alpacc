@@ -220,8 +220,8 @@ def generate_random_llp_grammar(
             subprocess.check_call(
                 cmd,
                 shell=True,
-                # stdout=open(os.devnull, 'wb'),
-                # stderr=open(os.devnull, 'wb')
+                stdout=open(os.devnull, 'wb'),
+                stderr=open(os.devnull, 'wb')
             )
             could_create = True
         except subprocess.CalledProcessError:
@@ -295,7 +295,7 @@ def parser_test(
             no_duplicates=True,
             q=q,
             k=k,
-            # quiet=True
+            quiet=True
         ) for i in range(number_of_grammars)
     )
     error = False
