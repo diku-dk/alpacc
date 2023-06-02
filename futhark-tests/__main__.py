@@ -139,6 +139,186 @@ class Grammar:
                 f'{{{",".join(self.nonterminals)}}},'
                 f'{{{",".join(map(str, self.productions))}}})')
 
+def concat(iterable):
+    result = []
+    for ls in iterable:
+        result.extend(ls)
+    return result
+
+class ExtendedGrammar(Grammar):
+
+    def __init__(self, k: int, start: str, terminals: list[str], nonterminals: list[str], productions: list[Production]) -> None:
+        self.old_start = start
+        self.stopper = '$' * k
+        new_start = '&'
+        new_terminals = concat([['$'], terminals])
+        new_nonterminals = concat([['&'], nonterminals])
+        new_productions = concat([[Production(new_start, concat([[start], list(self.stopper)]))], productions])
+
+        super().__init__(
+            new_start,
+            new_terminals,
+            new_nonterminals,
+            new_productions
+        )
+    
+    @classmethod
+    def extend(ctx, k: int, grammar: Grammar):
+        return ExtendedGrammar(
+            k,
+            grammar.start,
+            grammar.terminals,
+            grammar.nonterminals,
+            grammar.productions
+        )
+
+def truncated_product(k: int, set_a: set[str], set_b: set[str]):
+    return set([(a + b)[:k] for a in list(set_a) for b in list(set_b)])
+
+def every_split(string: str):
+    return set((string[:i], string[i:]) for i in range(1,len(string)))
+
+def alpha_beta(k: int, grammar: Grammar, first_mapping: dict[str: set[set]], string: str):
+    
+    if len(string) == 0:
+        return {''}
+    elif len(string) == 1:
+        if string in grammar.terminals:
+            return {string}
+        else:
+            return first_mapping[string]
+    
+    return unions([
+        truncated_product(
+            k,
+            alpha_beta(k, grammar, first_mapping, a),
+            alpha_beta(k, grammar, first_mapping, b)
+        ) for a, b in every_split(string)
+    ])
+
+def create_first(k: int, grammar: Grammar):
+    final_first_map = first_map(k, grammar)
+    return lambda s: alpha_beta(k, grammar, final_first_map, s)
+
+def unions(iterable):
+    return set().union(*iterable)
+
+def first_map(k: int, grammar: Grammar):
+    init_map = {nt: set() for nt in grammar.nonterminals}
+
+    def auxiliary(first_mapping):
+        new_first_set = lambda s: alpha_beta(k, grammar, first_mapping, s)
+        return {
+            nt: unions(map(new_first_set, grammar.production_map[nt]))
+            for nt in grammar.nonterminals
+        }
+
+    old_map = dict()
+    new_map = init_map
+    while old_map != new_map:
+        old_map = new_map
+        new_map = auxiliary(new_map)
+    
+    return new_map
+
+def right_symbols(grammar: Grammar, string: str):
+
+    result = []
+    for i in range(len(string)):
+        if string[i] in grammar.nonterminals:
+            result.append((string[i], string[1+i:]))
+    return result
+
+def follow_map(k: int, grammar: ExtendedGrammar, first_func):
+    
+    init_map = {nt: set() for nt in grammar.nonterminals}
+    init_map[grammar.start] = {grammar.stopper}
+
+    def auxiliary(follow_mapping):
+        
+        def new_follow_set(nt, pair):
+            return (pair[0], truncated_product(
+            k,
+            first_func(pair[1]),
+            follow_mapping[nt]
+        ))
+
+        def follow_sets(production):
+            new_follow_set_f = lambda s: new_follow_set(production.nonterminal, s)
+            return list(map(new_follow_set_f,
+            right_symbols(grammar, ''.join(production.symbols))
+        ))
+
+        new_sets = concat(map(follow_sets, grammar.productions))
+        result_map = dict(follow_mapping)
+
+        for nt, follow_set in new_sets:
+            result_map[nt] = result_map[nt] | (follow_set)
+
+        return result_map
+
+    old_map = dict()
+    new_map = init_map
+
+    while old_map != new_map:
+        old_map = new_map
+        new_map = auxiliary(new_map)
+    
+    return new_map
+
+class LLParser:
+    
+    def __init__(self, k: int, grammar: Grammar) -> None:
+        self.k = k
+        self.grammar = ExtendedGrammar.extend(k, grammar)
+        self.first = create_first(k, self.grammar)
+        self.follow = follow_map(k, self.grammar, self.first)
+        self.table = self.creat_ll_table()
+
+    def creat_ll_table(self):
+        
+        prods = self.grammar.productions
+
+        def auxiliary(i):
+            symbols = ''.join(prods[i].symbols)
+            nonterminal = prods[i].nonterminal
+            sets = truncated_product(
+                self.k,
+                self.first(symbols),
+                self.follow[nonterminal]
+            )
+            return {
+                (nonterminal, string) : i for string in sets
+            }
+        
+        result_table = dict()
+        keys_set = set()
+        for i in range(len(prods)):
+            sub_table = auxiliary(i)
+            new_keys = set(sub_table.keys())
+            if len(new_keys & keys_set) != 0:
+                return None
+            keys_set |= new_keys
+            result_table.update(sub_table)
+        
+        return result_table
+
+    def parse(self, string):
+        string += self.grammar.stopper
+        prods = []
+        stack = [self.grammar.start]
+
+        while True:
+            if len(string) == 0:
+                return prods[1:]
+            elif stack[0] == string[0]:
+                string = string[1:]
+                stack.pop(0)
+            else:
+                i = self.table[(stack.pop(0), string[:self.k])]
+                stack = self.grammar.productions[i].symbols + stack
+                prods.append(i - 1)
+
 def random_production(
         terminals: list[str],
         nonterminals: list[str],
@@ -319,10 +499,21 @@ def parser_test(
                 valid_string_length
             )
             valid_strings_set = set(map(lambda x: tuple(x[1]), valid_strings))
+            ll_parser = LLParser(k, grammar)
             
             for string, indices in valid_strings:
                 futhark_result = parser.parse(np.array(list(indices)))
-                result = parser.from_futhark(futhark_result)
+                result = list(parser.from_futhark(futhark_result))
+                ll_result = ll_parser.parse(string)
+
+                if result != ll_result:
+                    print(
+                        (f'The string "{string}" from the grammar {grammar} '
+                         f'could not be parsed because the wrong production '
+                         f'sequence. The parser is {name}.fut.')
+                    )
+                    error = True
+                    break
 
                 if len(result) == 0:
                     print(
@@ -359,6 +550,7 @@ def parser_test(
     return error
 
 def main():
+    test_dir = os.path.dirname(__file__)
     assert 0 == subprocess.check_call(
         (f'cd .. && cabal install --installdir={test_dir} '
          '--install-method=copy --enable-executable-stripping '
@@ -401,3 +593,20 @@ if __name__ == '__main__':
     test_dir = os.path.dirname(__file__)
     os.chdir(test_dir)
     main()
+    # grammar = Grammar(
+    #     'T',
+    #     {'a', 'b', 'c'},
+    #     {'T', 'R'},
+    #     [
+    #         Production('T', ['R']),
+    #         Production('T', ['a', 'T', 'c']),
+    #         Production('R', []),
+    #         Production('R', ['b', 'R'])
+    #     ]
+    # )
+    # print(first_map(2, grammar))
+    # print(right_symbols(grammar, ['a', 'T', 'c']))
+    # print(right_symbols(grammar, ['b', 'R']))
+    # print(right_symbols(grammar, []))
+    # ll_parser = LLParser(10, grammar)
+    # print(ll_parser.parse('aabbbcc'))
