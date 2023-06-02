@@ -493,7 +493,9 @@ def parser_test(
                 ffi_parser = build.build(name, name)
 
             ffi_parser.compile(verbose=False, debug=False)
-            parser = Futhark(importlib.import_module(f'_{name}'))
+            ffi_module = importlib.import_module(f'_{name}')
+            ffi_module = importlib.reload(ffi_module)
+            parser = Futhark(ffi_module)
 
             valid_strings = grammar.leftmost_derivations_index(
                 valid_string_length
