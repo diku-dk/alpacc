@@ -60,7 +60,7 @@ jobs:
     - name: Installation
       shell: bash
       run: |
-        sudo apt-get update && sudo apt-get install -y libtinfo-dev libgmp-dev zlib1g-dev python3
+        sudo apt-get update && sudo apt-get install -y libtinfo-dev libgmp-dev zlib1g-dev python3 gcc
         wget http://futhark-lang.org/releases/futhark-0.24.3-linux-x86_64.tar.xz
         tar xf futhark-0.24.3-linux-x86_64.tar.xz
         (cd futhark-0.24.3-linux-x86_64 && PREFIX=$HOME/.local make install)
@@ -98,4 +98,4 @@ jobs:
           --lookahead=3 \
           --valid-size=20 \
           --invalid-size=7
-        futhark test --backend=c -c --no-tuning futhark-tests
+        futhark test -c --no-terminal --no-tuning --backend=c futhark-tests 
