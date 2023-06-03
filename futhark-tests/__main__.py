@@ -4,11 +4,9 @@ import multiprocessing
 import shutil
 import time
 import sys
-import numpy as np
 import itertools
 import subprocess
-import importlib
-from futhark_ffi import Futhark, build
+import argparse
 from typing import Optional
 
 
@@ -444,13 +442,33 @@ def stuck_test_timed(number_of_grammars: int):
 
     return p.exitcode
 
-def parser_test(
+FUTHARK_TEST_HEADER = """-- ==
+-- entry: parse
+"""
+
+def to_futhark_test(inp, out):
+    def to_u32(s):
+        return str(s) + 'u32'
+
+    def to_array(arr):
+        if len(arr) == 0:
+            return 'empty([0]u32)'
+        return f'[{", ".join(map(to_u32, arr))}]'
+
+    return f"""-- input {{ {to_array(inp)} }}
+-- output {{ {to_array(out)} }}
+"""
+
+
+def generate_parser_test(
         valid_string_length: int,
         invalid_string_length: int,
         number_of_grammars: int, 
         q: int,
         k: int
     ):
+    root_name = f'parser_llp{q}{k}'
+
     terminal_min = 2
     terminal_max = 3
 
@@ -458,7 +476,7 @@ def parser_test(
         i: list(
             itertools.chain(*(
                 itertools.product(range(i), repeat=k) 
-                for k in range(1, invalid_string_length)
+                for k in range(1, invalid_string_length+1)
                 ))
             )
         for i in range(terminal_min, terminal_max+1)
@@ -466,7 +484,7 @@ def parser_test(
 
     grammars = (
         generate_random_llp_grammar(
-            f'parser_{i}',
+            f'{root_name}_{i}',
             random.randint(2, 3),
             random.randint(2, 3),
             random.randint(2, 5),
@@ -478,135 +496,82 @@ def parser_test(
             quiet=True
         ) for i in range(number_of_grammars)
     )
-    error = False
 
     for name, grammar in grammars:
-        with DeleteNew():
-            assert 0 == subprocess.check_call(
-                f'futhark c --library {name}.fut',
-                shell=True,
-                stdout=open(os.devnull, 'wb'),
-                stderr=open(os.devnull, 'wb')
-            ), 'The parser could not be compiled.'
-
-            with Mute():
-                ffi_parser = build.build(name, name)
-
-            ffi_parser.compile(verbose=False, debug=False)
-            parser = Futhark(importlib.import_module(f'_{name}'))
-
-            valid_strings = grammar.leftmost_derivations_index(
-                valid_string_length
-            )
-            valid_strings_set = set(map(lambda x: tuple(x[1]), valid_strings))
-            ll_parser = LLParser(k, grammar)
-            
+        valid_strings = grammar.leftmost_derivations_index(
+            valid_string_length
+        )
+        valid_strings_set = set(map(lambda x: tuple(x[1]), valid_strings))
+        ll_parser = LLParser(k, grammar)
+        
+        with open(f'{name}.fut', 'a') as fp:
+            fp.write(f'\n{FUTHARK_TEST_HEADER}')
             for string, indices in valid_strings:
-                futhark_result = parser.parse(np.array(list(indices)))
-                result = list(parser.from_futhark(futhark_result))
-                ll_result = ll_parser.parse(string)
-
-                if result != ll_result:
-                    print(
-                        (f'The string "{string}" from the grammar {grammar} '
-                         f'could not be parsed because the wrong production '
-                         f'sequence. The parser is {name}.fut.')
-                    )
-                    error = True
-                    break
-
-                if len(result) == 0:
-                    print(
-                        (f'The string "{string}" from the grammar {grammar} '
-                         f'could not be parsed. The parser is {name}.fut.')
-                    )
-                    error = True
-                    break
+                expected = ll_parser.parse(string)
+                fp.write(f'{to_futhark_test(indices, expected)}')
             
             for indices in string_combinations[len(grammar.nonterminals)]:
                 if indices in valid_strings_set:
                     continue
-
-                futhark_result = parser.parse(np.array(list(indices)))
-                result = parser.from_futhark(futhark_result)
-                if len(result) != 0:
-                    string = ''.join([grammar.terminals[i] for i in indices])
-                    
-                    print(
-                        (f'The string "{string}" could be parsed by the '
-                         f'parser generated from the grammar {grammar} which '
-                         f'should not happen. The parser is {name}.fut.')
-                    )
-                    error = True
-                    break
-
-            del sys.modules[f'_{name}']
-    
-    if error:
-        print("Parsing tests failed.")
-    else:
-        print("Parsing tests succeeded.")
-
-    return error
+                
+                fp.write(f'{to_futhark_test(indices, [])}')
 
 def main():
     test_dir = os.path.dirname(__file__)
+
+    parser = argparse.ArgumentParser(
+                    prog='ParallelParserTester',
+                    description='Program for testing the Futhark parsers')
+
+    parser.add_argument('-t', '--test-type')
+    parser.add_argument('-q', '--lookback', type=int)
+    parser.add_argument('-k', '--lookahead', type=int)
+    parser.add_argument('-s', '--grammar-size', type=int)
+    parser.add_argument('-v', '--valid-size', type=int)
+    parser.add_argument('-i', '--invalid-size', type=int)
+
+    args = parser.parse_args()
+
+    assert 0 == subprocess.check_call(
+        'futhark pkg add github.com/diku-dk/sorts && futhark pkg sync',
+        shell=True
+    ), "Futharks sorts lib could not be retrieved."
+
     assert 0 == subprocess.check_call(
         (f'cd .. && cabal install --installdir={test_dir} '
          '--install-method=copy --enable-executable-stripping '
          '--overwrite-policy=always'),
         shell=True
     ), "Could not compile the parallel parser generator."
+
     assert os.path.exists(
         './parallel-parser'
     ), "The parallel-parser binaries does not exists."
-    # assert 0 == stuck_test_timed(
-    #     number_of_grammars=1000
-    # ), "The parser probably got stuck while creating some grammar."
-    # assert not parser_test(
-    #     valid_string_length=20,
-    #     invalid_string_length=10,
-    #     number_of_grammars=100,
-    #     q=1,
-    #     k=1
-    # ), "Not all tested strings for some grammar could be parsed."
-    assert not parser_test(
-        valid_string_length=20,
-        invalid_string_length=10,
-        number_of_grammars=100,
-        q=2,
-        k=2
-    ), "Not all tested strings for some grammar could be parsed."
 
-# Problem grammars.
-# (I,{k,y},{I,F},{I -> y,F -> ,I -> k F k,F -> k})
-# (H,{k,y},{H,R},{H -> k y,R -> H y,R -> y,R -> k k,H -> y k R,R -> })
-# (X,{t,l},{T,S,X},{T -> l,S -> ,X -> l T,S -> l,T -> S l l})
-# (A,{y,j},{A,Y,E},{A -> y j Y j,Y -> j,E -> j j A,E -> y Y j,A -> j j,Y -> ,Y -> y y})
-# (I,{h,u,t},{I,T},{I -> h t h t u,T -> h t u,T -> ,I -> u t T h h})
-# (K,{h,r,g},{K,V},{K -> g r,V -> K g g r g,K -> h r r V h,V -> })
-# (B,{d,z,w},{W,B},{W -> z,B -> d,B -> z W z z,W -> ,W -> w d w})
-# (M,{j,e,p},{M,R},{M -> j,R -> p,M -> p,M -> e R p,R -> })
-# (U,{b,q},{U,R},{U -> q R b b q,R -> b,R -> ,U -> b q b b b,R -> q})
+    assert args.test_type is not None, "test-type must be set."
+    assert args.grammar_size is not None, "grammar-size must be set."
+
+    if args.test_type == 'stuck':
+        assert 0 == stuck_test_timed(
+            number_of_grammars=args.grammar_size
+        ), "The parser probably got stuck while creating some grammar."
+    elif args.test_type == 'parse':
+        assert args.valid_size is not None, "valid-size must be set."
+        assert args.invalid_size is not None, "invalid-size must be set."
+        assert args.lookback is not None, "lookback must be set."
+        assert args.lookahead is not None, "lookahead must be set."
+        generate_parser_test(
+            valid_string_length=args.valid_size,
+            invalid_string_length=args.invalid_size,
+            number_of_grammars=args.grammar_size,
+            q=args.lookback,
+            k=args.lookahead
+        )
+        print('The tests have been generated.')
+    else:
+        raise Exception(f'"{args.test_type}" is not a test type.')
 
 if __name__ == '__main__':
     test_dir = os.path.dirname(__file__)
     os.chdir(test_dir)
     main()
-    # grammar = Grammar(
-    #     'T',
-    #     {'a', 'b', 'c'},
-    #     {'T', 'R'},
-    #     [
-    #         Production('T', ['R']),
-    #         Production('T', ['a', 'T', 'c']),
-    #         Production('R', []),
-    #         Production('R', ['b', 'R'])
-    #     ]
-    # )
-    # print(first_map(2, grammar))
-    # print(right_symbols(grammar, ['a', 'T', 'c']))
-    # print(right_symbols(grammar, ['b', 'R']))
-    # print(right_symbols(grammar, []))
-    # ll_parser = LLParser(10, grammar)
-    # print(ll_parser.parse('aabbbcc'))
