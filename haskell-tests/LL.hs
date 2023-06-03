@@ -171,17 +171,29 @@ firstMemokTestCase grammar' k = TestCase $ assertEqual [i|First k=#{k} set test|
 
 firstMemokTestCases grammar' m = [firstMemokTestCase grammar' k | k <- [1..m]]
 
-extendedGrammarDerivations10 = derivableNLengths 20 extendedGrammar
+extendedGrammarDerivations20 = derivableNLengths 20 extendedGrammar
+
+extendedGrammarNotDerivations3 = nonderivableNLengths 3 extendedGrammar
 
 canParseDerivedTestCase k = TestCase $ assertEqual text expected result
   where
-    text = [i|Can parse derived strings og length 10 with LL(#{k}) parser|]
+    text = [i|Can parse derived strings of length 20 with LL(#{k}) parser|]
     expected = True
-    result = all isJust $ llkParse' `Set.map` extendedGrammarDerivations10 
+    result = all isJust $ llkParse' `Set.map` extendedGrammarDerivations20 
     start' = Nonterminal $ start extendedGrammar
     llkParse' a = llParse k extendedGrammar (a, [start'], [])
 
-canParseDerivedTestCases = [canParseDerivedTestCase k | k <- [1..10]]
+canNotParseNonderivableTestCase k = TestCase $ assertEqual text expected result
+  where
+    text = [i|Can not parse nonderivable strings of length 3 with LL(#{k}) parser|]
+    expected = True
+    result = all isNothing $ llkParse' `Set.map` extendedGrammarNotDerivations3 
+    start' = Nonterminal $ start extendedGrammar
+    llkParse' a = llParse k extendedGrammar (a, [start'], [])
+
+canParseDerivedTestCases = [canParseDerivedTestCase k | k <- [1..5]]
+
+canNotParseNonderivableTestCases = [canNotParseNonderivableTestCase k | k <- [1..5]]
 
 tests =
   TestLabel "LL(k) tests" $
@@ -199,3 +211,4 @@ tests =
         ++ firstMemokTestCases bookGrammar 4
         ++ canParseDerivedTestCases
         ++ llkParseTestCases
+        ++ canNotParseNonderivableTestCases
