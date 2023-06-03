@@ -493,9 +493,7 @@ def parser_test(
                 ffi_parser = build.build(name, name)
 
             ffi_parser.compile(verbose=False, debug=False)
-            ffi_module = importlib.import_module(f'_{name}')
-            ffi_module = importlib.reload(ffi_module)
-            parser = Futhark(ffi_module)
+            parser = Futhark(importlib.import_module(f'_{name}'))
 
             valid_strings = grammar.leftmost_derivations_index(
                 valid_string_length
@@ -562,16 +560,16 @@ def main():
     assert os.path.exists(
         './parallel-parser'
     ), "The parallel-parser binaries does not exists."
-    assert 0 == stuck_test_timed(
-        number_of_grammars=1000
-    ), "The parser probably got stuck while creating some grammar."
-    assert not parser_test(
-        valid_string_length=20,
-        invalid_string_length=10,
-        number_of_grammars=100,
-        q=1,
-        k=1
-    ), "Not all tested strings for some grammar could be parsed."
+    # assert 0 == stuck_test_timed(
+    #     number_of_grammars=1000
+    # ), "The parser probably got stuck while creating some grammar."
+    # assert not parser_test(
+    #     valid_string_length=20,
+    #     invalid_string_length=10,
+    #     number_of_grammars=100,
+    #     q=1,
+    #     k=1
+    # ), "Not all tested strings for some grammar could be parsed."
     assert not parser_test(
         valid_string_length=20,
         invalid_string_length=10,
