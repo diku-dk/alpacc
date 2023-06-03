@@ -35,42 +35,67 @@ jobs:
       - name: Run tests
         run: cabal test all
   
-  # futhark-test:
-  #   runs-on: ubuntu-22.04
-  # 
-  #   steps:
-  #   - uses: actions/checkout@v3
-  # 
-  #   - name: Set up GHC 9.2.7
-  #     uses: haskell/actions/setup@v2
-  #     id: setup
-  #     with:
-  #       ghc-version: '9.2.7'
-  #       cabal-version: '3.10.1.0'
-  #       cabal-update: true
-  # 
-  #   - name: Installed versions of GHC and Cabal
-  #     shell: bash
-  #     run: |
-  #       GHC_VERSION=$(ghc --numeric-version)
-  #       CABAL_VERSION=$(cabal --numeric-version)
-  #       echo "GHC_VERSION=${GHC_VERSION}"     >> "${GITHUB_ENV}"
-  #       echo "CABAL_VERSION=${CABAL_VERSION}" >> "${GITHUB_ENV}"
-  # 
-  #   - name: Installation
-  #     shell: bash
-  #     run: |
-  #       sudo apt-get update && sudo apt-get install -y libtinfo-dev libgmp-dev zlib1g-dev python3 pip
-  #       pip install --upgrade pip
-  #       pip install -r futhark-tests/requirements.txt
-  #       wget http://futhark-lang.org/releases/futhark-0.24.3-linux-x86_64.tar.xz
-  #       tar xf futhark-0.24.3-linux-x86_64.tar.xz
-  #       (cd futhark-0.24.3-linux-x86_64 && PREFIX=$HOME/.local make install)
-  #       echo "$HOME/.local/bin" >> $GITHUB_PATH
-  #       futhark --version
-  # 
-  #   - name: Run tests
-  #     shell: bash
-  #     run:  |
-  #       chmod +x futhark-tests.sh 
-  #       ./futhark-tests.sh
+  futhark-test:
+    runs-on: ubuntu-22.04
+  
+    steps:
+    - uses: actions/checkout@v3
+  
+    - name: Set up GHC 9.2.7
+      uses: haskell/actions/setup@v2
+      id: setup
+      with:
+        ghc-version: '9.2.7'
+        cabal-version: '3.10.1.0'
+        cabal-update: true
+  
+    - name: Installed versions of GHC and Cabal
+      shell: bash
+      run: |
+        GHC_VERSION=$(ghc --numeric-version)
+        CABAL_VERSION=$(cabal --numeric-version)
+        echo "GHC_VERSION=${GHC_VERSION}"     >> "${GITHUB_ENV}"
+        echo "CABAL_VERSION=${CABAL_VERSION}" >> "${GITHUB_ENV}"
+  
+    - name: Installation
+      shell: bash
+      run: |
+        sudo apt-get update && sudo apt-get install -y libtinfo-dev libgmp-dev zlib1g-dev python3
+        wget http://futhark-lang.org/releases/futhark-0.24.3-linux-x86_64.tar.xz
+        tar xf futhark-0.24.3-linux-x86_64.tar.xz
+        (cd futhark-0.24.3-linux-x86_64 && PREFIX=$HOME/.local make install)
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+        futhark --version
+  
+    - name: Run stuck test
+      shell: bash
+      run:  |
+        python3 futhark-tests \
+          --test-type=stuck \
+          --grammar-size=1000
+    
+    - name: Run parse test
+      shell: bash
+      run:  |
+        python3 futhark-tests \
+          --test-type=parse \
+          --grammar-size=100 \
+          --lookback=1 \
+          --lookahead=1 \
+          --valid-size=20 \
+          --invalid-size=7 & \
+        python3 futhark-tests \
+          --test-type=parse \
+          --grammar-size=100 \
+          --lookback=2 \
+          --lookahead=2 \
+          --valid-size=20 \
+          --invalid-size=7 & \
+        python3 futhark-tests \
+          --test-type=parse \
+          --grammar-size=100 \
+          --lookback=3 \
+          --lookahead=3 \
+          --valid-size=20 \
+          --invalid-size=7 & wait
+        futhark test --backend=multicore futhark-tests
