@@ -83,19 +83,19 @@ jobs:
           --lookback=1 \
           --lookahead=1 \
           --valid-size=20 \
-          --invalid-size=7 & \
+          --invalid-size=7
         python3 futhark-tests \
           --test-type=parse \
           --grammar-size=100 \
           --lookback=2 \
           --lookahead=2 \
           --valid-size=20 \
-          --invalid-size=7 & \
+          --invalid-size=7
         python3 futhark-tests \
           --test-type=parse \
           --grammar-size=100 \
           --lookback=3 \
           --lookahead=3 \
           --valid-size=20 \
-          --invalid-size=7 & wait
-        futhark test --backend=multicore futhark-tests
+          --invalid-size=7
+        futhark test --backend=c -c --no-tuning futhark-tests
