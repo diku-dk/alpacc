@@ -540,22 +540,33 @@ before q grammar = Set.map reverse . (befores Map.!)
     befores = followMap q $ reverseGrammar grammar
 
 -- | Creates a LL(k) table for a given grammar.
-llTable :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> Map (nt, [t]) Int
-llTable k grammar = Map.union first_table follow_table
+llTable :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> Maybe (Map (nt, [t]) Int)
+llTable k grammar = do
+    let keys = Map.keysSet <$> tables
+    let result = unionsIfDisjoint keys
+    case result of
+      Just _ -> Just $ Map.unions tables
+      _ -> Nothing
   where
-    first_table = Map.unions $ zipWith firstEntry [0 ..] prods
-    follow_table = Map.unions $ zipWith followEntry [0 ..] prods
+    first'' = first k grammar
+    follow'' = follow k grammar
     prods = productions grammar
-    first' = first k grammar
-    firstEntry i (Production nt a) = Map.fromList [((nt, y), i) | y <- ts]
+    tables = zipWith (tableEntry k) [0 ..] prods
+    tableEntry k i (Production nt a) = Map.fromList [((nt, y), i) | y <- first_follow_prod]
       where
-        ts = Set.toList . Set.filter (not . null) $ first' a
-    follow' = follow k grammar
-    followEntry i (Production nt a) =
-      Map.fromList [((nt, y), i) | is_nullable, y <- nts]
-      where
-        nts = Set.toList . Set.filter (not . null) $ follow' nt
-        is_nullable = [] `Set.member` first' a
+        first_set = first'' a
+        follow_set = follow'' nt
+        first_follow_prod = toList $ truncatedProduct k first_set follow_set
+        is_nullable = [] `Set.member` first'' a
+
+unionIfDisjoint :: Ord a => Set a -> Set a -> Maybe (Set a)
+unionIfDisjoint a b = 
+  if a `Set.disjoint` b
+    then Just $ a `Set.union` b
+    else Nothing 
+
+unionsIfDisjoint :: Ord a =>  [Set a] -> Maybe (Set a)
+unionsIfDisjoint = foldM unionIfDisjoint Set.empty
 
 -- | Given a 3-tuple where the first element is the input string, the second is
 -- the current push down store and the third element is the productions used.
@@ -568,37 +579,25 @@ llParse ::
   Grammar nt t ->
   ([t], [Symbol nt t], [Int]) ->
   Maybe ([t], [Symbol nt t], [Int])
-llParse k grammar = auxiliary
+llParse k grammar = parse
   where
-    table = llTable k grammar
+    Just table = llTable k grammar
     production_map = Map.fromList . zip [0 ..] $ productions grammar
-    auxiliary ([], stack, parsed) = Just ([], stack, reverse parsed)
-    auxiliary (input, [], parsed) = Just (input, [], reverse parsed)
-    auxiliary (x : xs, (Terminal y) : ys, parsed)
-      | x == y = auxiliary (xs, ys, parsed)
+    parse (x : xs, (Terminal y) : ys, parsed)
+      | x == y = parse (xs, ys, parsed)
       | otherwise = Nothing
-    auxiliary (input, (Nonterminal y) : ys, parsed)
-      | null keys = Nothing
+    parse (input, (Nonterminal y) : ys, parsed)
       | isNothing maybeTuple = Nothing
-      | otherwise = auxiliary (input, production ++ ys, index : parsed)
+      | otherwise = parse (input, production ++ ys, index : parsed)
       where
-        keys =
-          filter (`Map.member` table)
-            . fmap (y,)
-            . takeWhile (not . null)
-            . iterate init
-            $ take k input
-
-        safeHead [] = Nothing
-        safeHead (x:_) = Just x
-
         maybeTuple = do
-          key <- safeHead keys
-          index <- key `Map.lookup` table
+          index <- (y, take k input) `Map.lookup` table
           production <- index `Map.lookup` production_map
           return (index, symbols production)
 
         Just (index, production) = maybeTuple
+    parse ([], [], parsed) = Just ([], [], reverse parsed)
+    parse (_, _, _) = Nothing
 
 -- https://zerobone.net/blog/cs/non-productive-cfg-rules/
 closureAlgorithm :: (Ord nt, Ord t, Show nt, Show t) => Grammar nt t -> Set nt
