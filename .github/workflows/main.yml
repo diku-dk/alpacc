@@ -98,4 +98,4 @@ jobs:
           --lookahead=3 \
           --valid-size=20 \
           --invalid-size=7 & wait
-        futhark test -c --no-terminal --no-tuning --backend=c futhark-tests 
+        futhark test -c --no-terminal --no-tuning --backend=c futhark-tests/*.fut
