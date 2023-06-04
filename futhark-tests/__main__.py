@@ -537,30 +537,31 @@ def main():
 
     args = parser.parse_args()
 
-    assert 0 == subprocess.check_call(
-        'futhark pkg add github.com/diku-dk/sorts && futhark pkg sync',
-        shell=True
-    ), "Futharks sorts lib could not be retrieved."
-
-    assert 0 == subprocess.check_call(
-        (f'cd .. && cabal install --installdir={test_dir} '
-         '--install-method=copy --enable-executable-stripping '
-         '--overwrite-policy=always'),
-        shell=True
-    ), "Could not compile the parallel parser generator."
-
-    assert os.path.exists(
-        './parallel-parser'
-    ), "The parallel-parser binaries does not exists."
-
     assert args.test_type is not None, "test-type must be set."
-    assert args.grammar_size is not None, "grammar-size must be set."
 
-    if args.test_type == 'stuck':
+    if args.test_type == 'setup':
+        assert 0 == subprocess.check_call(
+            'futhark pkg add github.com/diku-dk/sorts && futhark pkg sync',
+            shell=True
+        ), "Futharks sorts lib could not be retrieved."
+
+        assert 0 == subprocess.check_call(
+            (f'cd .. && cabal install --installdir={test_dir} '
+            '--install-method=copy --enable-executable-stripping '
+            '--overwrite-policy=always'),
+            shell=True
+        ), "Could not compile the parallel parser generator."
+
+        assert os.path.exists(
+            './parallel-parser'
+        ), "The parallel-parser binaries does not exists."
+    elif args.test_type == 'stuck':
+        assert args.grammar_size is not None, "grammar-size must be set."
         assert 0 == stuck_test_timed(
             number_of_grammars=args.grammar_size
         ), "The parser probably got stuck while creating some grammar."
     elif args.test_type == 'parse':
+        assert args.grammar_size is not None, "grammar-size must be set."
         assert args.valid_size is not None, "valid-size must be set."
         assert args.invalid_size is not None, "invalid-size must be set."
         assert args.lookback is not None, "lookback must be set."
