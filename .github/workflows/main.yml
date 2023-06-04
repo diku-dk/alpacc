@@ -110,9 +110,9 @@ jobs:
       shell: bash
       run: |
         sudo apt-get update && sudo apt-get install -y libtinfo-dev libgmp-dev zlib1g-dev python3 gcc
-        wget http://futhark-lang.org/releases/futhark-0.24.3-linux-x86_64.tar.xz
-        tar xf futhark-0.24.3-linux-x86_64.tar.xz
-        (cd futhark-0.24.3-linux-x86_64 && PREFIX=$HOME/.local make install)
+        wget http://futhark-lang.org/releases/futhark-0.23.1-linux-x86_64.tar.xz
+        tar xf futhark-0.23.1-linux-x86_64.tar.xz
+        (cd futhark-0.23.1-linux-x86_64 && PREFIX=$HOME/.local make install)
         echo "$HOME/.local/bin" >> $GITHUB_PATH
         futhark --version
         cd small-test
