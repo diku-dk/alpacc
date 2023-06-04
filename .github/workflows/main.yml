@@ -41,6 +41,11 @@ jobs:
     steps:
     - uses: actions/checkout@v3
   
+    - name: Install Futhark
+    - uses: diku-dk/install-futhark@v1.1.0
+        with:
+          version: 'nightly'
+  
     - name: Set up GHC 9.2.7
       uses: haskell/actions/setup@v2
       id: setup
@@ -57,26 +62,21 @@ jobs:
         echo "GHC_VERSION=${GHC_VERSION}"     >> "${GITHUB_ENV}"
         echo "CABAL_VERSION=${CABAL_VERSION}" >> "${GITHUB_ENV}"
   
-    - name: Installation
+    - name: Setup test
       shell: bash
       run: |
-        sudo apt-get update && sudo apt-get install -y libtinfo-dev libgmp-dev zlib1g-dev python3 gcc
-        wget http://futhark-lang.org/releases/futhark-0.23.1-linux-x86_64.tar.xz
-        tar xf futhark-0.23.1-linux-x86_64.tar.xz
-        (cd futhark-0.23.1-linux-x86_64 && PREFIX=$HOME/.local make install)
-        echo "$HOME/.local/bin" >> $GITHUB_PATH
-        futhark --version
-  
+        python3 futhark-tests --test-type=setup
+
     - name: Run stuck test
       shell: bash
-      run:  |
+      run: |
         python3 futhark-tests \
           --test-type=stuck \
           --grammar-size=1000
     
     - name: Run parse test
       shell: bash
-      run:  |
+      run: |
         python3 futhark-tests \
           --test-type=parse \
           --grammar-size=100 \
