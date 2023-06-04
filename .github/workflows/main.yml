@@ -43,8 +43,8 @@ jobs:
   
     - name: Install Futhark
     - uses: diku-dk/install-futhark@v1.1.0
-        with:
-          version: 'nightly'
+      with:
+        version: 'nightly'
   
     - name: Set up GHC 9.2.7
       uses: haskell/actions/setup@v2
