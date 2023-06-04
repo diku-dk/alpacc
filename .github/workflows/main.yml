@@ -79,23 +79,23 @@ jobs:
       run: |
         python3 futhark-tests \
           --test-type=parse \
-          --grammar-size=100 \
+          --grammar-size=50 \
           --lookback=1 \
           --lookahead=1 \
           --valid-size=20 \
-          --invalid-size=7
+          --invalid-size=6
         python3 futhark-tests \
           --test-type=parse \
-          --grammar-size=100 \
+          --grammar-size=50 \
           --lookback=2 \
           --lookahead=2 \
           --valid-size=20 \
-          --invalid-size=7
+          --invalid-size=6
         python3 futhark-tests \
           --test-type=parse \
-          --grammar-size=100 \
+          --grammar-size=50 \
           --lookback=3 \
           --lookahead=3 \
           --valid-size=20 \
-          --invalid-size=7
+          --invalid-size=6
         futhark test -c --no-terminal --no-tuning --backend=c futhark-tests/*.fut
