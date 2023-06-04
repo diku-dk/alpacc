@@ -112,14 +112,19 @@ class Grammar:
         while 0 < len(queue):
             (idx, item) = queue.pop()
 
-            if item[:k] in visisted:
+            if item[:k + 1] in visisted:
                 continue
 
-            visisted.add(item[:k])
+            visisted.add(item[:k + 1])
 
             if all(map(lambda s: s in self.terminals, item)):
+
+                if len(item) > k:
+                    continue
+
                 derivable.add(item)
                 continue
+
 
             queue.extend(self.left_derive(idx, item))
         
