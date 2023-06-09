@@ -2,7 +2,9 @@
     A,
     {a, b},
     {A, B},
-    {A -> a b b B,
-     B -> b,
-     B -> A}
+    {
+        A -> a b b B,
+        B -> b,
+        B -> A
+    }
 )
