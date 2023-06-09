@@ -1,5 +1,5 @@
 # Revision history for parallel-parser
 
-## 0.1.0.0 -- YYYY-mm-dd
+## 0.1.0.0 -- 2023-06-09
 
-* First version. Released on an unsuspecting world.
+* This is the initial version of the parser generator.

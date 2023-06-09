@@ -1,21 +1,16 @@
 cabal-version:      2.4
 name:               parallel-parser
 version:            0.1.0.0
-synopsis:
+synopsis:           A parallel LL parser generator.
 
 -- A longer description of the package.
 -- description:
-homepage:
-
--- A URL where users can report bugs.
--- bug-reports:
+homepage:           https://github.com/diku-dk/parallel-parser
+bug-reports:        https://github.com/diku-dk/parallel-parser/issues
 license:            MIT
 license-file:       LICENSE
 author:             William Due
 maintainer:         williamhenrichdue@gmail.com
-
--- A copyright notice.
--- copyright:
 category:           Language
 extra-source-files: CHANGELOG.md
 
