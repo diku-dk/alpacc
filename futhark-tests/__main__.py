@@ -383,6 +383,7 @@ def generate_random_llp_grammar(
         no_duplicates: bool = True,
         quiet: bool = False):
     
+    generated_count = 0
     while True:
         filename = f'{name}.fut'
         grammar = generate_grammar(
@@ -409,32 +410,41 @@ def generate_random_llp_grammar(
             could_create = True
         except subprocess.CalledProcessError:
             pass
+        
 
+        generated_count += 1
+        
         if os.path.exists(f'{filename}') and could_create:
             if not quiet:
                 print(f'{filename} contains a parser for the grammar: {grammar}.')
-            return name, grammar
+            return name, grammar, generated_count
 
-def stuck_test(number_of_grammars: int):
+def stuck_test(number_of_grammars: int, q: int = 1, k: int = 1):
+    count = 0
     for i in range(number_of_grammars):
         with DeleteNew():
             filename = f'temp_{i}'
-            generate_random_llp_grammar(
+            _, _, generated_count = generate_random_llp_grammar(
                 filename,
                 3,
                 3,
                 3,
                 3,
-                no_direct_left_recursion=True,
-                no_duplicates=True
+                q=q,
+                k=k,
+                no_direct_left_recursion=False,
+                no_duplicates=False
             )
+            count += generated_count
         time.sleep(0.05)
+    acceptance_percent = 100 * number_of_grammars / count
+    print(f'{acceptance_percent:.02f}% of grammars were accepted.')
 
-def stuck_test_timed(number_of_grammars: int):
+def stuck_test_timed(number_of_grammars: int, q: int = 1, k: int = 1):
     p = multiprocessing.Process(
         target=stuck_test,
         name="stuck_check",
-        args=(number_of_grammars,)
+        args=(number_of_grammars, q, k)
         )
     p.start()
     p.join(18000) # 5 hours.
@@ -502,7 +512,7 @@ def generate_parser_test(
         ) for i in range(number_of_grammars)
     )
 
-    for name, grammar in grammars:
+    for name, grammar, _ in grammars:
         valid_strings = grammar.leftmost_derivations_index(
             valid_string_length
         )
@@ -557,8 +567,12 @@ def main():
         ), "The parallel-parser binaries does not exists."
     elif args.test_type == 'stuck':
         assert args.grammar_size is not None, "grammar-size must be set."
+        assert args.lookback is not None, "lookback must be set."
+        assert args.lookahead is not None, "lookahead must be set."
         assert 0 == stuck_test_timed(
-            number_of_grammars=args.grammar_size
+            number_of_grammars=args.grammar_size,
+            q=args.lookback,
+            k=args.lookahead
         ), "The parser probably got stuck while creating some grammar."
     elif args.test_type == 'parse':
         assert args.grammar_size is not None, "grammar-size must be set."

@@ -845,33 +845,11 @@ llpParserTable = do
   let psls_table = psls collection -- filterAdmissiblePairs q k grammar $ 
   let unwrapped = (\[a] -> a) . Set.toList <$> psls_table
   let parsed = Map.mapWithKey auxiliary unwrapped
-  is_ambiguous <- isAmbiguous
   let result
-        | is_ambiguous = Nothing
         | isNothing maybe_table = Nothing
         | any ((/= 1) . Set.size) psls_table = Nothing
         | otherwise = Just parsed
   return result
-
-isAmbiguous ::
-  (Ord nt, Ord t, Show nt, Show t, NFData t, NFData nt) =>
-  State (LlpContext nt t) Bool
-isAmbiguous = do
-  ctx <- get
-  let grammar = theGrammar ctx
-  let prods = productions grammar
-  let prods_map = toProductionsMap prods
-  let isNullable = nullable grammar
-  let nullable_prods_map = List.filter isNullable <$> prods_map
-  let nullable_prods_count_map = List.length <$> nullable_prods_map
-  let over_one_nullable_prod = any (1<) nullable_prods_count_map
-  first_set_map <- mapM (mapM useFirst) prods_map
-  let firsts_union = unionsIfDisjoint <$> first_set_map
-  let overlapping_first_sets = any isNothing firsts_union
-  let not_nullable_prods_map  = List.filter (not . isNullable) <$> prods_map
-  return $
-    over_one_nullable_prod ||
-    overlapping_first_sets
 
 -- | Given a lsit create all the pairs with q lookback and k lookahead which
 -- will be used as keys in the table.

@@ -22,7 +22,7 @@ cabal run parallel-parser -- grammars/paper_grammar.cg -q 1 -k 1
 ```
 This will create the Futhark source file `paper_grammar.fut` which contains the actual parser which is a function `parse`. This function takes as input an array of indexes assigned to terminals and maps this to an array of indexes assigned to the productions. The indexes are assigned in the order they are defined. For this example the indexes for the terminals would be `0` is `a`, `1` is `b`, `2` is `c` and `3` is `$`. For the productions `0` is `T' -> T $`, `1` is `T -> R`, `2` is `T -> a T c`, `3` is `R -> `, `4` is `R -> b R`.
 
-A leftmost derivable string from this grammar is `aabbbcc$` which corresponds to the indexes `[0, 0, 1, 1, 1, 2, 2, 3]`. When parsing this array the resulting productions sequence is `[0, 2, 2, 1, 4, 4, 4, 3]`.
+A leftmost derivable string from this grammar is `aabbbcc$` which corresponds to the indexes `[0, 0, 1, 1, 1, 2, 2, 3]`. When parsing this array the resulting production sequence is `[0, 2, 2, 1, 4, 4, 4, 3]`.
 
 If an input is given that cannot be parsed then the empty array is returned.
 
