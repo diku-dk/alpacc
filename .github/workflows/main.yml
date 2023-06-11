@@ -72,7 +72,9 @@ jobs:
       run: |
         python3 futhark-tests \
           --test-type=stuck \
-          --grammar-size=1000
+          --grammar-size=1000 \
+          --lookback=1 \
+          --lookahead=1
     
     - name: Run parse test
       shell: bash
