@@ -28,7 +28,8 @@ module ParallelParser.LL
     closureAlgorithm,
     leftFactorNonterminals,
     isLeftRecursive,
-    truncatedProduct
+    truncatedProduct,
+    llTableM
   )
 where
 
@@ -314,6 +315,13 @@ data AlphaBetaMemoizedContext nt t = AlphaBetaMemoizedContext
     look :: Int
   } deriving (Generic)
 
+instance (Ord t, Ord nt) => Semigroup (AlphaBetaMemoizedContext nt t) where
+  a <> b = a { alphaBetaState = new_state }
+    where
+      a_state = alphaBetaState a
+      b_state = alphaBetaState b
+      new_state = Map.unionWith Set.union a_state b_state
+
 instance (NFData t, NFData nt) => NFData (AlphaBetaMemoizedContext nt t)
 
 -- | Creates the initial context used for the memoized first function.
@@ -559,6 +567,27 @@ llTable k grammar = do
         first_follow_prod = toList $ truncatedProduct k first_set follow_set
         is_nullable = [] `Set.member` first'' a
 
+-- | Creates a LL(k) table for a given grammar.
+llTableM :: (Ord nt, Ord t, Show nt, Show t) =>
+  Int ->
+  Grammar nt t ->
+  (nt -> Set [t]) ->
+  State (AlphaBetaMemoizedContext nt t) (Maybe (Map (nt, [t]) Int))
+llTableM k grammar follow'' = do
+    let prods = productions grammar
+    tables <- zipWithM (tableEntry k) [0..] prods
+    let table = Map.unionsWith Set.union tables
+    let unwrapped = head . Set.toList <$> table
+    return $ if any ((>1) . Set.size) table
+      then Nothing
+      else Just unwrapped
+    where
+      tableEntry k i (Production nt a) = do
+        first_set <- useFirst a
+        let follow_set = follow'' nt
+        let first_follow_prod = toList $ truncatedProduct k first_set follow_set
+        return $ Map.fromList [((nt, y), Set.singleton i) | y <- first_follow_prod]
+
 unionIfDisjoint :: Ord a => Set a -> Set a -> Maybe (Set a)
 unionIfDisjoint a b = 
   if a `Set.disjoint` b
@@ -632,9 +661,7 @@ isLeftRecursive :: (Ord nt, Ord t, Show nt, Show t) => Grammar nt t -> Bool
 isLeftRecursive grammar = isNothing $ foldM dfs unmarked_map nonterminals'
   where
     nonterminals' = nonterminals grammar
-    leftmostDerive' = leftmostDerive grammar
     nullableOne' = nullableOne grammar
-    toNTSingleton = Set.singleton . unpackNonterminal . head
     left_rec_graph = Map.unionsWith Set.union $ makeRecGraph <$> productions grammar
 
     makeRecGraph (Production nt []) = Map.singleton nt Set.empty

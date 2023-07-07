@@ -4,7 +4,7 @@ import qualified Data.List as List
 import qualified Data.Set as Set
 import ParallelParser.Grammar
 import ParallelParser.LL
-import ParallelParser.LLP
+import ParallelParser.LLP hiding ( LlpContext(..) )
 import Test.HUnit
 import Debug.Trace (traceShow)
 import Text.ParserCombinators.ReadP (string)
