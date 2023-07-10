@@ -13,7 +13,6 @@ import Control.Monad
 import Control.Exception
 import System.Exit (exitFailure)
 import Data.Foldable
-import ParallelParser.LLP (rightNullableDoubleNT)
 import ParallelParser.LL (isLeftRecursive, closureAlgorithm, leftFactorNonterminals, nullableOne)
 import qualified Data.Set as Set
 import Debug.Trace (traceShow)
@@ -100,7 +99,6 @@ grammarError grammar
   | not $ null p_dups = Just [i|The given grammar contains duplicate productions because of #{p_dups_str}.|]
   | isLeftRecursive grammar = Just [i|The given grammar contains left recursion.|]
   | not $ null left_factors = Just [i|The given grammar contains productions that has common left factors due to the following nonterminals #{left_factors_str}.|]
-  | rightNullableDoubleNT grammar = Just [i|The given grammar should not be able to derive two consecutive nullable nonterminals that are the same where the tail is nullable.|]
   | not $ null nonproductive = Just [i|The given grammar contains nonproductive productions due to the following nonterminals #{nonproductive_str}.|]
   | otherwise = Nothing
   where
