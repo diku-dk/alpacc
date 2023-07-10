@@ -10,7 +10,6 @@ module ParallelParser.LLP
     llpParserTableWithStartsHomomorphisms,
     Bracket (..),
     LlpContext (..),
-    rightNullableDoubleNT,
   )
 where
 
@@ -465,29 +464,51 @@ llpCollectionMemoParallel = do
 -- This is done using memoization.
 llpCollectionMemo ::
   (Ord t, Ord nt, Show nt, Show t, NFData t, NFData nt) =>
-  State (LlpContext nt t) (Set (Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t))))
+  State (LlpContext nt t) (Maybe (Set (Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t)))))
 llpCollectionMemo = do
   ctx <- get
   let grammar = theGrammar ctx
   let q = lookback ctx
-  let d_init = initD q grammar
-  let d_init_set = Set.singleton d_init
-  let d_init_list = [d_init]
-  removeNull <$> auxiliary Set.empty d_init_set d_init_list
+  fmap removeNull <$> auxiliary Map.empty Set.empty [initD q grammar]
   where
-    removeNull = Set.filter (not . null)
-    auxiliary _ items [] = return items
-    auxiliary visited items (top : queue) = do
-      if top `Set.member` visited
-        then auxiliary visited items queue
-        else new
+    toTuple
+      Item
+        { dotProduction = dp@(DotProduction _ alpha_z _),
+          suffix = x,
+          prefix = y,
+          llpConfig = gamma
+        } 
+          | null alpha_z = Nothing
+          | isTerminal z = Just ((dp, x, y), gamma)
+          | otherwise = Nothing
+          where
+            z = List.last alpha_z
+    
+    toTuples = mapMaybe toTuple . Set.toList
+
+    tryInsert m (k, a)
+      | k `Map.notMember` m = Just new_map
+      | a' == a = Just new_map
+      | otherwise = Nothing
       where
-        new_visited = Set.insert top visited
-        new = do
-          new_item <- solveLlpItemsMemo top
-          let new_items = Set.union new_item items
-          let new_queue = queue ++ toList new_item
-          auxiliary new_visited new_items new_queue
+        a' = m Map.! k
+        new_map = Map.insert k a m
+
+    tryInserts m = foldM tryInsert m . toTuples
+
+    removeNull = Set.filter (not . null)
+
+    auxiliary _ items [] = return $ return items
+    auxiliary visited items (top : queue) = do
+      next_items <- solveLlpItemsMemo top
+      let new_items = Set.insert top items
+      let new_queue = queue ++ toList next_items
+      let maybe_new_visited = tryInserts visited top
+      if top `Set.member` items
+        then auxiliary visited items queue
+        else if isNothing maybe_new_visited
+          then return Nothing
+          else auxiliary (fromJust maybe_new_visited) new_items new_queue
 
 -- | Creates the PSLS table as described in algorithm 9 in the LLP paper.
 psls ::
@@ -498,7 +519,6 @@ psls = Map.unionsWith Set.union . fmap auxiliary . toList . Set.unions
   where
     auxiliary old_item
       | null alpha_z = Map.empty
-      | null y = Map.empty
       | isTerminal z = Map.singleton (x, y) (Set.singleton gamma)
       | otherwise = Map.empty
       where
@@ -623,13 +643,14 @@ llpParserTable ::
         )
     )
 llpParserTable = do
-  collection <- llpCollectionMemo
-  let psls_table = psls collection
-  let unwrapped = head . Set.toList <$> psls_table
-  return $
+  maybe_collection <- llpCollectionMemo
+  return $ do 
+    collection <- maybe_collection
+    let psls_table = psls collection
+    let unwrapped = head . Set.toList <$> psls_table
     if any ((/= 1) . Set.size) psls_table
       then Nothing
-      else Just unwrapped
+      else return unwrapped
 
 -- | Given a lsit create all the pairs with q lookback and k lookahead which
 -- will be used as keys in the table.
@@ -674,78 +695,3 @@ llpParse q k grammar string = fmap thd3 . foldl1 glue' . pairLookup table q k . 
       a' <- a
       b' <- b
       glue a' b'
-
-rightNullableDoubleNT :: (Show nt, Show t, Ord t, Ord nt) => Grammar nt t -> Bool
-rightNullableDoubleNT grammar = any isProblem prods
-  where
-    consecNt (Nonterminal a) (Nonterminal b) = a == b
-    consecNt _ _ = False
-
-    nts = nonterminals grammar
-    prods = productions grammar
-    nullable' = nullable grammar
-    production_set = Set.fromList $ productions grammar
-    problem_nts = Set.map nonterminal $ Set.filter isProblem production_set
-    graph = makeGraph $ productions grammar
-    empty_graph = Map.unions $ map (`Map.singleton` Set.empty) nts
-    addMissing = Map.unionWith Set.union empty_graph
-
-    leftNode (Production nt s) = rightNode (Production nt (reverse s))
-    rightNode (Production nt s) =
-      Map.singleton nt
-        . Set.insert nt
-        . Set.fromList
-        $ fst <$> right_symbols
-      where
-        right_symbols = List.filter (nullable' . snd) $ rightSymbols s
-
-    left_graph = addMissing . Map.unionsWith Set.union $ leftNode <$> prods
-    right_graph = addMissing . Map.unionsWith Set.union $ rightNode <$> prods
-    left_graph_trans = fixedPointIterate (/=) closure left_graph
-    right_graph_trans = fixedPointIterate (/=) closure right_graph
-
-    isProblem (Production nt s)
-      | null s = False
-      | otherwise =
-          any predicate
-            . catMaybes
-            $ List.zipWith createPairs init' tails
-      where
-        seq = Seq.fromList s
-        tails = toList . fmap toList . Seq.drop 1 $ Seq.tails seq
-        init' = List.init s
-        createPairs (Nonterminal before) ((Nonterminal head) : tail) =
-          Just ((before, head), tail)
-        createPairs _ _ = Nothing
-        predicate ((a, b), tail) =
-          nullable' tail
-            && shares_a_nt
-          where
-            right_set = right_graph_trans Map.! a
-            left_set = left_graph_trans Map.! b
-            shares_a_nt = not . null $ Set.intersection right_set left_set
-
-    makeGraph =
-      addMissing
-        . Map.unionsWith Set.union
-        . fmap makeNode
-      where
-        nts = nonterminals grammar
-
-    makeNode (Production nt s) = Map.singleton nt end_nts
-      where
-        seq = Seq.fromList s
-        tails = toList . fmap toList $ Seq.tails seq
-        end_nts = Set.fromList $ mapMaybe endNt tails
-        endNt ((Nonterminal nt) : xs)
-          | nullable' xs = Just nt
-          | otherwise = Nothing
-        endNt _ = Nothing
-
-    closure old_map = addOldMap $ addMissing <$> old_map
-      where
-        addOldMap = Map.unionWith Set.union old_map
-        addMissing = Set.unions . Set.map (old_map Map.!)
-
-    reachable_graph = fixedPointIterate (/=) closure graph
-    containsProblem = flip Set.member (reachable_graph Map.! start grammar)
