@@ -1,13 +1,3 @@
-(
-    S,
-    {a, b, c, d, e, f},
-    {S, A, B},
-    {
-        S -> a A,
-        S -> b B,
-        A -> c A d A,
-        A -> f,
-        B -> e B d B,
-        B -> f
-    }
-)
+S = "a" A | "b" B;
+A = "c" A "d" A | "f";
+B = "e" B "d" B | "f";
