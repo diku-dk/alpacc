@@ -396,21 +396,22 @@ def generate_random_llp_grammar(
 
         if no_duplicates:
             grammar.remove_duplicates()
-        
-        cmd = f'printf "{grammar}" | ./parallel-parser --stdin --output="{filename}" -q {q} -k {k}'
 
         could_create = False
-        try:
-            subprocess.check_call(
-                cmd,
-                shell=True,
-                stdout=open(os.devnull, 'wb'),
-                stderr=open(os.devnull, 'wb')
-            )
+        p = subprocess.Popen(
+            ['./parallel-parser',
+             '--stdin',
+             f'--output={filename}',
+             f'--lookback={q}',
+             f'--lookahead={k}'],
+            shell=False,
+            text=True,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+        )
+        p.communicate(input=str(grammar))
+        if p.returncode == 0:
             could_create = True
-        except subprocess.CalledProcessError:
-            pass
-        
 
         generated_count += 1
         
