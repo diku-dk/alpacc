@@ -3,7 +3,7 @@ J -> A;
 J -> string;
 J -> int;
 
-O -> '(' FS0 ')';
+O -> '{' FS0 '}';
 FS0 -> ;
 FS0 -> F FS1;
 FS1 -> ;
