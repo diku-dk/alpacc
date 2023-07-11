@@ -28,6 +28,7 @@ module ParallelParser.Grammar
   )
 where
 
+import Data.Traversable
 import Control.DeepSeq
 import Data.Bifunctor (Bifunctor (bimap, first, second))
 import qualified Data.List as List
@@ -115,7 +116,7 @@ instance Bifunctor Symbol where
 
 -- | An algebraic data structure which describes a production.
 data Production nt t
-  = Production nt [Symbol nt t]
+  = Production { prodLHS :: nt, prodRHS :: [Symbol nt t] }
   deriving (Ord, Eq, Show, Read, Functor, Generic)
 
 instance (NFData t, NFData nt) => NFData (Production nt t)

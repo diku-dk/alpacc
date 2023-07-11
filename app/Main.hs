@@ -1,5 +1,7 @@
 module Main where
 
+import qualified Data.Text.IO as T
+import System.IO
 import ParallelParser.Grammar
 import ParallelParser.Generator
 import Prelude hiding (last)
@@ -11,6 +13,7 @@ import qualified Data.List as List
 import System.Exit (exitFailure)
 import ParallelParser.LL (isLeftRecursive, closureAlgorithm, leftFactorNonterminals, nullableOne)
 import qualified Data.Set as Set
+import CFG
 import Debug.Trace (traceShow)
 
 debug :: Show b => b -> b
@@ -130,9 +133,13 @@ main = do
           StdInput -> "parser.fut"
           FileInput path -> (++".fut") . fromJust . stripExtension "cg" $ takeFileName path
   contents <- case input_method of
-        StdInput -> getContents
-        FileInput path -> readFile path
-  let grammar = unpackNTTGrammar (read contents :: Grammar NT T)
+        StdInput -> T.getContents
+        FileInput path -> T.readFile path
+  grammar <-
+    case unpackNTTGrammar <$> grammarFromText program_path contents of
+      Left e -> do hPutStrLn stderr e
+                   exitFailure
+      Right g -> pure g
   let maybe_program = futharkKeyGeneration q k grammar
   case grammarError grammar of
     Just msg -> putStrLn msg *> exitFailure
