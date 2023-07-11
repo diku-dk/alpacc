@@ -51,9 +51,6 @@ class Production:
     def __init__(self, nonterminal: str, symbols: list[str]) -> None:
         self.nonterminal = nonterminal
         self.symbols = symbols
-    
-    def __str__(self) -> str:
-        return f'{self.nonterminal} -> {" ".join(self.symbols)}'
 
     def __hash__(self):
         return hash(self.nonterminal + "".join(self.symbols))
@@ -75,18 +72,35 @@ class Grammar:
         self.nonterminals = nonterminals
         self.productions = productions
         self.production_map = self.create_production_map()
+        self.productions = self.renumber_productions()
     
     def remove_duplicates(self):
         self.terminals = list(dict.fromkeys(self.terminals))
         self.nonterminals = list(dict.fromkeys(self.nonterminals))
         self.productions = list(dict.fromkeys(self.productions))
         self.production_map = self.create_production_map()
+        self.productions = self.renumber_productions()
     
     def create_production_map(self):
         
         result = {nt: [] for nt in self.nonterminals}
         for production in self.productions:
             result[production.nonterminal].append(''.join(production.symbols))
+        return result
+
+    def renumber_productions(self):
+        # Construct productions matching the order in self.production_map.
+        result = []
+
+        def prod(nt):
+            nonlocal result
+            result += [Production(nt, [c for c in r]) for r in self.production_map[nt]]
+
+        prod(self.start)
+        for nt in self.nonterminals:
+            if nt == self.start:
+                continue
+            prod(nt)
 
         return result
     
@@ -137,10 +151,18 @@ class Grammar:
         return list(map(lambda a: (a, to_index_string(a)), left_derivations))
 
     def __str__(self) -> str:
-        return (f'({self.start},'
-                f'{{{",".join(self.terminals)}}},'
-                f'{{{",".join(self.nonterminals)}}},'
-                f'{{{",".join(map(str, self.productions))}}})')
+        s = ''
+        for t in self.terminals:
+            s += f'{t} = "{t}";\n'
+        def prod(nt):
+            nonlocal s
+            s += f'{nt} = {" | ".join([" ".join([c for c in r]) for r in self.production_map[nt]])};\n'
+        prod(self.start)
+        for nt in self.nonterminals:
+            if nt == self.start:
+                continue
+            prod(nt)
+        return s
 
 def concat(iterable):
     result = []
@@ -352,7 +374,6 @@ def generate_grammar(
     nts = ts.upper()
     terminals = random.sample(ts, k_terminals)
     nonterminals = random.sample(nts, k_nonterminals)
-    start = random.choice(nonterminals)
     sepecific_production = lambda nt: random_production(
             terminals=terminals,
             nonterminals=nonterminals,
@@ -365,7 +386,7 @@ def generate_grammar(
     extra_productions = [production() for _ in range(extra_productions)]
     productions = specific_prooducions + extra_productions
     return Grammar(
-        start,
+        nonterminals[0],
         terminals,
         nonterminals,
         productions
@@ -521,6 +542,7 @@ def generate_parser_test(
         ll_parser = LLParser(k, grammar)
         
         with open(f'{name}.fut', 'a') as fp:
+            fp.write('\n'.join(['-- ' + l for l in str(grammar).splitlines()]))
             fp.write(f'\n{FUTHARK_TEST_HEADER}')
             for string, indices in valid_strings:
                 expected = ll_parser.parse(string)

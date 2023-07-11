@@ -1,15 +1,8 @@
-(
-    N,
-    {a, b},
-    {N, A, B, C},
-    {
-        N -> A B,
-        N -> B A,
-        A -> a,
-        A -> C A C,
-        B -> b,
-        B -> C B C,
-        C -> a,
-        C -> b
-    }
-)
+N = A B
+  | B A;
+A = "a"
+  | C A C;
+B = "b"
+  | C B C;
+C = "a"
+  | "b";
