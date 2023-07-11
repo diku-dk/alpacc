@@ -75,8 +75,8 @@ jobs:
           --grammar-size=1000 \
           --lookback=1 \
           --lookahead=1
-    
-    - name: Run parse test
+
+    - name: LLP(1,1) parsing
       shell: bash
       run: |
         python3 futhark-tests \
@@ -86,6 +86,10 @@ jobs:
           --lookahead=1 \
           --valid-size=20 \
           --invalid-size=6
+
+    - name: LLP(2,2) parsing
+      shell: bash
+      run: |
         python3 futhark-tests \
           --test-type=parse \
           --grammar-size=50 \
@@ -93,6 +97,10 @@ jobs:
           --lookahead=2 \
           --valid-size=20 \
           --invalid-size=6
+
+    - name: LLP(3,3) parsing
+      shell: bash
+      run: |
         python3 futhark-tests \
           --test-type=parse \
           --grammar-size=50 \
@@ -100,4 +108,8 @@ jobs:
           --lookahead=3 \
           --valid-size=20 \
           --invalid-size=6
+
+    - name: futhark-tests
+      shell: bash
+      run: |
         futhark test -c --no-terminal --no-tuning --backend=c futhark-tests/*.fut
