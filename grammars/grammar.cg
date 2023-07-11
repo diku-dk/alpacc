@@ -1,11 +1,4 @@
-(
-    S,
-    {a, b, c},
-    {S, A, B},
-    {
-        S -> A c B,
-        A -> a A b,
-        A -> a b,
-        B -> a B b
-    }
-)
+S = A "c" B;
+A = "a" A "b"
+  | "a" b;
+B = "a" B "b";

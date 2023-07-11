@@ -8,7 +8,7 @@ module ParallelParser.CFG
 where
 
 import Control.Monad (void)
-import Data.Char (isAlphaNum, isDigit, isLower, isPrint, isUpper)
+import Data.Char (isAlphaNum, isLower, isPrint, isUpper)
 import Data.List (nub)
 import Data.Set qualified as S
 import Data.Text qualified as T
@@ -71,7 +71,7 @@ pNT :: Parser NT
 pNT = lexeme (NT <$> p) <?> "nonterminal"
   where
     p = (:) <$> satisfy isUpper <*> many (satisfy ok)
-    ok c = isUpper c || isDigit c
+    ok c = isAlphaNum c || c `elem` ("'*" :: String)
 
 pStringLit :: Parser T.Text
 pStringLit = lexeme $ char '"' *> takeWhile1P Nothing ok <* char '"'
