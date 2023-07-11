@@ -5,18 +5,15 @@ import ParallelParser.Generator
 import Prelude hiding (last)
 import Data.Maybe
 import Options.Applicative
-import Data.Semigroup ((<>))
 import Data.String.Interpolate (i)
 import System.FilePath.Posix (stripExtension, takeFileName)
 import qualified Data.List as List
-import Control.Monad
-import Control.Exception
 import System.Exit (exitFailure)
-import Data.Foldable
 import ParallelParser.LL (isLeftRecursive, closureAlgorithm, leftFactorNonterminals, nullableOne)
 import qualified Data.Set as Set
 import Debug.Trace (traceShow)
 
+debug :: Show b => b -> b
 debug x = traceShow x x
 
 data Input
@@ -105,7 +102,7 @@ grammarError grammar
     start' = start grammar
     nullableOne' = nullableOne grammar
     isHeadNullable [] = False
-    isHeadNullable (x:_) = nullableOne' x 
+    isHeadNullable (x:_) = nullableOne' x
     start_symbols = symbols <$> findProductions grammar start'
     nts = Set.fromList $ nonterminals grammar
     nonproductive = nts `Set.difference` closureAlgorithm grammar
