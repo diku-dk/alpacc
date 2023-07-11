@@ -1,5 +1,6 @@
 module Main where
 
+import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import System.IO
 import ParallelParser.Grammar
@@ -8,7 +9,7 @@ import Prelude hiding (last)
 import Data.Maybe
 import Options.Applicative
 import Data.String.Interpolate (i)
-import System.FilePath.Posix (stripExtension, takeFileName)
+import System.FilePath.Posix (stripExtension, takeFileName, takeExtension)
 import qualified Data.List as List
 import System.Exit (exitFailure)
 import ParallelParser.LL (closureAlgorithm)
@@ -128,10 +129,10 @@ main = do
         StdInput -> T.getContents
         FileInput path -> T.readFile path
   grammar <-
-    case fmap unpackNTTGrammar . cfgToGrammar =<< cfgFromText program_path contents of
-      Left e -> do hPutStrLn stderr e
-                   exitFailure
-      Right g -> pure g
+      case fmap unpackNTTGrammar . cfgToGrammar =<< cfgFromText program_path contents of
+        Left e -> do hPutStrLn stderr e
+                     exitFailure
+        Right g -> pure g
   let maybe_program = futharkKeyGeneration q k grammar
   case grammarError grammar of
     Just msg -> putStrLn msg *> exitFailure
