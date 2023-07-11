@@ -48,11 +48,11 @@ import qualified Data.Sequence as Seq hiding (Seq (..), (<|), (><), (|>))
 import Data.Foldable
 import qualified Data.Bifunctor as Bifunctor
 import Data.Composition
-import Debug.Trace (traceShow)
 import Control.DeepSeq
 import GHC.Generics
 
-debug x = traceShow x x
+-- import Debug.Trace (traceShow)
+-- debug x = traceShow x x
 
 listProducts :: Int -> [a] -> [[a]]
 listProducts = snd .: auxiliary
@@ -77,12 +77,11 @@ derivableNLengths n grammar =
     . Nonterminal
     $ start grammar
   where
-    unpackT (Terminal t) = t
     derivations' = derivations grammar
     bfs _ Empty = []
     bfs visited (top :<| queue)
       | n_terms `Set.member` visited = bfs visited queue
-      | all isTerminal top = (unpackT <$> top) : bfs visited' (queue >< derivations' top)
+      | all isTerminal top = (unpackTerminal <$> top) : bfs visited' (queue >< derivations' top)
       | otherwise = bfs visited' (queue >< derivations' top)
       where
         n_terms = take (n + 1) top
@@ -143,12 +142,11 @@ derivations grammar str = (str <|) .  derive Seq.empty Seq.empty $ Seq.fromList 
 naiveFirst :: (Show nt, Show t, Ord nt, Ord t) => Int -> Grammar nt t -> [Symbol nt t] -> Set [t]
 naiveFirst k grammar = Set.fromList . bfs Set.empty . Seq.singleton
   where
-    unpackT (Terminal t) = t
     derivations' = derivations grammar
     bfs _ Empty = []
     bfs visited (top :<| queue)
       | k_plus_one_terms `Set.member` visited = bfs visited queue
-      | all isTerminal k_terms = (unpackT <$> k_terms) : bfs new_visited (queue >< derivations' top)
+      | all isTerminal k_terms = (unpackTerminal <$> k_terms) : bfs new_visited (queue >< derivations' top)
       | otherwise = bfs new_visited (queue >< derivations' top)
       where
         k_terms = take k top
@@ -160,7 +158,6 @@ naiveFirst k grammar = Set.fromList . bfs Set.empty . Seq.singleton
 leftmostDerivations :: (Show nt, Show t, Ord nt, Ord t) => Int -> Grammar nt t -> [Symbol nt t] -> Set [t]
 leftmostDerivations k grammar = Set.map (take k) . bfs Set.empty Set.empty . Seq.singleton
   where
-    unpackT (Terminal t) = t
     leftmostDerive' = leftmostDerive grammar
     bfs set _ Empty = set
     bfs set visited (top :<| queue)
@@ -168,7 +165,7 @@ leftmostDerivations k grammar = Set.map (take k) . bfs Set.empty Set.empty . Seq
       | all isTerminal k_terms = bfs new_set new_visited (queue >< leftmostDerive' top)
       | otherwise = bfs set new_visited (queue >< leftmostDerive' top)
       where
-        new_set = Set.insert (unpackT <$> k_terms) set
+        new_set = Set.insert (unpackTerminal <$> k_terms) set
         k_terms = take (k + 1) top
         new_visited = Set.insert k_terms visited
 
@@ -181,11 +178,10 @@ naiveFollows k grammar =
     . Map.unionsWith Set.union
     $ bfs Set.empty start'
   where
-    [Production nt _] = findProductions grammar (start grammar)
+    Production nt _ = head $ findProductions grammar (start grammar)
     init_maps = Map.fromList $ (,Set.empty) <$> nonterminals grammar
-    first' = first k grammar
+    first'' = first k grammar
     start' = Seq.singleton [Nonterminal nt]
-    unpackT (Terminal t) = t
     derivations' = derivations grammar
     bfs _ Empty = []
     bfs visited (top :<| queue)
@@ -193,7 +189,7 @@ naiveFollows k grammar =
       | null right_symbols = bfs new_visited queue
       | otherwise = maps ++ bfs new_visited (queue >< derivations' top)
       where
-        right_symbols = Bifunctor.second first' <$> rightSymbols top
+        right_symbols = Bifunctor.second first'' <$> rightSymbols top
         maps = uncurry Map.singleton <$> right_symbols
         right_symbols_set = Set.fromList right_symbols
         new_visited = right_symbols_set `Set.union` visited
@@ -351,6 +347,7 @@ alphaBeta string
   | null string = []
   | otherwise = auxiliary [] string
   where
+    auxiliary _ [] = error "Input may not be empty."
     auxiliary _ [_] = []
     auxiliary taken (x:xs) = (new_taken, xs) : auxiliary new_taken xs
       where
@@ -374,10 +371,10 @@ firstMemoized ::
   [Symbol nt t] ->
   (Set [t], AlphaBetaMemoizedContext nt t)
 firstMemoized ctx [] = (Set.singleton [], ctx)
-firstMemoized ctx wi = updatCtx $ runMemoized alphaBetaProducts wi state
+firstMemoized ctx wi = updatCtx $ runMemoized alphaBetaProducts' wi state
   where
     state = alphaBetaState ctx
-    alphaBetaProducts = alphaBetaFunction ctx
+    alphaBetaProducts' = alphaBetaFunction ctx
     updatCtx = Bifunctor.second (\state' -> ctx { alphaBetaState = state' })
 
 -- | Given a first map which maps nonterminals to their first sets and a string
@@ -517,8 +514,8 @@ firstAndFollowMaps k grammar = (first_map, follow_map)
     extended_first_map = firstMap k extended_grammar
     old_start = ExtendedNonterminal $ start grammar
     extended_grammar = extendGrammar k grammar
-    initFollowMap = followMap' k extended_grammar old_start
-    extended_follow_map = evalState initFollowMap extended_first_ctx
+    initFollowMap' = followMap' k extended_grammar old_start
+    extended_follow_map = evalState initFollowMap' extended_first_ctx
     follow_map = unextendMap extended_follow_map
     first_map = unextendMap extended_first_map
     extended_first_ctx = AlphaBetaMemoizedContext 
@@ -530,9 +527,9 @@ firstAndFollowMaps k grammar = (first_map, follow_map)
 
 -- | Computes the follow set for a given nonterminal.
 follow :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> nt -> Set [t]
-follow k grammar = (followMap' Map.!)
+follow k grammar = (followMap'' Map.!)
   where
-    followMap' = followMap k grammar
+    followMap'' = followMap k grammar
 
 -- | Computes the last set for a given string of symbols.
 last :: (Show nt, Show a, Ord nt, Ord a) => Int -> Grammar nt a -> [Symbol nt a] -> Set [a]
@@ -558,13 +555,12 @@ llTable k grammar = do
     first'' = first k grammar
     follow'' = follow k grammar
     prods = productions grammar
-    tables = zipWith (tableEntry k) [0 ..] prods
-    tableEntry k i (Production nt a) = Map.fromList [((nt, y), i) | y <- first_follow_prod]
+    tables = zipWith tableEntry [0 ..] prods
+    tableEntry i (Production nt a) = Map.fromList [((nt, y), i) | y <- first_follow_prod]
       where
         first_set = first'' a
         follow_set = follow'' nt
         first_follow_prod = toList $ truncatedProduct k first_set follow_set
-        is_nullable = [] `Set.member` first'' a
 
 -- | Creates a LL(k) table for a given grammar.
 llTableM :: (Ord nt, Ord t, Show nt, Show t) =>
@@ -574,14 +570,14 @@ llTableM :: (Ord nt, Ord t, Show nt, Show t) =>
   State (AlphaBetaMemoizedContext nt t) (Maybe (Map (nt, [t]) Int))
 llTableM k grammar follow'' = do
     let prods = productions grammar
-    tables <- zipWithM (tableEntry k) [0..] prods
+    tables <- zipWithM tableEntry [0..] prods
     let table = Map.unionsWith Set.union tables
     let unwrapped = head . Set.toList <$> table
     return $ if any ((>1) . Set.size) table
       then Nothing
       else Just unwrapped
     where
-      tableEntry k i (Production nt a) = do
+      tableEntry i (Production nt a) = do
         first_set <- useFirst a
         let follow_set = follow'' nt
         let first_follow_prod = toList $ truncatedProduct k first_set follow_set
@@ -609,21 +605,16 @@ llParse ::
   Maybe ([t], [Symbol nt t], [Int])
 llParse k grammar = parse
   where
-    Just table = llTable k grammar
+    maybe_table = llTable k grammar
     production_map = Map.fromList . zip [0 ..] $ productions grammar
     parse (x : xs, (Terminal y) : ys, parsed)
       | x == y = parse (xs, ys, parsed)
       | otherwise = Nothing
-    parse (input, (Nonterminal y) : ys, parsed)
-      | isNothing maybeTuple = Nothing
-      | otherwise = parse (input, production ++ ys, index : parsed)
-      where
-        maybeTuple = do
-          index <- (y, take k input) `Map.lookup` table
-          production <- index `Map.lookup` production_map
-          return (index, symbols production)
-
-        Just (index, production) = maybeTuple
+    parse (input, (Nonterminal y) : ys, parsed) = do
+      table <- maybe_table
+      index <- (y, take k input) `Map.lookup` table
+      production <- index `Map.lookup` production_map
+      parse (input, symbols production ++ ys, index : parsed)
     parse ([], [], parsed) = Just ([], [], reverse parsed)
     parse (_, _, _) = Nothing
 
@@ -633,7 +624,7 @@ closureAlgorithm grammar = fixedPointIterate (/=) (`newProductives` prods) Set.e
   where
     prods = productions grammar
     isProductive1 set (Nonterminal nt) = nt `Set.member` set
-    isProductive1 _ (Terminal t) = True
+    isProductive1 _ (Terminal _) = True
     isProductive set = all (isProductive1 set) . symbols
     newProductives set = Set.fromList . fmap nonterminal . List.filter (isProductive set)
 
