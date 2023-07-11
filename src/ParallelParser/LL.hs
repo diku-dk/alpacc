@@ -33,18 +33,17 @@ module ParallelParser.LL
   )
 where
 
-import Control.Monad.State
+import Control.Monad.State hiding (state)
 import qualified Data.List as List
-import Data.Map (Map (..))
+import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe
-import Data.Set (Set (..))
+import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Tuple.Extra (dupe, both)
 import ParallelParser.Grammar
 import Prelude hiding (last)
-import Data.Function
-import Data.Sequence (Seq (..), (<|), (><), (|>))
+import Data.Sequence (Seq (..), (<|), (><))
 import qualified Data.Sequence as Seq hiding (Seq (..), (<|), (><), (|>))
 import Data.Foldable
 import qualified Data.Bifunctor as Bifunctor
@@ -182,7 +181,7 @@ naiveFollows k grammar =
     . Map.unionsWith Set.union
     $ bfs Set.empty start'
   where
-    [Production nt s] = findProductions grammar (start grammar)
+    [Production nt _] = findProductions grammar (start grammar)
     init_maps = Map.fromList $ (,Set.empty) <$> nonterminals grammar
     first' = first k grammar
     start' = Seq.singleton [Nonterminal nt]
@@ -229,7 +228,7 @@ nullables grammar = fixedPointIterate (/=) nullableNtProd init_nullable_map
 -- | Determines the nullablity of each symbol using the algorithm described
 -- in Introduction to Compiler Design.
 nullableOne :: (Show nt, Show t, Ord nt, Ord t) => Grammar nt t -> Symbol nt t -> Bool
-nullableOne _ (Terminal t) = False
+nullableOne _ (Terminal _) = False
 nullableOne grammar (Nonterminal nt) = nullable_map Map.! nt
   where
     nullable_map = nullables grammar
@@ -293,8 +292,8 @@ memoAlphaBetaProducts k _ self string = Set.unions <$> mapM bothSubProducts alph
 -- on them.
 alphaBetaProducts :: (Ord nt, Ord t) => Int -> Map nt (Set [t]) -> [Symbol nt t] -> Set [t]
 alphaBetaProducts _ _ [] = error "Input string cannot be empty."
-alphaBetaProducts k first_map [Terminal t] = Set.singleton [t]
-alphaBetaProducts k first_map [Nonterminal nt] = first_map Map.! nt
+alphaBetaProducts _ _ [Terminal t] = Set.singleton [t]
+alphaBetaProducts _ first_map [Nonterminal nt] = first_map Map.! nt
 alphaBetaProducts k first_map string = Set.unions $ map subProducts alpha_betas
   where
     alpha_betas = alphaBeta string
@@ -352,7 +351,7 @@ alphaBeta string
   | null string = []
   | otherwise = auxiliary [] string
   where
-    auxiliary taken [x] = []
+    auxiliary _ [_] = []
     auxiliary taken (x:xs) = (new_taken, xs) : auxiliary new_taken xs
       where
         new_taken = taken ++ [x]
@@ -434,9 +433,9 @@ useFirst ::
   (Ord nt, Ord t) =>
   [Symbol nt t] ->
   State (AlphaBetaMemoizedContext nt t) (Set [t])
-useFirst symbols = do
+useFirst syms = do
   ctx <- get
-  let (set, ctx') = firstMemoized ctx symbols
+  let (set, ctx') = firstMemoized ctx syms
   put ctx'
   return set
 

@@ -14,25 +14,22 @@ module ParallelParser.LLP
 where
 
 import Control.DeepSeq
-import Control.Monad (liftM2)
-import Control.Monad.Extra (findM)
 import Control.Monad.State
 import Control.Parallel.Strategies
 import qualified Data.Bifunctor as Bifunctor
 import Data.Foldable
-import Data.Function (flip, on, ($), (.))
 import qualified Data.List as List
 import qualified Data.List.NonEmpty as NonEmpty
-import Data.Map (Map (..))
-import qualified Data.Map as Map hiding (Map (..))
+import Data.Map (Map)
+import qualified Data.Map as Map hiding (Map)
 import Data.Maybe
 import Data.Semigroup (Semigroup (sconcat))
-import Data.Sequence (Seq (..), (<|), (><), (|>))
+import Data.Sequence (Seq (..), (<|))
 import qualified Data.Sequence as Seq hiding (Seq (..), (<|), (><), (|>))
-import Data.Set (Set (..))
-import qualified Data.Set as Set hiding (Set (..))
+import Data.Set (Set)
+import qualified Data.Set as Set hiding (Set)
 import Data.String.Interpolate (i)
-import Data.Tuple.Extra (both, fst3, thd3)
+import Data.Tuple.Extra (fst3, thd3)
 import Debug.Trace (traceShow)
 import GHC.Generics
 import ParallelParser.Grammar
@@ -247,7 +244,7 @@ newLlpItemsMemo old_item = result
   where
     Item
       { dotProduction = DotProduction y alpha_x beta,
-        suffix = ui,
+        suffix = _ui,
         prefix = vi,
         llpConfig = delta
       } = old_item
@@ -350,7 +347,6 @@ solveLlpItemMemo ::
   Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t)) ->
   State (LlpContext nt t) (Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t)))
 solveLlpItemMemo items = do
-  ctx <- get
   new_items <- mapM newLlpItemsMemo $ toList items
   extraLlpItemsMemo $ Set.unions new_items
 
@@ -542,9 +538,9 @@ parseLlpConfig ::
   Maybe ([Symbol nt t], [Symbol nt t], [Int])
 parseLlpConfig table k grammar y' alpha = f <$> parse (y', alpha, [])
   where
-    f (epsilon, omega, pi) = (alpha, omega, pi)
+    f (_epsilon, omega, pi) = (alpha, omega, pi)
     production_map = Map.fromList . zip [0 ..] $ productions grammar
-    parse (x : xs, (Terminal y) : ys, parsed)
+    parse (x : _xs, (Terminal y) : ys, parsed)
       | x == y = Just ([], ys, reverse parsed)
       | otherwise = Nothing
     parse (input, (Nonterminal y) : ys, parsed)

@@ -30,14 +30,11 @@ where
 
 import Control.DeepSeq
 import Data.Bifunctor (Bifunctor (bimap, first, second))
-import Data.Composition
 import qualified Data.List as List
-import Data.Map (Map (..))
-import qualified Data.Map as Map hiding (Map (..))
-import Data.Maybe
-import Data.Set (Set (..))
+import Data.Map (Map)
+import qualified Data.Map as Map hiding (Map)
+import Data.Set (Set)
 import qualified Data.Set as Set
-import Data.Tuple.Extra (both)
 import Debug.Trace (traceShow)
 import GHC.Generics
 import Text.ParserCombinators.ReadP
@@ -362,7 +359,6 @@ toProductionsMap ::
   Map nt [[Symbol nt t]]
 toProductionsMap = auxiliary Map.empty
   where
-    toMap p = Map.singleton (nonterminal p) [symbols p]
     auxiliary prod_map [] = prod_map
     auxiliary prod_map ((Production nt s) : as)
       | nt `Map.member` prod_map = auxiliary new_prod_map as
@@ -414,7 +410,7 @@ substringGrammar grammar =
     new_prods = prods' ++ fmap firstChange substr_prods ++ to_substr_prods
     new_nts = new_start : (nts' ++ Map.keys substr_prods_map)
     extraSubstrings [] = []
-    extraSubstrings s@(x : xs) = s : extraSubstrings xs
+    extraSubstrings s@(_x : xs) = s : extraSubstrings xs
     firstChange (Production nt ((Nonterminal x):xs)) = Production nt (Nonterminal (toAnt x):xs)
     firstChange a = a
 
