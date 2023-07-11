@@ -13,7 +13,7 @@ import qualified Data.List as List
 import System.Exit (exitFailure)
 import ParallelParser.LL (closureAlgorithm)
 import qualified Data.Set as Set
-import CFG
+import ParallelParser.CFG
 import Debug.Trace (traceShow)
 
 debug :: Show b => b -> b
@@ -128,7 +128,7 @@ main = do
         StdInput -> T.getContents
         FileInput path -> T.readFile path
   grammar <-
-    case unpackNTTGrammar <$> grammarFromText program_path contents of
+    case fmap unpackNTTGrammar . cfgToGrammar =<< cfgFromText program_path contents of
       Left e -> do hPutStrLn stderr e
                    exitFailure
       Right g -> pure g
