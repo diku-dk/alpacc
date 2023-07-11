@@ -11,7 +11,7 @@ import Data.String.Interpolate (i)
 import System.FilePath.Posix (stripExtension, takeFileName)
 import qualified Data.List as List
 import System.Exit (exitFailure)
-import ParallelParser.LL (isLeftRecursive, closureAlgorithm, leftFactorNonterminals, nullableOne)
+import ParallelParser.LL (closureAlgorithm)
 import qualified Data.Set as Set
 import CFG
 import Debug.Trace (traceShow)
@@ -97,21 +97,13 @@ grammarError grammar
   | not $ null nt_dups = Just [i|The given grammar contains duplicate nonterminals because of #{nt_dups_str}.|]
   | not $ null t_dups = Just [i|The given grammar contains duplicate terminals because of #{t_dups_str}.|]
   | not $ null p_dups = Just [i|The given grammar contains duplicate productions because of #{p_dups_str}.|]
-  | isLeftRecursive grammar = Just [i|The given grammar contains left recursion.|]
-  | not $ null left_factors = Just [i|The given grammar contains productions that has common left factors due to the following nonterminals #{left_factors_str}.|]
+  -- | isLeftRecursive grammar = Just [i|The given grammar contains left recursion.|]
   | not $ null nonproductive = Just [i|The given grammar contains nonproductive productions due to the following nonterminals #{nonproductive_str}.|]
   | otherwise = Nothing
   where
-    start' = start grammar
-    nullableOne' = nullableOne grammar
-    isHeadNullable [] = False
-    isHeadNullable (x:_) = nullableOne' x
-    start_symbols = symbols <$> findProductions grammar start'
     nts = Set.fromList $ nonterminals grammar
     nonproductive = nts `Set.difference` closureAlgorithm grammar
     nonproductive_str = List.intercalate ", " $ Set.toList nonproductive
-    left_factors = leftFactorNonterminals grammar
-    left_factors_str = List.intercalate ", " left_factors
     (nt_dups, t_dups, p_dups) = grammarDuplicates grammar
     nt_dups_str = List.intercalate ", " nt_dups
     t_dups_str = List.intercalate ", " t_dups

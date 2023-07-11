@@ -9,15 +9,15 @@ import qualified Data.List as L
 import qualified Data.List as List
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Maybe
 import Data.String.Interpolate (i)
 import Data.Tuple.Extra
 import ParallelParser.Grammar
 import ParallelParser.LLP
-import Debug.Trace (traceShow)
+    ( Bracket(..), llpParserTableWithStartsHomomorphisms )
 import Control.DeepSeq
 
-debug x = traceShow x x
+-- import Debug.Trace (traceShow)
+-- debug x = traceShow x x
 
 -- | Adds m padding to the left side of a list.
 lpad :: a -> Int -> [a] -> [a]
@@ -130,11 +130,12 @@ futharkTable q k grammar table = (ne,) . (++last_case_str) . cases . prods . key
 futharkKeyGeneration ::
   (Ord nt, Ord t, Show nt, Show t, NFData t, NFData nt) =>
   Int -> Int -> Grammar nt t -> Maybe String
-futharkKeyGeneration q k grammar
-  | any_is_nothing = Nothing
-  | otherwise =
-      Just
-        [i|import "lib/github.com/diku-dk/sorts/radix_sort"
+futharkKeyGeneration q k grammar = do
+  start_terminal <- maybe_start_terminal
+  end_terminal <- maybe_end_terminal
+  table <- maybe_table
+  let (ne, futhark_table) = futharkTable q k augmented_grammar table
+  return [i|import "lib/github.com/diku-dk/sorts/radix_sort"
 
 type bracket = #left u64 | #right u64 | #epsilon
 type maybe 'a = #just a | #nothing
@@ -239,18 +240,10 @@ entry parse [n] (arr : [n]u32) : []u32 =
   else []
 |]
   where
-    any_is_nothing =
-      isNothing maybe_start_terminal
-        || isNothing maybe_end_terminal
-        || isNothing maybe_table
-    Just start_terminal = maybe_start_terminal
-    Just end_terminal = maybe_end_terminal
-    Just table = maybe_table
     maybe_start_terminal = List.elemIndex RightTurnstile terminals' :: Maybe Int
     maybe_end_terminal = List.elemIndex LeftTurnstile terminals' :: Maybe Int
-    augmented_grammar = augmentGrammar q k grammar
+    augmented_grammar = augmentGrammar grammar
     maybe_table = llpParserTableWithStartsHomomorphisms q k grammar
     terminals' = terminals augmented_grammar
     lookback_type = toTuple $ replicate q "u32"
     lookahead_type = toTuple $ replicate k "u32"
-    (ne, futhark_table) = futharkTable q k augmented_grammar table
