@@ -9,7 +9,7 @@ import Data.String.Interpolate (i)
 import System.FilePath.Posix (stripExtension, takeFileName)
 import qualified Data.List as List
 import System.Exit (exitFailure)
-import ParallelParser.LL (isLeftRecursive, closureAlgorithm)
+import ParallelParser.LL (closureAlgorithm)
 import qualified Data.Set as Set
 import Debug.Trace (traceShow)
 
@@ -94,7 +94,7 @@ grammarError grammar
   | not $ null nt_dups = Just [i|The given grammar contains duplicate nonterminals because of #{nt_dups_str}.|]
   | not $ null t_dups = Just [i|The given grammar contains duplicate terminals because of #{t_dups_str}.|]
   | not $ null p_dups = Just [i|The given grammar contains duplicate productions because of #{p_dups_str}.|]
-  | isLeftRecursive grammar = Just [i|The given grammar contains left recursion.|]
+  -- | isLeftRecursive grammar = Just [i|The given grammar contains left recursion.|]
   | not $ null nonproductive = Just [i|The given grammar contains nonproductive productions due to the following nonterminals #{nonproductive_str}.|]
   | otherwise = Nothing
   where
