@@ -525,6 +525,7 @@ def generate_parser_test(
         ll_parser = LLParser(k, grammar)
         
         with open(f'{name}.fut', 'a') as fp:
+            fp.write('\n'.join(['-- ' + l for l in str(grammar).splitlines()]))
             fp.write(f'\n{FUTHARK_TEST_HEADER}')
             for string, indices in valid_strings:
                 expected = ll_parser.parse(string)
