@@ -28,7 +28,6 @@ module ParallelParser.Grammar
   )
 where
 
-import Data.Traversable
 import Control.DeepSeq
 import Data.Bifunctor (Bifunctor (bimap, first, second))
 import qualified Data.List as List
