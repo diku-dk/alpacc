@@ -488,7 +488,7 @@ collection =
 augmentGrammarTestCase = TestCase $ assertEqual "Augment grammar test" expected result
   where
     sortGrammar (Grammar s t nt ps) = Grammar s (List.sort t) (List.sort nt) (List.sort ps) 
-    augmented_grammar = augmentGrammar 1 1 grammar
+    augmented_grammar = augmentGrammar grammar
     expected = sortGrammar augmentedGrammar
     result = sortGrammar augmented_grammar
 
