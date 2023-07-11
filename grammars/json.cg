@@ -1,0 +1,24 @@
+(
+  J,
+  {(, ), [, ], string, int, colon, comma},
+  {J, O, A, F, FS0, FS1, EL0, EL1},
+  {
+      J -> O,
+      J -> A,
+      J -> string,
+      J -> int,
+
+      O -> ( FS0 ),
+      FS0 -> ,
+      FS0 -> F FS1,
+      FS1 -> ,
+      FS1 -> comma F FS1,
+      F -> string colon J,
+
+      A -> [ EL0 ],
+      EL0 -> ,
+      EL0 -> J EL1,
+      EL1 -> ,
+      EL1 -> comma J EL1
+  }
+)
