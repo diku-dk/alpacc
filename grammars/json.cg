@@ -1,14 +1,14 @@
 J -> O;
 J -> A;
-J -> 'string';
-J -> 'int';
+J -> string;
+J -> int;
 
 O -> '(' FS0 ')';
 FS0 -> ;
 FS0 -> F FS1;
 FS1 -> ;
 FS1 -> ',' F FS1;
-F -> 'string' ':' J;
+F -> string ':' J;
 
 A -> '[' EL0 ']';
 EL0 -> ;
