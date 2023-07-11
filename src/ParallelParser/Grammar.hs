@@ -33,13 +33,23 @@ import Data.Bifunctor (Bifunctor (bimap, first, second))
 import qualified Data.List as List
 import Data.Map (Map)
 import qualified Data.Map as Map hiding (Map)
-import Data.Set (Set)
 import qualified Data.Set as Set
-import Debug.Trace (traceShow)
 import GHC.Generics
 import Text.ParserCombinators.ReadP
+    ( ReadP,
+      (<++),
+      between,
+      char,
+      many1,
+      munch,
+      munch1,
+      readP_to_S,
+      satisfy,
+      sepBy,
+      string )
 
-debug x = traceShow x x
+-- import Debug.Trace (traceShow)
+-- debug x = traceShow x x
 
 -- | Structure used for terminals making it easier to print strings in a
 -- readable manner.
@@ -129,10 +139,12 @@ instance Bifunctor Production where
 -- | Given Nonterminal return the value inside the Nonterminal.
 unpackNonterminal :: Symbol nt t -> nt
 unpackNonterminal (Nonterminal a) = a
+unpackNonterminal (Terminal _) = error "Not a nonterminal."
 
 -- | Given Terminal return the value inside the Terminal.
 unpackTerminal :: Symbol nt t -> t
 unpackTerminal (Terminal a) = a
+unpackTerminal (Nonterminal _) = error "Not a terminal."
 
 -- | Returns the right hand side of the production.
 symbols :: Production nt t -> [Symbol nt t]
@@ -188,10 +200,10 @@ toSymbol ts nts symbol
 replaceEscapedChars :: String -> String
 replaceEscapedChars "" = ""
 replaceEscapedChars input@(x : xs)
-  | x == '\\' = start ++ replaceEscapedChars xs'
+  | x == '\\' = _start ++ replaceEscapedChars xs'
   | otherwise = x : replaceEscapedChars xs
   where
-    (start, xs') = auxiliary input
+    (_start, xs') = auxiliary input
     auxiliary ('\\' : '\\' : ys) = ("\\", ys)
     auxiliary ('\\' : ',' : ys) = (",", ys)
     auxiliary ('\\' : '}' : ys) = ("}", ys)
@@ -221,8 +233,8 @@ pGrammar = tuple
     production ts nts = do
       nt <- setElement
       _ <- skipSpacesAround $ string "->"
-      symbols <- sepBySkip setElement (many1 (char ' '))
-      return $ Production (read nt) (toSymbol ts nts <$> symbols)
+      _symbols <- sepBySkip setElement (many1 (char ' '))
+      return $ Production (read nt) (toSymbol ts nts <$> _symbols)
 
     tuple = between (char '(') (char ')') $ do
       _ <- skipWhiteSpaces
@@ -286,10 +298,12 @@ instance Show nt => Show (ExtendedNonterminal nt) where
 -- | Given ExtendedNonterminal return the value inside the Nonterminal.
 unextendNT :: ExtendedNonterminal nt -> nt
 unextendNT (ExtendedNonterminal nt) = nt
+unextendNT ExtendedStart = error "Cannot unextend Start."
 
 -- | Given ExtendedNonterminal return the value inside the ExtendedNonterminal.
 unextendT :: ExtendedTerminal t -> t
 unextendT (ExtendedTerminal t) = t
+unextendT End = error "Cannot unextend End."
 
 -- | Extends a grammar with a new starting production where the old starting
 -- production is in the beginning of the left handside and k End terminals are
@@ -319,11 +333,9 @@ extendGrammar k grammar =
 -- | Augmenting the grammar corresponds to the augmentation in algorithm 8 of
 -- the LLP paper.
 augmentGrammar ::
-  Int ->
-  Int ->
   Grammar nt t ->
   Grammar (AugmentedNonterminal nt) (AugmentedTerminal t)
-augmentGrammar q k grammar =
+augmentGrammar grammar =
   grammar
     { start = Start,
       terminals = terminals',
@@ -405,7 +417,6 @@ substringGrammar grammar =
     to_substr_prods = Production new_start . List.singleton . Nonterminal <$> (nts' ++ Map.keys substr_prods_map)
     nt_to_ant_map = Map.fromList . zip nts' $ ArbitraryNT <$> [1 ..]
     toAnt = (nt_to_ant_map Map.!)
-    new_symbols = concatMap extraSubstrings $ symbols <$> prods'
     new_start = ArbitraryNT 0
     new_prods = prods' ++ fmap firstChange substr_prods ++ to_substr_prods
     new_nts = new_start : (nts' ++ Map.keys substr_prods_map)

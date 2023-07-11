@@ -9,7 +9,7 @@ import Data.String.Interpolate (i)
 import System.FilePath.Posix (stripExtension, takeFileName)
 import qualified Data.List as List
 import System.Exit (exitFailure)
-import ParallelParser.LL (isLeftRecursive, closureAlgorithm, leftFactorNonterminals, nullableOne)
+import ParallelParser.LL (isLeftRecursive, closureAlgorithm, leftFactorNonterminals)
 import qualified Data.Set as Set
 import Debug.Trace (traceShow)
 
@@ -99,11 +99,6 @@ grammarError grammar
   | not $ null nonproductive = Just [i|The given grammar contains nonproductive productions due to the following nonterminals #{nonproductive_str}.|]
   | otherwise = Nothing
   where
-    start' = start grammar
-    nullableOne' = nullableOne grammar
-    isHeadNullable [] = False
-    isHeadNullable (x:_) = nullableOne' x
-    start_symbols = symbols <$> findProductions grammar start'
     nts = Set.fromList $ nonterminals grammar
     nonproductive = nts `Set.difference` closureAlgorithm grammar
     nonproductive_str = List.intercalate ", " $ Set.toList nonproductive
