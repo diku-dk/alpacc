@@ -29,7 +29,7 @@ pT =
   lexeme (T . T.unpack <$> (pLit <|> p)) <?> "terminal"
   where
     pLit = char '\'' *> takeWhile1P (Just "terminal constituent") constituent <* char '\''
-    p = T.singleton <$> satisfy isLower
+    p = takeWhile1P Nothing isLower
     constituent c = isPrint c && c /= '\''
 
 pSymbol :: Parser (Symbol NT T)
