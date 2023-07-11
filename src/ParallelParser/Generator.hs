@@ -7,7 +7,7 @@ import qualified Data.Bifunctor as BI
 import Data.Composition
 import qualified Data.List as L
 import qualified Data.List as List
-import Data.Map (Map (..))
+import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe
 import Data.String.Interpolate (i)
@@ -16,7 +16,6 @@ import ParallelParser.Grammar
 import ParallelParser.LLP
 import Debug.Trace (traceShow)
 import Control.DeepSeq
-import GHC.Generics
 
 debug x = traceShow x x
 
@@ -44,7 +43,7 @@ futharkTableKey ::
   (String, String)
 futharkTableKey q k grammar = both toTuple . BI.bimap backPad frontPad . both convert .: (,)
   where
-    terminal_map = Map.fromList . flip zip (show <$> [0 ..]) $ terminals grammar
+    terminal_map = Map.fromList . flip zip (show <$> [(0::Int) ..]) $ terminals grammar
     convert = map (terminal_map Map.!)
     backPad = lpad "4294967295" q
     frontPad = rpad "4294967295" k
@@ -221,14 +220,14 @@ def from_just 'a (ne : a) (m : maybe a) : a =
   case _ -> ne
 
 entry parse [n] (arr : [n]u32) : []u32 =
-  let arr' = replicate #{1} #{start_terminal} ++ (map (+2) arr) ++ replicate #{1} #{end_terminal}
+  let arr' = replicate #{1::Int} #{start_terminal} ++ (map (+2) arr) ++ replicate #{1::Int} #{end_terminal}
   let configs = keys arr' |> map key_to_config
   in if any (is_nothing) configs
   then []
   else
   let ne = #{ne}
   let (brackets, productions) = configs |> map (from_just ne) |> unzip
-  in if brackets 
+  in if brackets
         |> flatten
         |> filter (!=#epsilon)
         |> brackets_matches
@@ -247,8 +246,8 @@ entry parse [n] (arr : [n]u32) : []u32 =
     Just start_terminal = maybe_start_terminal
     Just end_terminal = maybe_end_terminal
     Just table = maybe_table
-    maybe_start_terminal = List.elemIndex RightTurnstile terminals'
-    maybe_end_terminal = List.elemIndex LeftTurnstile terminals'
+    maybe_start_terminal = List.elemIndex RightTurnstile terminals' :: Maybe Int
+    maybe_end_terminal = List.elemIndex LeftTurnstile terminals' :: Maybe Int
     augmented_grammar = augmentGrammar q k grammar
     maybe_table = llpParserTableWithStartsHomomorphisms q k grammar
     terminals' = terminals augmented_grammar
