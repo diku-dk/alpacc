@@ -1,6 +1,5 @@
 module Main where
 
-import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import System.IO
 import ParallelParser.Grammar
@@ -9,7 +8,7 @@ import Prelude hiding (last)
 import Data.Maybe
 import Options.Applicative
 import Data.String.Interpolate (i)
-import System.FilePath.Posix (stripExtension, takeFileName, takeExtension)
+import System.FilePath.Posix (stripExtension, takeFileName)
 import qualified Data.List as List
 import System.Exit (exitFailure)
 import ParallelParser.LL (closureAlgorithm)
