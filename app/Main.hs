@@ -136,5 +136,6 @@ main = do
   case grammarError grammar of
     Just msg -> putStrLn msg *> exitFailure
     Nothing -> case maybe_program of
-        Nothing -> putStrLn [i|The given Grammar is not a LLP(#{q}, #{k}).|] *> exitFailure
-        Just program -> writeFutharkProgram program_path program
+        Left e -> do hPutStrLn stderr e
+                     exitFailure
+        Right program -> writeFutharkProgram program_path program

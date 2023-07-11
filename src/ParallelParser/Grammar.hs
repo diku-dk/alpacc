@@ -126,7 +126,10 @@ instance Bifunctor Symbol where
 -- | An algebraic data structure which describes a production.
 data Production nt t
   = Production { prodLHS :: nt, prodRHS :: [Symbol nt t] }
-  deriving (Ord, Eq, Show, Read, Functor, Generic)
+  deriving (Ord, Eq, Read, Functor, Generic)
+
+instance (Show nt, Show t) => Show (Production nt t) where
+  show (Production nt s) = show nt ++ " -> " ++ show s
 
 instance (NFData t, NFData nt) => NFData (Production nt t)
 

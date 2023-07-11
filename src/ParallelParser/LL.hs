@@ -50,6 +50,7 @@ import qualified Data.Bifunctor as Bifunctor
 import Data.Composition
 import Control.DeepSeq
 import GHC.Generics
+import Data.String.Interpolate (i)
 
 -- import Debug.Trace (traceShow)
 -- debug x = traceShow x x
@@ -556,32 +557,41 @@ llTable k grammar = do
     follow'' = follow k grammar
     prods = productions grammar
     tables = zipWith tableEntry [0 ..] prods
-    tableEntry i (Production nt a) = Map.fromList [((nt, y), i) | y <- first_follow_prod]
+    tableEntry i' (Production nt a) = Map.fromList [((nt, y), i') | y <- first_follow_prod]
       where
         first_set = first'' a
         follow_set = follow'' nt
         first_follow_prod = toList $ truncatedProduct k first_set follow_set
+
+mapToStr :: (Ord nt, Ord t, Show nt, Show t) => Grammar nt t -> Map (nt, [t]) (Set Int) -> String
+mapToStr grammar = unlines . fmap (\((a, b), set) -> [i|(#{a}, #{b}): |] ++ setToStr set) . Map.toList
+  where
+    setToStr = ("{"++) . (++"}") . List.intercalate ", " . fmap f . Set.toList
+    prods = productions grammar
+    f = show . (prods List.!!)
+
 
 -- | Creates a LL(k) table for a given grammar.
 llTableM :: (Ord nt, Ord t, Show nt, Show t) =>
   Int ->
   Grammar nt t ->
   (nt -> Set [t]) ->
-  State (AlphaBetaMemoizedContext nt t) (Maybe (Map (nt, [t]) Int))
+  State (AlphaBetaMemoizedContext nt t) (Either String (Map (nt, [t]) Int))
 llTableM k grammar follow'' = do
     let prods = productions grammar
     tables <- zipWithM tableEntry [0..] prods
     let table = Map.unionsWith Set.union tables
     let unwrapped = head . Set.toList <$> table
-    return $ if any ((>1) . Set.size) table
-      then Nothing
-      else Just unwrapped
+    let conflicts = Map.filter ((1<) . Set.size) table
+    return $ if null conflicts
+      then Right unwrapped
+      else Left $ [i|LL(#{k}) Table Conflicts:\n|] ++ mapToStr grammar conflicts
     where
-      tableEntry i (Production nt a) = do
+      tableEntry i' (Production nt a) = do
         first_set <- useFirst a
         let follow_set = follow'' nt
         let first_follow_prod = toList $ truncatedProduct k first_set follow_set
-        return $ Map.fromList [((nt, y), Set.singleton i) | y <- first_follow_prod]
+        return $ Map.fromList [((nt, y), Set.singleton i') | y <- first_follow_prod]
 
 unionIfDisjoint :: Ord a => Set a -> Set a -> Maybe (Set a)
 unionIfDisjoint a b = 

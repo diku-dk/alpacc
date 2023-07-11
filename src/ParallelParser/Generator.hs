@@ -15,6 +15,7 @@ import ParallelParser.Grammar
 import ParallelParser.LLP
     ( Bracket(..), llpParserTableWithStartsHomomorphisms )
 import Control.DeepSeq
+import Data.Either.Extra (maybeToEither)
 
 -- import Debug.Trace (traceShow)
 -- debug x = traceShow x x
@@ -129,10 +130,10 @@ futharkTable q k grammar table = (ne,) . (++last_case_str) . cases . prods . key
 -- create the productions list for a input which is indexes of terminals.
 futharkKeyGeneration ::
   (Ord nt, Ord t, Show nt, Show t, NFData t, NFData nt) =>
-  Int -> Int -> Grammar nt t -> Maybe String
+  Int -> Int -> Grammar nt t -> Either String String
 futharkKeyGeneration q k grammar = do
-  start_terminal <- maybe_start_terminal
-  end_terminal <- maybe_end_terminal
+  start_terminal <- maybeToEither "" maybe_start_terminal
+  end_terminal <- maybeToEither "" maybe_end_terminal
   table <- maybe_table
   let (ne, futhark_table) = futharkTable q k augmented_grammar table
   return [i|import "lib/github.com/diku-dk/sorts/radix_sort"

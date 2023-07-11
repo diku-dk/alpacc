@@ -34,6 +34,7 @@ import GHC.Generics
 import ParallelParser.Grammar
 import ParallelParser.LL hiding (before, follow, llParse)
 import Prelude hiding (last)
+import Data.Either.Extra (maybeToEither)
 
 --import Debug.Trace (traceShow)
 --debug x = traceShow x x
@@ -211,7 +212,7 @@ initLlpContext ::
   Int ->
   Int ->
   Grammar nt t ->
-  Maybe (LlpContext nt t)
+  Either String (LlpContext nt t)
 initLlpContext q k grammar = do
   ll_table <- evalState (llTableM k augmented_grammar followFunction) first_ctx
   return $
@@ -446,7 +447,7 @@ solveLlpItemsMemo items = do
 -- This is done using memoization.
 llpCollectionMemo ::
   (Ord t, Ord nt, Show nt, Show t, NFData t, NFData nt) =>
-  State (LlpContext nt t) (Maybe (Set (Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t)))))
+  State (LlpContext nt t) (Either String (Set (Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t)))))
 llpCollectionMemo = do
   ctx <- get
   let grammar = theGrammar ctx
@@ -468,29 +469,33 @@ llpCollectionMemo = do
     
     toTuples = mapMaybe toTuple . Set.toList
 
-    tryInsert m (k, a)
-      | k `Map.notMember` m = Just new_map
-      | a' == a = Just new_map
-      | otherwise = Nothing
+    tryInsert q k m (key, a)
+      | key `Map.notMember` m = Right new_map
+      | a' == a = Right new_map
+      | otherwise = Left [i|The grammar is not LLP(#{q}, #{k}) due to the admissible pair #{(x, y)} could result in the initial pushdown store #{fst3 a} and #{fst3 a'}.|]
       where
-        a' = m Map.! k
-        new_map = Map.insert k a m
+        a' = m Map.! key
+        new_map = Map.insert key a m
+        (_, x, y) = key
 
-    tryInserts m = foldM tryInsert m . toTuples
+    tryInserts q k m = foldM (tryInsert q k) m . toTuples
 
     removeNull = Set.filter (not . null)
 
     auxiliary _ items [] = return $ return items
     auxiliary visited items (top : queue) = do
       next_items <- solveLlpItemsMemo top
+      ctx <- get
+      let q = lookback ctx
+      let k = lookahead ctx
       let new_items = Set.insert top items
       let new_queue = queue ++ toList next_items
-      let maybe_new_visited = tryInserts visited top
+      let either_new_visited = tryInserts q k visited top
       if top `Set.member` items
         then auxiliary visited items queue
-        else if isNothing maybe_new_visited
-          then return Nothing
-          else auxiliary (fromJust maybe_new_visited) new_items new_queue
+        else case either_new_visited of
+          Left result -> return $ Left result
+          Right new_visited -> auxiliary new_visited new_items new_queue
 
 -- | Creates the PSLS table as described in algorithm 9 in the LLP paper.
 psls ::
@@ -563,7 +568,7 @@ llpParserTableWithStarts ::
   Int ->
   Int ->
   Grammar nt t ->
-  Maybe
+  Either String
     ( Map
         ([AugmentedTerminal t], [AugmentedTerminal t])
         ( [Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)],
@@ -573,14 +578,14 @@ llpParserTableWithStarts ::
     )
 llpParserTableWithStarts q k grammar = do
   init_context <- initLlpContext q k grammar
-  let (maybe_table, starts) = tableAndStarts init_context
-  _table <- maybe_table
+  let (either_table, starts) = tableAndStarts init_context
+  _table <- either_table
   return $ starts `Map.union` _table
   where
     tableAndStarts ctx = flip evalState ctx $ do
-      maybe_table' <- llpParserTable
+      either_table' <- llpParserTable
       starts' <- allStarts
-      return (maybe_table', starts')
+      return (either_table', starts')
 
 data Bracket a = LBracket a | RBracket a deriving (Eq, Ord, Show, Functor)
 
@@ -589,7 +594,7 @@ llpParserTableWithStartsHomomorphisms ::
   Int ->
   Int ->
   Grammar nt t ->
-  Maybe
+  Either String
     ( Map
         ([AugmentedTerminal t], [AugmentedTerminal t])
         ( [Bracket (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t))],
@@ -598,14 +603,14 @@ llpParserTableWithStartsHomomorphisms ::
     )
 llpParserTableWithStartsHomomorphisms q k grammar = do
   init_context <- initLlpContext q k grammar
-  let (maybe_table', starts') = tableAndStarts init_context
-  table' <- maybe_table'
+  let (either_table', starts') = tableAndStarts init_context
+  table' <- either_table'
   return $ table' `Map.union` starts'
   where
     tableAndStarts ctx = flip evalState ctx $ do
-      maybe_table' <- llpParserTable
+      either_table' <- llpParserTable
       starts' <- allStarts
-      return (fmap homomorphisms <$> maybe_table', start_homomorphisms <$> starts')
+      return (fmap homomorphisms <$> either_table', start_homomorphisms <$> starts')
     start_homomorphisms (_, omega, pi') = (LBracket <$> reverse omega, pi')
     homomorphisms (alpha, omega, pi') = (right ++ left, pi')
       where
@@ -618,21 +623,19 @@ llpParserTable ::
   (Ord nt, Ord t, Show nt, Show t, NFData t, NFData nt) =>
   State
     (LlpContext nt t)
-    ( Maybe
+    ( Either String
         ( Map
             ([AugmentedTerminal t], [AugmentedTerminal t])
             ([Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)], [Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)], [Int])
         )
     )
 llpParserTable = do
-  maybe_collection <- llpCollectionMemo
+  either_collection <- llpCollectionMemo
   return $ do 
-    collection <- maybe_collection
+    collection <- either_collection
     let psls_table = psls collection
     let unwrapped = head . Set.toList <$> psls_table
-    if any ((/= 1) . Set.size) psls_table
-      then Nothing
-      else return unwrapped
+    return unwrapped
 
 -- | Given a lsit create all the pairs with q lookback and k lookahead which
 -- will be used as keys in the table.
@@ -672,12 +675,12 @@ llpParse ::
   Int ->
   Grammar nt t ->
   [t] ->
-  Maybe [Int]
+  Either String [Int]
 llpParse q k grammar string = do
   table' <- llpParserTableWithStarts q k grammar
   let padded_string = addStoppers $ aug string
-  pairs <- sequence $ pairLookup table' q k padded_string
-  thd3 <$> glueAll pairs 
+  pairs <- maybeToEither "Could not be parsed." . sequence $ pairLookup table' q k padded_string
+  thd3 <$> maybeToEither "Could not be parsed." (glueAll pairs) 
   where
     addStoppers = (replicate 1 RightTurnstile ++) . (++ replicate 1 LeftTurnstile)
     aug = fmap AugmentedTerminal

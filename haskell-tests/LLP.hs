@@ -11,7 +11,7 @@ import ParallelParser.LL
 import Test.HUnit
 import Data.String.Interpolate (i)
 import Debug.Trace (traceShow)
-import Data.Maybe
+import Data.Either
 
 debug x = traceShow x x
 
@@ -495,8 +495,8 @@ augmentGrammarTestCase = TestCase $ assertEqual "Augment grammar test" expected 
 collectionTestCase = TestCase $ assertEqual "LLP collection test" expected result
   where
     expected = Set.empty
-    Just init_context = initLlpContext 1 1 grammar
-    Just computed_collection = evalState llpCollectionMemo init_context
+    Right init_context = initLlpContext 1 1 grammar
+    Right computed_collection = evalState llpCollectionMemo init_context
     result = Set.difference computed_collection collection
 
 -- pslsTestCase = TestCase $ assertEqual "PSLS table test" expected result
@@ -510,7 +510,7 @@ llpqkParsingTestCase parser q k = TestCase $ assertEqual [i|LLP(#{q}, #{k}) pars
   where
     input = map List.singleton "a+[a+a]"
     result = parser input
-    expected = Just [0, 1, 4, 2, 5, 1, 4, 2, 4, 3, 3]
+    expected = Right [0, 1, 4, 2, 5, 1, 4, 2, 4, 3, 3]
 
 llpParsers = [(llpParse q k grammar, q, k) | q <- [1..3], k <- [1..3]]
 
@@ -519,7 +519,7 @@ derivable10 = derivableNLengths 10 grammar
 llpqkParsingDerivableTestCase parser q k =
     TestCase $ assertEqual [i|LLP(#{q}, #{k}) can parse derivables of length 10.|] expected True
   where
-    expected = all isJust $ parser <$> Set.toList derivable10
+    expected = all isRight $ parser <$> Set.toList derivable10
 
 llpqkParsingDerivableTestCases = [llpqkParsingDerivableTestCase parser q k | (parser, k, q) <- llpParsers]
 
@@ -530,7 +530,7 @@ nonderivable3 = nonderivableNLengths 3 grammar
 llpqkParsingNonderivableTestCase parser q k =
     TestCase $ assertEqual [i|LLP(#{q}, #{k}) fails on parsing nonderivables of length 3.|] expected True
   where
-    expected = all isNothing $ parser <$> Set.toList nonderivable3
+    expected = all isLeft $ parser <$> Set.toList nonderivable3
 
 llpqkParsingNonderivableTestCases = [llpqkParsingNonderivableTestCase parser q k | (parser, k, q) <- llpParsers]
 
