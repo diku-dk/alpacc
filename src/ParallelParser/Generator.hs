@@ -1,8 +1,10 @@
+{-# LANGUAGE TemplateHaskell #-}
 module ParallelParser.Generator
   ( futharkKeyGeneration,
   )
 where
 
+import Data.FileEmbed
 import qualified Data.Bifunctor as BI
 import Data.Composition
 import qualified Data.List as L
@@ -111,8 +113,10 @@ futharkTable ::
   Int ->
   Grammar nt t ->
   Map ([t], [t]) ([Bracket (Symbol nt t)], [Int]) ->
-  (String, String)
-futharkTable q k grammar table = (ne,) . (++last_case_str) . cases . prods . keys $ symbolsToInts' table
+  (Int, Int, String, String)
+futharkTable q k grammar table =
+  (max_alpha_omega,max_pi,ne,) .
+  (++last_case_str) . cases . prods . keys $ symbolsToInts' table
   where
     symbolsToInts' = symbolsToInts grammar
     cases = futharkTablesCases . Map.toList
@@ -126,6 +130,9 @@ futharkTable q k grammar table = (ne,) . (++last_case_str) . cases . prods . key
     prods = fmap (futharkProductions max_alpha_omega max_pi)
     keys = Map.mapKeys (uncurry (futharkTableKey q k grammar))
 
+futharkParser :: String
+futharkParser = $(embedStringFile "fut/parser.fut")
+
 -- | Creates Futhark source code which contains a parallel parser that can
 -- create the productions list for a input which is indexes of terminals.
 futharkKeyGeneration ::
@@ -135,110 +142,42 @@ futharkKeyGeneration q k grammar = do
   start_terminal <- maybeToEither "" maybe_start_terminal
   end_terminal <- maybeToEither "" maybe_end_terminal
   table <- maybe_table
-  let (ne, futhark_table) = futharkTable q k augmented_grammar table
-  return [i|import "lib/github.com/diku-dk/sorts/radix_sort"
+  let (max_ao, max_pi, ne, futhark_table) =
+        futharkTable q k augmented_grammar table
+  return $ futharkParser <>
+    [i|
+module parser = mk_parser {
 
-type bracket = #left u64 | #right u64 | #epsilon
-type maybe 'a = #just a | #nothing
+type lookahead_type = #{lookahead_type}
+type lookback_type = #{lookback_type}
 
-def lookbkack_array_to_tuple [n] (arr : [n]u32) =
+def q : i64 = #{q}
+def k : i64 = #{k}
+def max_ao : i64 = #{max_ao}
+def max_pi : i64 = #{max_pi}
+def start_terminal : terminal = #{start_terminal}
+def end_terminal : terminal = #{end_terminal}
+
+def lookback_array_to_tuple [n] (arr : [n]u32) =
   #{toTupleIndexArray "arr" q}
 
 def lookahead_array_to_tuple [n] (arr : [n]u32) =
   #{toTupleIndexArray "arr" k}
 
-def lookback_chunks [n] (arr : [n]u32) =
-  let arr' = replicate #{q} u32.highest ++ arr
-  in iota n |> map (\\i -> arr'[i:i + #{q}] |> lookbkack_array_to_tuple)
-
-def lookahead_chunks [n] (arr : [n]u32) =
-  let arr' = arr ++ replicate #{k} u32.highest
-  in iota n |> map (\\i -> arr'[i:i + #{k}] |> lookahead_array_to_tuple)
-
-def keys [n] (arr : [n]u32) =
-  let lookback = lookback_chunks arr
-  let lookahead = lookahead_chunks arr
-  in zip lookback lookahead
-
-def key_to_config (key : (#{lookback_type}, #{lookahead_type})) : maybe ([]bracket, []u32) =
+def key_to_config (key : (lookback_type, lookahead_type))
+                : maybe ([max_ao]bracket, [max_pi]u32) =
+  (\\r -> match (r: maybe ([]bracket, []u32))
+          case #nothing -> #nothing
+          case #just (x,y) -> #just (sized max_ao x, sized max_pi y)) <|
   match key
   #{futhark_table}
 
-def is_left (b : bracket) : bool =
-  match b
-  case #left _ -> true
-  case #right _ -> false
-  case #epsilon -> false
+def ne : ([max_ao]bracket, [max_pi]u32) =
+  let (a,b) = #{ne}
+  in (sized max_ao a, sized max_pi b)
+}
 
-def depths [n] (input : [n]bracket) : maybe ([n]i64) =
-  let left_brackets =
-    input
-    |> map (is_left)
-  let bracket_scan =
-    left_brackets
-    |> map (\\b -> if b then 1 else -1)
-    |> scan (+) 0
-  let result =
-    bracket_scan
-    |> map2 (\\a b -> b - i64.bool a) left_brackets
-  in if any (<0) bracket_scan || last bracket_scan != 0
-  then #nothing
-  else #just result
-
-def grade (xs : []i64) =
-  zip xs (indices xs)
-  |> radix_sort_int_by_key (.0) i64.num_bits i64.get_bit
-  |> map (.1)
-
-def even_indices 'a [n] (_ : [n]a) =
-  iota (n / 2) |> map (2*)
-
-def unpack_bracket (b : bracket) : u64 =
-  match b
-  case #left a -> a
-  case #right a -> a
-  case #epsilon -> assert false 0
-
-def eq_no_bracket (a : bracket) (b : bracket) : bool =
-  unpack_bracket a u64.== unpack_bracket b
-
-def brackets_matches [n] (brackets : [n]bracket) =
-  match depths brackets
-  case #just depths' ->
-    let grade' = grade depths'
-    in even_indices grade'
-      |> map (\\i -> eq_no_bracket brackets[grade'[i]] brackets[grade'[i+1]])
-      |> and
-  case #nothing -> false
-
-def is_nothing 'a (m : maybe a) : bool =
-  match m
-  case #just _ -> false
-  case #nothing -> true
-
-def from_just 'a (ne : a) (m : maybe a) : a =
-  match m
-  case #just a -> a
-  case _ -> ne
-
-entry parse [n] (arr : [n]u32) : []u32 =
-  let arr' = replicate #{1::Int} #{start_terminal} ++ (map (+2) arr) ++ replicate #{1::Int} #{end_terminal}
-  let configs = keys arr' |> map key_to_config
-  in if any (is_nothing) configs
-  then []
-  else
-  let ne = #{ne}
-  let (brackets, productions) = configs |> map (from_just ne) |> unzip
-  in if brackets
-        |> flatten
-        |> filter (!=#epsilon)
-        |> brackets_matches
-  then productions
-    |> flatten
-    |> filter (!=u32.highest)
-    |> tail
-    |> map (\\a -> a - 1)
-  else []
+entry parse = parser.parse
 |]
   where
     maybe_start_terminal = List.elemIndex RightTurnstile terminals' :: Maybe Int

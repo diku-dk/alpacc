@@ -41,6 +41,7 @@ library
     , deepseq-generics
     , deepseq
     , megaparsec
+    , file-embed
 
   exposed-modules:
     ParallelParser.CFG
@@ -50,6 +51,9 @@ library
     ParallelParser.Generator
 
   hs-source-dirs:     src
+
+  extra-source-files:
+    fut/parser.fut
 
   ghc-options:        -O2 -Wall
 
