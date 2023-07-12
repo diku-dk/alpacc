@@ -63,7 +63,7 @@ jobs:
         echo "CABAL_VERSION=${CABAL_VERSION}" >> "${GITHUB_ENV}"
 
     - name: Build
-      shell: cabal build all
+      run: cabal build all
 
     - name: Setup test
       shell: bash
