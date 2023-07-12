@@ -19,26 +19,28 @@ where
 -- import Data.Semigroup (Semigroup (sconcat))
 import Control.DeepSeq
 import Control.Monad.State
+import Data.Bifunctor qualified as BF
+import Data.Either.Extra (maybeToEither)
 import Data.Foldable
-import qualified Data.List as List
+import Data.Function (on)
+import Data.List qualified as List
 import Data.Map (Map)
-import qualified Data.Map as Map hiding (Map)
+import Data.Map qualified as Map hiding (Map)
 import Data.Maybe
 import Data.Sequence (Seq (..), (<|))
-import qualified Data.Sequence as Seq hiding (Seq (..), (<|), (><), (|>))
+import Data.Sequence qualified as Seq hiding (Seq (..), (<|), (><), (|>))
 import Data.Set (Set)
-import qualified Data.Set as Set hiding (Set)
+import Data.Set qualified as Set hiding (Set)
 import Data.String.Interpolate (i)
 import Data.Tuple.Extra (fst3, thd3)
 import GHC.Generics
 import ParallelParser.Grammar
 import ParallelParser.LL hiding (before, follow, llParse)
 import Prelude hiding (last)
-import Data.Either.Extra (maybeToEither)
 
---import Debug.Trace (traceShow)
---debug x = traceShow x x
---debugBreak = traceShow "BREAK:  "
+-- import Debug.Trace (traceShow)
+-- debug x = traceShow x x
+-- debugBreak = traceShow "BREAK:  "
 -- debugPrint a = traceShow (show a)
 
 -- | This Algebraic data structure is used to model the production with a dot in
@@ -447,42 +449,54 @@ solveLlpItemsMemo items = do
 -- This is done using memoization.
 llpCollectionMemo ::
   (Ord t, Ord nt, Show nt, Show t, NFData t, NFData nt) =>
-  State (LlpContext nt t) (Either String (Set (Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t)))))
+  State
+    (LlpContext nt t)
+    ( Either
+        String
+        ( Map
+            ([AugmentedTerminal t], [AugmentedTerminal t])
+            ( [Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)],
+              [Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)],
+              [Int]
+            ),
+          Set (Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t)))
+        )
+    )
 llpCollectionMemo = do
   ctx <- get
   let grammar = theGrammar ctx
   let q = lookback ctx
-  fmap removeNull <$> auxiliary Map.empty Set.empty [initD q grammar]
+  fmap (BF.second removeNull) <$> auxiliary Map.empty Set.empty [initD q grammar]
   where
     toTuple
       Item
-        { dotProduction = dp@(DotProduction _ alpha_z _),
+        { dotProduction = (DotProduction _ alpha_z _),
           suffix = x,
           prefix = y,
           llpConfig = gamma
-        } 
-          | null alpha_z = Nothing
-          | isTerminal z = Just ((dp, x, y), gamma)
-          | otherwise = Nothing
-          where
-            z = List.last alpha_z
-    
+        }
+        | null alpha_z = Nothing
+        | isTerminal z = Just ((x, y), gamma)
+        | otherwise = Nothing
+        where
+          z = List.last alpha_z
+
     toTuples = mapMaybe toTuple . Set.toList
 
     tryInsert q k m (key, a)
       | key `Map.notMember` m = Right new_map
-      | a' == a = Right new_map
-      | otherwise = Left [i|The grammar is not LLP(#{q}, #{k}) due to the admissible pair #{(x, y)} could result in the initial pushdown store #{fst3 a} and #{fst3 a'}.|]
+      | a' |=| a = Right new_map
+      | otherwise = Left [i|The grammar is not LLP(#{q}, #{k}) due to the admissible pair #{key} could result in the initial pushdown store #{fst3 a} and #{fst3 a'}.|]
       where
         a' = m Map.! key
         new_map = Map.insert key a m
-        (_, x, y) = key
+        (|=|) = (==) `on` fst3
 
     tryInserts q k m = foldM (tryInsert q k) m . toTuples
 
     removeNull = Set.filter (not . null)
 
-    auxiliary _ items [] = return $ return items
+    auxiliary table' items [] = return $ return (table', items)
     auxiliary visited items (top : queue) = do
       next_items <- solveLlpItemsMemo top
       ctx <- get
@@ -568,7 +582,8 @@ llpParserTableWithStarts ::
   Int ->
   Int ->
   Grammar nt t ->
-  Either String
+  Either
+    String
     ( Map
         ([AugmentedTerminal t], [AugmentedTerminal t])
         ( [Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)],
@@ -594,7 +609,8 @@ llpParserTableWithStartsHomomorphisms ::
   Int ->
   Int ->
   Grammar nt t ->
-  Either String
+  Either
+    String
     ( Map
         ([AugmentedTerminal t], [AugmentedTerminal t])
         ( [Bracket (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t))],
@@ -623,21 +639,18 @@ llpParserTable ::
   (Ord nt, Ord t, Show nt, Show t, NFData t, NFData nt) =>
   State
     (LlpContext nt t)
-    ( Either String
+    ( Either
+        String
         ( Map
             ([AugmentedTerminal t], [AugmentedTerminal t])
             ([Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)], [Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)], [Int])
         )
     )
 llpParserTable = do
-  either_collection <- llpCollectionMemo
-  return $ do 
-    collection <- either_collection
-    let psls_table = psls collection
-    let unwrapped = head . Set.toList <$> psls_table
-    if any ((/= 1) . Set.size) psls_table
-      then Left "Not an LLP grammar: ambiguities in PSLS table"
-      else return unwrapped
+  either_tuple <- llpCollectionMemo
+  return $ do
+    (llp_table, _) <- either_tuple
+    return llp_table
 
 -- | Given a lsit create all the pairs with q lookback and k lookahead which
 -- will be used as keys in the table.
@@ -682,9 +695,9 @@ llpParse q k grammar string = do
   table' <- llpParserTableWithStarts q k grammar
   let padded_string = addStoppers $ aug string
   pairs <- maybeToEither "Could not be parsed." . sequence $ pairLookup table' q k padded_string
-  thd3 <$> maybeToEither "Could not be parsed." (glueAll pairs) 
+  thd3 <$> maybeToEither "Could not be parsed." (glueAll pairs)
   where
     addStoppers = (replicate 1 RightTurnstile ++) . (++ replicate 1 LeftTurnstile)
     aug = fmap AugmentedTerminal
     glueAll [] = Nothing
-    glueAll (x:xs) = foldM glue x xs
+    glueAll (x : xs) = foldM glue x xs
