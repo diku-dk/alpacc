@@ -93,7 +93,7 @@ isFileInput :: Input -> Bool
 isFileInput StdInput = False
 isFileInput (FileInput _) = True
 
-grammarError :: Grammar String String -> Maybe String
+grammarError :: (Ord nt, Ord t, Show nt, Show t) => Grammar nt t -> Maybe String
 grammarError grammar
   | not $ null nt_dups = Just [i|The given grammar contains duplicate nonterminals because of #{nt_dups_str}.|]
   | not $ null t_dups = Just [i|The given grammar contains duplicate terminals because of #{t_dups_str}.|]
@@ -104,14 +104,14 @@ grammarError grammar
   where
     nts = Set.fromList $ nonterminals grammar
     nonproductive = nts `Set.difference` closureAlgorithm grammar
-    nonproductive_str = List.intercalate ", " $ Set.toList nonproductive
+    nonproductive_str = List.intercalate ", " . fmap show $ Set.toList nonproductive
     (nt_dups, t_dups, p_dups) = grammarDuplicates grammar
-    nt_dups_str = List.intercalate ", " nt_dups
-    t_dups_str = List.intercalate ", " t_dups
-    p_dups_str = List.intercalate ", " $ fmap showProd p_dups
-    unwrapSym (Terminal a) = a
-    unwrapSym (Nonterminal a) = a
-    showProd (Production nt s) = nt ++ " -> " ++ unwords (fmap unwrapSym s)
+    nt_dups_str = List.intercalate ", " . fmap show $ nt_dups
+    t_dups_str = List.intercalate ", " . fmap show $ t_dups
+    p_dups_str = List.intercalate ", " $ fmap show p_dups
+    -- unwrapSym (Terminal a) = a
+    -- unwrapSym (Nonterminal a) = a
+    -- showProd (Production nt s) = nt ++ " -> " ++ unwords (fmap unwrapSym s)
 
 main :: IO ()
 main = do
@@ -134,7 +134,7 @@ main = do
                      exitFailure
         Right g -> pure g
   grammar <-
-      case unpackNTTGrammar <$> cfgToGrammar cfg of
+      case cfgToGrammar cfg of
         Left e -> do hPutStrLn stderr e
                      exitFailure
         Right g -> pure g

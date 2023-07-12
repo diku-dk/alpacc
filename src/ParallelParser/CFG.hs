@@ -78,8 +78,11 @@ cfgToLexer (CFG {tRules, ntRules}) =
     rule (TRule {ruleRegex = RegexSpanPlus xys}) =
       Right $ LChars xys
     rule (TRule {ruleT = T s}) =
-      Left $ "Cannot handle rule for terminal " <> s
-    mkImplicitRule (T t) = TRule {ruleT = T t, ruleRegex = RegexConst $ T.pack t}
+      Left $ "Cannot handle rule for terminal " <> T.unpack s
+    rule (TRule {ruleT = TLit s}) =
+      Left $ "Cannot handle rule for terminal " <> T.unpack s
+    mkImplicitRule (T t) = TRule {ruleT = T t, ruleRegex = RegexConst t}
+    mkImplicitRule (TLit t) = TRule {ruleT = TLit t, ruleRegex = RegexConst t}
 
 type Parser = Parsec Void T.Text
 
@@ -90,7 +93,7 @@ lexeme :: Parser a -> Parser a
 lexeme = Lexer.lexeme space
 
 pNT :: Parser NT
-pNT = lexeme (NT <$> p) <?> "nonterminal"
+pNT = lexeme (NT . T.pack <$> p) <?> "nonterminal"
   where
     p = (:) <$> satisfy isUpper <*> many (satisfy ok)
     ok c = isAlphaNum c || c `elem` ("'*" :: String)
@@ -101,13 +104,13 @@ pStringLit = lexeme $ char '"' *> takeWhile1P Nothing ok <* char '"'
     ok c = isPrint c && c /= '"'
 
 pT :: Parser T
-pT = T . T.unpack <$> p <?> "terminal"
+pT = T <$> p <?> "terminal"
   where
     p = lexeme $ takeWhile1P Nothing isLower
 
 pTSym :: Parser T
 pTSym =
-  pT <|> (T . T.unpack <$> pStringLit) <?> "terminal"
+  pT <|> (TLit <$> pStringLit) <?> "terminal"
 
 pSymbol :: Parser (Symbol NT T)
 pSymbol = Terminal <$> pTSym <|> Nonterminal <$> pNT
