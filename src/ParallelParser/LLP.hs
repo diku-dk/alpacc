@@ -636,7 +636,7 @@ llpParserTable = do
     let psls_table = psls collection
     let unwrapped = head . Set.toList <$> psls_table
     if any ((/= 1) . Set.size) psls_table
-      then Left "no"
+      then Left "Not an LLP grammar: ambiguities in PSLS table"
       else return unwrapped
 
 -- | Given a lsit create all the pairs with q lookback and k lookahead which
