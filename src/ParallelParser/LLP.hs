@@ -635,7 +635,9 @@ llpParserTable = do
     collection <- either_collection
     let psls_table = psls collection
     let unwrapped = head . Set.toList <$> psls_table
-    return unwrapped
+    if any ((/= 1) . Set.size) psls_table
+      then Left "no"
+      else return unwrapped
 
 -- | Given a lsit create all the pairs with q lookback and k lookahead which
 -- will be used as keys in the table.
