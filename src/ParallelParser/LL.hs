@@ -564,11 +564,11 @@ llTable k grammar = do
         first_follow_prod = toList $ truncatedProduct k first_set follow_set
 
 mapToStr :: (Ord nt, Ord t, Show nt, Show t) => Grammar nt t -> Map (nt, [t]) (Set Int) -> String
-mapToStr grammar = unlines . fmap (\((a, b), set) -> [i|(#{a}, #{b}): |] ++ setToStr set) . Map.toList
+mapToStr grammar = unlines . fmap (\((a, b), set) -> [i|(#{a}, #{unwords $ fmap show b}): |] ++ setToStr a set) . Map.toList
   where
-    setToStr = ("{"++) . (++"}") . List.intercalate ", " . fmap f . Set.toList
+    setToStr a = (++ ";") . (show a ++) . (" = " ++) . List.intercalate " | " . fmap f . Set.toList
     prods = productions grammar
-    f = show . (prods List.!!)
+    f = unwords . fmap show . symbols . (prods List.!!)
 
 
 -- | Creates a LL(k) table for a given grammar.

@@ -29,6 +29,8 @@ module ParallelParser.Grammar
 where
 
 import Control.DeepSeq
+import Data.Text (Text)
+import qualified Data.Text as Text hiding (Text)
 import Data.Bifunctor (Bifunctor (bimap, first, second))
 import qualified Data.List as List
 import Data.Map (Map)
@@ -51,9 +53,6 @@ import Text.ParserCombinators.ReadP
 -- import Debug.Trace (traceShow)
 -- debug x = traceShow x x
 
--- | Structure used for terminals making it easier to print strings in a
--- readable manner.
-newtype T = T String deriving (Ord, Eq)
 
 -- | Used in augmenting terminals for the augmented grammar.
 data AugmentedTerminal t
@@ -83,25 +82,26 @@ instance Show nt => Show (AugmentedNonterminal nt) where
   show (AugmentedNonterminal nt) = show nt
   show Start = "⊥"
 
--- | Reads the string as it is for the terminal.
-instance Read T where
-  readsPrec _ a = [(T a, "")]
+-- | Structure used for terminals making it easier to print strings in a
+-- readable manner.
+data T = T Text | TLit Text deriving (Ord, Eq, Generic)
+
+instance NFData T
 
 -- | Prints the string inside the terminal symbol.
 instance Show T where
-  show (T a) = a
+  show (T a) = Text.unpack a
+  show (TLit a) = "\"" <> Text.unpack a <> "\""
 
 -- | Structure used for nonterminals making it easier to print strings in a
 -- readable manner.
-newtype NT = NT String deriving (Ord, Eq)
+newtype NT = NT Text deriving (Ord, Eq, Generic)
+
+instance NFData NT
 
 -- | Reads the string as it is for the nonterminal.
 instance Show NT where
-  show (NT a) = a
-
--- | Reads the string as it is for the terminal.
-instance Read NT where
-  readsPrec _ a = [(NT a, "")]
+  show (NT a) = Text.unpack a
 
 -- | An algebraic data structure which can contain a terminal or a nonterminal.
 data Symbol nt t
@@ -129,7 +129,7 @@ data Production nt t
   deriving (Ord, Eq, Read, Functor, Generic)
 
 instance (Show nt, Show t) => Show (Production nt t) where
-  show (Production nt s) = show nt ++ " -> " ++ show s
+  show (Production nt s) = show nt ++ " = " ++ unwords (fmap show s)
 
 instance (NFData t, NFData nt) => NFData (Production nt t)
 
@@ -392,8 +392,9 @@ unpackNTTGrammar grammar =
       productions = bimap unpackNT unpackT <$> productions grammar
     }
   where
-    unpackT (T s) = s
-    unpackNT (NT s) = s
+    unpackT (T s) = Text.unpack s
+    unpackT (TLit s) = Text.unpack s
+    unpackNT (NT s) = Text.unpack s
 
 data SubstringNonterminal nt
   = ExistingNT nt
