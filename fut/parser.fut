@@ -111,4 +111,15 @@ module mk_parser(G: grammar) = {
           else []
 }
 
+def lexer_error = u32.highest-2
+def whitespace = u32.highest-1
+
+def terminals [n] (accept: u32 -> u32 -> u32) (xs: [n]u32) : []terminal =
+  let f i a b = accept a (if i == n-1 then whitespace else b)
+  in map3 f (indices xs) xs (rotate 1 xs)
+     |> filter (!=whitespace)
+
+def lex (char_code: u8 -> u32) (accept: u32 -> u32 -> u32) (s: []u8) : []terminal =
+  terminals accept (map char_code s)
+
 -- End of parser.fut

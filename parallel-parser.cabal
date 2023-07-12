@@ -12,7 +12,7 @@ license-file:       LICENSE
 author:             William Due
 maintainer:         williamhenrichdue@gmail.com
 category:           Language
-extra-source-files: CHANGELOG.md
+extra-source-files: CHANGELOG.md fut/parser.fut
 
 library
   default-language:   GHC2021
@@ -49,11 +49,9 @@ library
     ParallelParser.LL
     ParallelParser.LLP
     ParallelParser.Generator
+    ParallelParser.Lexer
 
   hs-source-dirs:     src
-
-  extra-source-files:
-    fut/parser.fut
 
   ghc-options:        -O2 -Wall
 
