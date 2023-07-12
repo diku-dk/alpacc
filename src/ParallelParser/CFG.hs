@@ -22,7 +22,7 @@ import Text.Megaparsec.Char.Lexer qualified as Lexer
 
 -- Extremely trivial; improve later.
 data Regex
-  = RegexSpanPlus Char Char -- [x-y]+
+  = RegexSpanPlus [(Char, Char)] -- [x-y]+
   | RegexConst T.Text
   deriving (Show)
 
@@ -75,8 +75,8 @@ cfgToLexer (CFG {tRules, ntRules}) =
     rule (TRule {ruleRegex = RegexConst s})
       | [c] <- T.unpack s =
           Right $ LChar c
-    rule (TRule {ruleRegex = RegexSpanPlus x y}) =
-      Right $ LChars x y
+    rule (TRule {ruleRegex = RegexSpanPlus xys}) =
+      Right $ LChars xys
     rule (TRule {ruleT = T s}) =
       Left $ "Cannot handle rule for terminal " <> s
     mkImplicitRule (T t) = TRule {ruleT = T t, ruleRegex = RegexConst $ T.pack t}
@@ -122,9 +122,12 @@ pRegex :: Parser Regex
 pRegex =
   brackets
     ( RegexSpanPlus
-        <$> satisfy isAlphaNum
-        <* lexeme "-"
-        <*> satisfy isAlphaNum
+        <$> many
+          ( (,)
+              <$> satisfy isAlphaNum
+              <* lexeme "-"
+              <*> satisfy isAlphaNum
+          )
     )
     <* lexeme "+"
     <|> RegexConst <$> pStringLit
