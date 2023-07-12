@@ -19,10 +19,9 @@ where
 -- import Data.Semigroup (Semigroup (sconcat))
 import Control.DeepSeq
 import Control.Monad.State
-import Data.Bifunctor qualified as BF
+import Data.Bifunctor qualified as BI
 import Data.Either.Extra (maybeToEither)
 import Data.Foldable
-import Data.Function (on)
 import Data.List qualified as List
 import Data.Map (Map)
 import Data.Map qualified as Map hiding (Map)
@@ -32,7 +31,7 @@ import Data.Sequence qualified as Seq hiding (Seq (..), (<|), (><), (|>))
 import Data.Set (Set)
 import Data.Set qualified as Set hiding (Set)
 import Data.String.Interpolate (i)
-import Data.Tuple.Extra (fst3, thd3)
+import Data.Tuple.Extra (fst3, thd3, both)
 import GHC.Generics
 import ParallelParser.Grammar
 import ParallelParser.LL hiding (before, follow, llParse)
@@ -466,7 +465,7 @@ llpCollectionMemo = do
   ctx <- get
   let grammar = theGrammar ctx
   let q = lookback ctx
-  fmap (BF.second removeNull) <$> auxiliary Map.empty Set.empty [initD q grammar]
+  fmap (BI.second removeNull) <$> auxiliary Map.empty Set.empty [initD q grammar]
   where
     toTuple
       Item
@@ -485,12 +484,18 @@ llpCollectionMemo = do
 
     tryInsert q k m (key, a)
       | key `Map.notMember` m = Right new_map
-      | a' |=| a = Right new_map
-      | otherwise = Left [i|The grammar is not LLP(#{q}, #{k}) due to the admissible pair #{key} could result in the initial pushdown store #{fst3 a} and #{fst3 a'}.|]
+      | a' == a = Right new_map
+      | otherwise = Left [i|The grammar is not LLP(#{q}, #{k}) due to the admissible pair #{key_str} could result in the initial pushdown store #{a_str} and #{a_str'}.|]
       where
         a' = m Map.! key
         new_map = Map.insert key a m
-        (|=|) = (==) `on` fst3
+
+        a_str' = concatString $ fst3 a'
+        a_str = concatString $ fst3 a
+        key_str = (\(x, y) -> "(" ++ x ++ ", " ++ y ++ ")") $ both concatString key
+        
+        concatString :: (Show m) => [m] -> String
+        concatString = unwords . fmap show
 
     tryInserts q k m = foldM (tryInsert q k) m . toTuples
 
