@@ -420,7 +420,7 @@ def generate_random_llp_grammar(
 
         could_create = False
         p = subprocess.Popen(
-            ['./parallel-parser',
+            ['parallel-parser',
              '--stdin',
              f'--output={filename}',
              f'--lookback={q}',
@@ -577,17 +577,6 @@ def main():
             'futhark pkg add github.com/diku-dk/sorts && futhark pkg sync',
             shell=True
         ), "Futharks sorts lib could not be retrieved."
-
-        assert 0 == subprocess.check_call(
-            (f'cd .. && cabal install --installdir={test_dir} '
-            '--install-method=copy --enable-executable-stripping '
-            '--overwrite-policy=always'),
-            shell=True
-        ), "Could not compile the parallel parser generator."
-
-        assert os.path.exists(
-            './parallel-parser'
-        ), "The parallel-parser binaries does not exists."
     elif args.test_type == 'stuck':
         assert args.grammar_size is not None, "grammar-size must be set."
         assert args.lookback is not None, "lookback must be set."

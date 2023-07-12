@@ -61,7 +61,10 @@ jobs:
         CABAL_VERSION=$(cabal --numeric-version)
         echo "GHC_VERSION=${GHC_VERSION}"     >> "${GITHUB_ENV}"
         echo "CABAL_VERSION=${CABAL_VERSION}" >> "${GITHUB_ENV}"
-  
+
+    - name: Build
+      shell: cabal build all
+
     - name: Setup test
       shell: bash
       run: |
@@ -70,7 +73,7 @@ jobs:
     - name: Run stuck test
       shell: bash
       run: |
-        python3 futhark-tests \
+        cabal exec -- python3 futhark-tests \
           --test-type=stuck \
           --grammar-size=1000 \
           --lookback=1 \
@@ -79,7 +82,7 @@ jobs:
     - name: LLP(1,1) parsing
       shell: bash
       run: |
-        python3 futhark-tests \
+        cabal exec -- python3 futhark-tests \
           --test-type=parse \
           --grammar-size=50 \
           --lookback=1 \
@@ -90,7 +93,7 @@ jobs:
     - name: LLP(2,2) parsing
       shell: bash
       run: |
-        python3 futhark-tests \
+        cabal exec -- python3 futhark-tests \
           --test-type=parse \
           --grammar-size=50 \
           --lookback=2 \
@@ -101,7 +104,7 @@ jobs:
     - name: LLP(3,3) parsing
       shell: bash
       run: |
-        python3 futhark-tests \
+        cabal exec -- python3 futhark-tests \
           --test-type=parse \
           --grammar-size=50 \
           --lookback=3 \
