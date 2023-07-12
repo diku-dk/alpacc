@@ -496,7 +496,7 @@ collectionTestCase = TestCase $ assertEqual "LLP collection test" expected resul
   where
     expected = Set.empty
     Right init_context = initLlpContext 1 1 grammar
-    Right computed_collection = evalState llpCollectionMemo init_context
+    Right (_, computed_collection) = evalState llpCollectionMemo init_context
     result = Set.difference computed_collection collection
 
 -- pslsTestCase = TestCase $ assertEqual "PSLS table test" expected result

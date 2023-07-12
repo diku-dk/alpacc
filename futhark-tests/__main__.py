@@ -438,7 +438,7 @@ def generate_random_llp_grammar(
         
         if os.path.exists(f'{filename}') and could_create:
             if not quiet:
-                print(f'{filename} contains a parser for the grammar: {grammar}.')
+                print(f'{filename} contains a parser for the grammar:\n{grammar}')
             return name, grammar, generated_count
 
 def stuck_test(number_of_grammars: int, q: int = 1, k: int = 1):
