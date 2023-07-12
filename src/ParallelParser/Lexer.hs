@@ -9,11 +9,15 @@ import Data.String.Interpolate (i)
 
 data LexerRule
   = LChar Char -- "c"
-  | LChars Char Char -- [x-y]+
+  | LChars [(Char, Char)] -- [x-y]+
 
 charMatches :: LexerRule -> String
 charMatches (LChar c) = [i|c == #{ord c}|]
-charMatches (LChars x y) = [i|c >= #{ord x} && c <= #{ord y}|]
+charMatches (LChars []) = "false"
+charMatches (LChars [(x, y)]) =
+  [i|c >= #{ord x} && c <= #{ord y}|]
+charMatches (LChars ((x, y) : xys)) =
+  [i|c >= #{ord x} && c <= #{ord y} || #{charMatches (LChars xys)}|]
 
 mapFunction :: [LexerRule] -> String
 mapFunction rules =
