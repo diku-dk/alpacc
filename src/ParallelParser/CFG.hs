@@ -1,6 +1,7 @@
 module ParallelParser.CFG
   ( cfgFromText,
     cfgToGrammar,
+    cfgToLexer,
     CFG (..),
     TRule (..),
     NTRule (..),
@@ -9,11 +10,12 @@ where
 
 import Control.Monad (void)
 import Data.Char (isAlphaNum, isLower, isPrint, isUpper)
-import Data.List (nub)
+import Data.List (nub, nubBy)
 import Data.Set qualified as S
 import Data.Text qualified as T
 import Data.Void
 import ParallelParser.Grammar
+import ParallelParser.Lexer
 import Text.Megaparsec
 import Text.Megaparsec.Char (char, space1)
 import Text.Megaparsec.Char.Lexer qualified as Lexer
@@ -44,6 +46,13 @@ data CFG = CFG
   }
   deriving (Show)
 
+symbolTerminal :: Symbol NT T -> S.Set T
+symbolTerminal (Terminal t) = S.singleton t
+symbolTerminal (Nonterminal _) = mempty
+
+ruleTerminals :: NTRule -> S.Set T
+ruleTerminals = foldMap (foldMap symbolTerminal) . ruleProductions
+
 cfgToGrammar :: CFG -> Either String (Grammar NT T)
 cfgToGrammar (CFG {ntRules = []}) = Left "CFG has no production rules."
 cfgToGrammar (CFG {tRules, ntRules}) =
@@ -53,11 +62,24 @@ cfgToGrammar (CFG {tRules, ntRules}) =
       terminals = nub $ map ruleT tRules ++ S.toList (foldMap ruleTerminals ntRules)
    in Right $ Grammar {start, terminals, nonterminals, productions}
   where
-    symbolTerminal (Terminal t) = S.singleton t
-    symbolTerminal (Nonterminal _) = mempty
     ruleProds NTRule {ruleNT, ruleProductions} =
       map (Production ruleNT) ruleProductions
-    ruleTerminals = foldMap (foldMap symbolTerminal) . ruleProductions
+
+cfgToLexer :: CFG -> Either String [LexerRule]
+cfgToLexer (CFG {tRules, ntRules}) =
+  mapM rule $ nubBy sameT $ tRules <> map mkImplicitRule implicit
+  where
+    sameT x y = ruleT x == ruleT y
+    declared = map ruleT tRules
+    implicit = filter (`notElem` declared) $ S.toList $ foldMap ruleTerminals ntRules
+    rule (TRule {ruleRegex = RegexConst s})
+      | [c] <- T.unpack s =
+          Right $ LChar c
+    rule (TRule {ruleRegex = RegexSpanPlus x y}) =
+      Right $ LChars x y
+    rule (TRule {ruleT = T s}) =
+      Left $ "Cannot handle rule for terminal " <> s
+    mkImplicitRule (T t) = TRule {ruleT = T t, ruleRegex = RegexConst $ T.pack t}
 
 type Parser = Parsec Void T.Text
 
