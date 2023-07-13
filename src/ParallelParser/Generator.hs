@@ -73,8 +73,8 @@ futharkProductions :: Int -> Int -> ([Bracket Int], [Int]) -> String
 futharkProductions max_alpha_omega max_pi = ("#just " ++) . toTuple . toArr . snd' . fst'
   where
     toArr (a, b) = [a, b]
-    snd' = BI.second (toArray . rpad "u32.highest" max_pi . map show)
-    fst' = BI.first (toArray . rpad "#epsilon" max_alpha_omega . map auxiliary)
+    snd' = BI.second (toTuple . rpad "u32.highest" max_pi . map show)
+    fst' = BI.first (toTuple . rpad "#epsilon" max_alpha_omega . map auxiliary)
     auxiliary (LBracket a) = "#left " ++ show a
     auxiliary (RBracket a) = "#right " ++ show a
 
@@ -144,6 +144,10 @@ futharkKeyGeneration q k grammar = do
   table <- maybe_table
   let (max_ao, max_pi, ne, futhark_table) =
         futharkTable q k augmented_grammar table
+      brackets_ty = "(" <> List.intercalate "," (replicate max_ao "bracket") <> ")"
+      productions_ty = "(" <> List.intercalate "," (replicate max_pi "u32") <> ")"
+      brackets = List.intercalate "," $ zipWith (<>) (replicate max_ao "b") $ map show [(0::Int)..]
+      productions = List.intercalate "," $ zipWith (<>) (replicate max_pi "p") $ map show [(0::Int)..]
   return $ futharkParser <>
     [i|
 module parser = mk_parser {
@@ -166,9 +170,10 @@ def lookahead_array_to_tuple [n] (arr : [n]u32) =
 
 def key_to_config (key : (lookback_type, lookahead_type))
                 : maybe ([max_ao]bracket, [max_pi]u32) =
-  (\\r -> match (r: maybe ([]bracket, []u32))
+  (\\r -> match (r: maybe (#{brackets_ty}, #{productions_ty}))
           case #nothing -> #nothing
-          case #just (x,y) -> #just (sized max_ao x, sized max_pi y)) <|
+          case #just ((#{brackets}),(#{productions})) ->
+            #just (sized max_ao [#{brackets}], sized max_pi [#{productions}])) <|
   match key
   #{futhark_table}
 
