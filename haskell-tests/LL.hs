@@ -2,9 +2,9 @@ module LL (tests) where
 
 import qualified Data.List as List
 import qualified Data.Set as Set
-import ParallelParser.Grammar
-import ParallelParser.LL
-import ParallelParser.LLP hiding ( LlpContext(..) )
+import Alpacc.Grammar
+import Alpacc.LL
+import Alpacc.LLP hiding ( LlpContext(..) )
 import Test.HUnit
 import Debug.Trace (traceShow)
 import Text.ParserCombinators.ReadP (string)

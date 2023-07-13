@@ -1,5 +1,5 @@
 {-# LANGUAGE TemplateHaskell #-}
-module ParallelParser.Generator
+module Alpacc.Generator
   ( futharkKeyGeneration,
   )
 where
@@ -13,8 +13,8 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.String.Interpolate (i)
 import Data.Tuple.Extra
-import ParallelParser.Grammar
-import ParallelParser.LLP
+import Alpacc.Grammar
+import Alpacc.LLP
     ( Bracket(..), llpParserTableWithStartsHomomorphisms )
 import Control.DeepSeq
 import Data.Either.Extra (maybeToEither)

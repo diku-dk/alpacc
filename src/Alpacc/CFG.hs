@@ -1,4 +1,4 @@
-module ParallelParser.CFG
+module Alpacc.CFG
   ( cfgFromText,
     cfgToGrammar,
     cfgToLexer,
@@ -14,8 +14,8 @@ import Data.List (nub, nubBy)
 import Data.Set qualified as S
 import Data.Text qualified as T
 import Data.Void
-import ParallelParser.Grammar
-import ParallelParser.Lexer
+import Alpacc.Grammar
+import Alpacc.Lexer
 import Text.Megaparsec
 import Text.Megaparsec.Char (char, space1)
 import Text.Megaparsec.Char.Lexer qualified as Lexer
