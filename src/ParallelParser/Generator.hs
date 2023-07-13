@@ -176,8 +176,6 @@ def ne : ([max_ao]bracket, [max_pi]u32) =
   let (a,b) = #{ne}
   in (sized max_ao a, sized max_pi b)
 }
-
-entry parse = parser.parse
 |]
   where
     maybe_start_terminal = List.elemIndex RightTurnstile terminals' :: Maybe Int
