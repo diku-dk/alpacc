@@ -1,0 +1,115 @@
+cabal-version:      2.4
+name:               alpacc
+version:            0.1.0.0
+synopsis:           A parallel LL parser generator.
+
+-- A longer description of the package.
+-- description:
+homepage:           https://github.com/diku-dk/alpacc
+bug-reports:        https://github.com/diku-dk/alpacc/issues
+license:            MIT
+license-file:       LICENSE
+author:             William Due
+maintainer:         williamhenrichdue@gmail.com
+category:           Language
+extra-source-files: CHANGELOG.md fut/parser.fut
+
+library
+  default-language:   GHC2021
+  default-extensions:
+    DeriveGeneric
+    FlexibleContexts
+    FlexibleInstances
+    OverloadedStrings
+    TupleSections
+    QuasiQuotes
+    DeriveFunctor
+    ExtendedDefaultRules
+    DeriveGeneric
+
+  build-depends:
+    , base
+    , composition
+    , containers
+    , split
+    , text
+    , interpolate
+    , extra
+    , parallel
+    , mtl
+    , filepath
+    , deepseq-generics
+    , deepseq
+    , megaparsec
+    , file-embed
+
+  exposed-modules:
+    Alpacc.CFG
+    Alpacc.Grammar
+    Alpacc.LL
+    Alpacc.LLP
+    Alpacc.Generator
+    Alpacc.Lexer
+
+  hs-source-dirs:     src
+
+  ghc-options:        -O2 -Wall
+
+executable alpacc
+  default-language:   GHC2021
+  ghc-options:        -threaded -O2 -rtsopts -Wall
+  main-is:            Main.hs
+
+  default-extensions:
+    DeriveGeneric
+    FlexibleContexts
+    FlexibleInstances
+    OverloadedStrings
+    TupleSections
+    QuasiQuotes
+    DeriveFunctor
+    ExtendedDefaultRules
+    DeriveGeneric
+
+  build-depends:
+    optparse-applicative
+    , alpacc
+    , filepath
+    , deepseq-generics
+    , deepseq
+    , interpolate
+    , containers
+    , parallel
+    , text
+    , base
+
+  hs-source-dirs:     app
+
+test-suite test-alpacc
+  default-language:   Haskell2010
+  ghc-options:        -threaded -O2 -rtsopts
+  other-modules:
+    LL
+    LLP
+
+  default-extensions:
+    DeriveGeneric
+    FlexibleContexts
+    FlexibleInstances
+    OverloadedStrings
+    TupleSections
+    QuasiQuotes
+    DeriveFunctor
+    ExtendedDefaultRules
+    DeriveGeneric
+
+  type:             exitcode-stdio-1.0
+  hs-source-dirs:   haskell-tests
+  main-is:          Main.hs
+  build-depends:
+    , HUnit
+    , alpacc
+    , interpolate
+    , containers
+    , base
+    , mtl
