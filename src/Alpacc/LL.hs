@@ -1,4 +1,4 @@
-module ParallelParser.LL
+module Alpacc.LL
   ( nullableOne,
     nullable,
     first,
@@ -41,7 +41,7 @@ import Data.Maybe
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Tuple.Extra (dupe, both)
-import ParallelParser.Grammar
+import Alpacc.Grammar
 import Prelude hiding (last)
 import Data.Sequence (Seq (..), (<|), (><))
 import qualified Data.Sequence as Seq hiding (Seq (..), (<|), (><), (|>))

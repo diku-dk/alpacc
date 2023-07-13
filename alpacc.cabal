@@ -1,12 +1,12 @@
 cabal-version:      2.4
-name:               parallel-parser
+name:               alpacc
 version:            0.1.0.0
 synopsis:           A parallel LL parser generator.
 
 -- A longer description of the package.
 -- description:
-homepage:           https://github.com/diku-dk/parallel-parser
-bug-reports:        https://github.com/diku-dk/parallel-parser/issues
+homepage:           https://github.com/diku-dk/alpacc
+bug-reports:        https://github.com/diku-dk/alpacc/issues
 license:            MIT
 license-file:       LICENSE
 author:             William Due
@@ -44,18 +44,18 @@ library
     , file-embed
 
   exposed-modules:
-    ParallelParser.CFG
-    ParallelParser.Grammar
-    ParallelParser.LL
-    ParallelParser.LLP
-    ParallelParser.Generator
-    ParallelParser.Lexer
+    Alpacc.CFG
+    Alpacc.Grammar
+    Alpacc.LL
+    Alpacc.LLP
+    Alpacc.Generator
+    Alpacc.Lexer
 
   hs-source-dirs:     src
 
   ghc-options:        -O2 -Wall
 
-executable parallel-parser
+executable alpacc
   default-language:   GHC2021
   ghc-options:        -threaded -O2 -rtsopts -Wall
   main-is:            Main.hs
@@ -73,7 +73,7 @@ executable parallel-parser
 
   build-depends:
     optparse-applicative
-    , parallel-parser
+    , alpacc
     , filepath
     , deepseq-generics
     , deepseq
@@ -85,7 +85,7 @@ executable parallel-parser
 
   hs-source-dirs:     app
 
-test-suite test-parallel-parser
+test-suite test-alpacc
   default-language:   Haskell2010
   ghc-options:        -threaded -O2 -rtsopts
   other-modules:
@@ -108,7 +108,7 @@ test-suite test-parallel-parser
   main-is:          Main.hs
   build-depends:
     , HUnit
-    , parallel-parser
+    , alpacc
     , interpolate
     , containers
     , base

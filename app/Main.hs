@@ -2,8 +2,8 @@ module Main where
 
 import qualified Data.Text.IO as T
 import System.IO
-import ParallelParser.Grammar
-import ParallelParser.Generator
+import Alpacc.Grammar
+import Alpacc.Generator
 import Prelude hiding (last)
 import Data.Maybe
 import Options.Applicative
@@ -11,10 +11,10 @@ import Data.String.Interpolate (i)
 import System.FilePath.Posix (stripExtension, takeFileName)
 import qualified Data.List as List
 import System.Exit (exitFailure)
-import ParallelParser.LL (closureAlgorithm)
+import Alpacc.LL (closureAlgorithm)
 import qualified Data.Set as Set
-import ParallelParser.CFG
-import ParallelParser.Lexer
+import Alpacc.CFG
+import Alpacc.Lexer
 import Debug.Trace (traceShow)
 
 debug :: Show b => b -> b
@@ -81,7 +81,7 @@ opts :: ParserInfo Parameters
 opts = info (parameters <**> helper)
   ( fullDesc
   <> progDesc "Creates a parallel parser in Futhark using FILE."
-  <> header "ParallelParser" )
+  <> header "Alpacc" )
 
 
 writeFutharkProgram :: String -> String -> IO ()

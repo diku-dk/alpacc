@@ -1,4 +1,4 @@
-module ParallelParser.Lexer
+module Alpacc.Lexer
   ( LexerRule (..),
     generateLexer,
   )

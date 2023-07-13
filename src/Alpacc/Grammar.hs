@@ -1,4 +1,4 @@
-module ParallelParser.Grammar
+module Alpacc.Grammar
   ( Grammar (..),
     Symbol (..),
     Production (..),

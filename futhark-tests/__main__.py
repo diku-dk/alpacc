@@ -425,7 +425,7 @@ def generate_random_llp_grammar(
 
         could_create = False
         p = subprocess.Popen(
-            ['parallel-parser',
+            ['alpacc',
              '--stdin',
              f'--output={filename}',
              f'--lookback={q}',
@@ -571,7 +571,7 @@ def main():
     test_dir = os.path.dirname(__file__)
 
     parser = argparse.ArgumentParser(
-                    prog='ParallelParserTester',
+                    prog='AlpaccTester',
                     description='Program for testing the Futhark parsers')
 
     parser.add_argument('-t', '--test-type')
