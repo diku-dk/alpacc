@@ -1,4 +1,4 @@
-module ParallelParser.LLP
+module Alpacc.LLP
   ( Item (..),
     DotProduction (..),
     toDotProduction,
@@ -33,8 +33,8 @@ import Data.Set qualified as Set hiding (Set)
 import Data.String.Interpolate (i)
 import Data.Tuple.Extra (fst3, thd3, both)
 import GHC.Generics
-import ParallelParser.Grammar
-import ParallelParser.LL hiding (before, follow, llParse)
+import Alpacc.Grammar
+import Alpacc.LL hiding (before, follow, llParse)
 import Prelude hiding (last)
 
 -- import Debug.Trace (traceShow)
