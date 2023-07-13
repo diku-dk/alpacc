@@ -385,6 +385,11 @@ def generate_grammar(
     specific_prooducions = [sepecific_production(nt) for nt in nonterminals]
     extra_productions = [production() for _ in range(extra_productions)]
     productions = specific_prooducions + extra_productions
+
+    # Shuffle the nonterminals as we use the first nonterminal as the
+    # starting one, and it tends to be quite boring.
+    random.shuffle(nonterminals)
+
     return Grammar(
         nonterminals[0],
         terminals,
@@ -492,7 +497,10 @@ def to_futhark_test(inp, out):
             return 'empty([0]u32)'
         return f'[{", ".join(map(to_u32, arr))}]'
 
-    return f"""-- input {{ {to_array(inp)} }}
+    def to_str(arr):
+        return '"' + ''.join(map(str,arr)) + '"'
+
+    return f"""-- input {{ {to_str(inp)} }}
 -- output {{ {to_array(out)} }}
 """
 
@@ -540,19 +548,24 @@ def generate_parser_test(
         )
         valid_strings_set = set(map(lambda x: tuple(x[1]), valid_strings))
         ll_parser = LLParser(k, grammar)
-        
+
+        # Sometimes the index does not correspond to a valid terminal
+        # - produce X then.
+        num_terminals = len(grammar.terminals)
+        def indices_to_terminals(indices):
+            return [grammar.terminals[i] if i < num_terminals else 'X' for i in indices]
+
         with open(f'{name}.fut', 'a') as fp:
             fp.write('\n'.join(['-- ' + l for l in str(grammar).splitlines()]))
             fp.write(f'\n{FUTHARK_TEST_HEADER}')
             for string, indices in valid_strings:
                 expected = ll_parser.parse(string)
-                fp.write(f'{to_futhark_test(indices, expected)}')
-            
+                fp.write(f'{to_futhark_test(string, expected)}')
+
             for indices in string_combinations[len(grammar.nonterminals)]:
                 if indices in valid_strings_set:
                     continue
-                
-                fp.write(f'{to_futhark_test(indices, [])}')
+                fp.write(to_futhark_test(indices_to_terminals(indices), []))
 
 def main():
     test_dir = os.path.dirname(__file__)

@@ -14,6 +14,7 @@ import System.Exit (exitFailure)
 import ParallelParser.LL (closureAlgorithm)
 import qualified Data.Set as Set
 import ParallelParser.CFG
+import ParallelParser.Lexer
 import Debug.Trace (traceShow)
 
 debug :: Show b => b -> b
@@ -127,8 +128,18 @@ main = do
   contents <- case input_method of
         StdInput -> T.getContents
         FileInput path -> T.readFile path
+  cfg <-
+    case cfgFromText program_path contents of
+        Left e -> do hPutStrLn stderr e
+                     exitFailure
+        Right g -> pure g
   grammar <-
-      case cfgToGrammar =<< cfgFromText program_path contents of
+      case cfgToGrammar cfg of
+        Left e -> do hPutStrLn stderr e
+                     exitFailure
+        Right g -> pure g
+  lexer <-
+      case cfgToLexer cfg of
         Left e -> do hPutStrLn stderr e
                      exitFailure
         Right g -> pure g
@@ -138,4 +149,8 @@ main = do
     Nothing -> case maybe_program of
         Left e -> do hPutStrLn stderr e
                      exitFailure
-        Right program -> writeFutharkProgram program_path program
+        Right program ->
+          writeFutharkProgram program_path $
+            program <>
+            generateLexer lexer <>
+            "entry parse s = parser.parse (lex char_code accept s)\n"
