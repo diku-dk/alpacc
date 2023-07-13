@@ -1,3 +1,6 @@
+string = [a-zA-Z]+;
+int = [0-9]+;
+
 J = O | A | string | int;
 
 O = "{" FS0 "}";

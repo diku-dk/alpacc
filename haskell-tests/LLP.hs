@@ -5,9 +5,9 @@ import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Control.Monad.State
-import ParallelParser.Grammar
-import ParallelParser.LLP
-import ParallelParser.LL
+import Alpacc.Grammar
+import Alpacc.LLP
+import Alpacc.LL
 import Test.HUnit
 import Data.String.Interpolate (i)
 import Debug.Trace (traceShow)
