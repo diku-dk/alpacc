@@ -1,4 +1,4 @@
-# Revision history for parallel-parser
+# Revision history for alpacc
 
 ## 0.1.0.0 -- 2023-06-09
 

@@ -15,6 +15,7 @@ import Alpacc.LL (closureAlgorithm)
 import qualified Data.Set as Set
 import Alpacc.CFG
 import Alpacc.Lexer
+import Alpacc.RegularExpression
 import Debug.Trace (traceShow)
 
 debug :: Show b => b -> b
@@ -109,9 +110,6 @@ grammarError grammar
     nt_dups_str = List.intercalate ", " . fmap show $ nt_dups
     t_dups_str = List.intercalate ", " . fmap show $ t_dups
     p_dups_str = List.intercalate ", " $ fmap show p_dups
-    -- unwrapSym (Terminal a) = a
-    -- unwrapSym (Nonterminal a) = a
-    -- showProd (Production nt s) = nt ++ " -> " ++ unwords (fmap unwrapSym s)
 
 main :: IO ()
 main = do
@@ -143,6 +141,12 @@ main = do
         Left e -> do hPutStrLn stderr e
                      exitFailure
         Right g -> pure g
+  -- regex <-
+  --     case regExFromText "" "c(a|bc)*" of
+  --       Left e -> do hPutStrLn stderr e
+  --                    exitFailure
+  --       Right g -> pure g
+  -- print regex
   let maybe_program = futharkKeyGeneration q k grammar
   case grammarError grammar of
     Just msg -> putStrLn msg *> exitFailure
