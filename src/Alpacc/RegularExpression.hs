@@ -1,6 +1,5 @@
 module Alpacc.RegularExpression (regExFromText, pRegEx) where
 
-import Data.Composition
 import Data.Text (Text)
 import Data.Void
 import Text.Megaparsec
@@ -36,19 +35,11 @@ chainl1 p op = p >>= rest
         rest (f x y)
         <|> return x
 
-type BinaryOp = RegEx -> RegEx -> RegEx
-
-binaryOps :: [Text] -> [BinaryOp] -> Parser BinaryOp
-binaryOps = (lexeme . foldl1 (<|>)) .: zipWith toBinaryOp
-  where
-    toBinaryOp x f = string x >> return f
-
-
 pConcat :: Parser RegEx
 pConcat = foldl Concat Epsilon <$> many pTerm
 
 pAlter :: Parser RegEx
-pAlter = pConcat `chainl1` binaryOps ["|"] [Alter]
+pAlter = pConcat `chainl1` (lexeme (string "|") >> return Alter)
 
 pRegEx :: Parser RegEx
 pRegEx = pAlter
