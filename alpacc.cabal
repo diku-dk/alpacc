@@ -42,7 +42,6 @@ library
     , deepseq
     , megaparsec
     , file-embed
-    , parser-combinators
 
   exposed-modules:
     Alpacc.CFG

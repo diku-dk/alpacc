@@ -141,12 +141,12 @@ main = do
         Left e -> do hPutStrLn stderr e
                      exitFailure
         Right g -> pure g
-  -- regex <-
-  --     case regExFromText "" "c(a|bc)*" of
-  --       Left e -> do hPutStrLn stderr e
-  --                    exitFailure
-  --       Right g -> pure g
-  -- print regex
+  regex <-
+      case regExFromText "" "dd|ha*" of
+        Left e -> do hPutStrLn stderr e
+                     exitFailure
+        Right g -> pure g
+  print regex
   let maybe_program = futharkKeyGeneration q k grammar
   case grammarError grammar of
     Just msg -> putStrLn msg *> exitFailure
