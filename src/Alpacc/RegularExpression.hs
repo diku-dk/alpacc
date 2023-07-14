@@ -1,10 +1,10 @@
 module Alpacc.RegularExpression (regExFromText, pRegEx) where
 
-import Control.Monad.Combinators.Expr
+import Data.Composition
 import Data.Text (Text)
 import Data.Void
 import Text.Megaparsec
-import Text.Megaparsec.Char (space1)
+import Text.Megaparsec.Char (char, space1, string)
 import Text.Megaparsec.Char.Lexer qualified as Lexer
 
 type Parser = Parsec Void Text
@@ -23,37 +23,44 @@ space = Lexer.space space1 (Lexer.skipLineComment "#") empty
 lexeme :: Parser a -> Parser a
 lexeme = Lexer.lexeme space
 
-symbol :: Text -> Parser Text
-symbol = Lexer.symbol space
-
 pLiteral :: Parser RegEx
 pLiteral = Literal <$> lexeme (satisfy (`elem` ['a' .. 'z']))
 
-binary :: Text -> (RegEx -> RegEx -> RegEx) -> Operator Parser RegEx
-binary name f = InfixL (f <$ symbol name)
+chainl1 :: Parser a -> Parser (a -> a -> a) -> Parser a
+chainl1 p op = p >>= rest
+  where
+    rest x =
+      do
+        f <- op
+        y <- p
+        rest (f x y)
+        <|> return x
 
-postfix :: Text -> (RegEx -> RegEx) -> Operator Parser RegEx
-postfix name f = Postfix (f <$ symbol name)
+type BinaryOp = RegEx -> RegEx -> RegEx
 
-operatorTable :: [[Operator Parser RegEx]]
-operatorTable =
-  [ [ postfix "*" Star
-    ],
-    [ binary "" Concat
-    ],
-    [ binary "|" Alter
-    ]
-  ]
+binaryOps :: [Text] -> [BinaryOp] -> Parser BinaryOp
+binaryOps = (lexeme . foldl1 (<|>)) .: zipWith toBinaryOp
+  where
+    toBinaryOp x f = string x >> return f
+
+pConcat :: Parser RegEx
+pConcat = pTerm `chainl1` binaryOps [""] [Concat]
+
+pAlter :: Parser RegEx
+pAlter = pConcat `chainl1` binaryOps ["|"] [Alter]
 
 pRegEx :: Parser RegEx
-pRegEx = makeExprParser pTerm operatorTable
+pRegEx = pAlter
 
 pTerm :: Parser RegEx
-pTerm =
-  choice
-    [ between "(" ")" pRegEx,
-      pLiteral
-    ]
+pTerm = do
+  term <-
+    choice
+      [ pLiteral,
+        between "(" ")" pRegEx
+      ]
+  s <- many (char '*')
+  return $ if null s then term else Star term
 
 regExFromText :: FilePath -> Text -> Either String RegEx
 regExFromText fname s =
