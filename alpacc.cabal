@@ -42,6 +42,7 @@ library
     , deepseq
     , megaparsec
     , file-embed
+    , parser-combinators
 
   exposed-modules:
     Alpacc.CFG
@@ -50,6 +51,7 @@ library
     Alpacc.LLP
     Alpacc.Generator
     Alpacc.Lexer
+    Alpacc.RegularExpression
 
   hs-source-dirs:     src
 
