@@ -142,7 +142,7 @@ main = do
                      exitFailure
         Right g -> pure g
   regex <-
-      case regExFromText "" "dd|ha*" of
+      case regExFromText "" "d    d   |    (    h    a    )    *" of
         Left e -> do hPutStrLn stderr e
                      exitFailure
         Right g -> pure g
