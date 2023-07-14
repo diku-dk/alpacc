@@ -43,8 +43,9 @@ binaryOps = (lexeme . foldl1 (<|>)) .: zipWith toBinaryOp
   where
     toBinaryOp x f = string x >> return f
 
+
 pConcat :: Parser RegEx
-pConcat = pTerm `chainl1` binaryOps [""] [Concat]
+pConcat = foldl Concat Epsilon <$> many pTerm
 
 pAlter :: Parser RegEx
 pAlter = pConcat `chainl1` binaryOps ["|"] [Alter]
