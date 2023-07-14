@@ -57,7 +57,7 @@ pTerm = do
   term <-
     choice
       [ pLiteral,
-        between "(" ")" pRegEx
+        between (lexeme "(") (lexeme ")") pRegEx
       ]
   s <- many (char '*')
   return $ if null s then term else Star term
