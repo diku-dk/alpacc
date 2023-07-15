@@ -17,6 +17,7 @@ import Alpacc.CFG
 import Alpacc.Lexer
 import Alpacc.RegularExpression
 import Debug.Trace (traceShow)
+import Data.Word (Word64)
 
 debug :: Show b => b -> b
 debug x = traceShow x x
@@ -142,11 +143,13 @@ main = do
                      exitFailure
         Right g -> pure g
   regex <-
-      case regExFromText "" "d    d   |    (    h    a    )    *" of
+      case regExFromText "" "(a|b)*ac" of
         Left e -> do hPutStrLn stderr e
                      exitFailure
         Right g -> pure g
   print regex
+  let x = nfaFromRegEx regex :: NFA Word64
+  print x
   let maybe_program = futharkKeyGeneration q k grammar
   case grammarError grammar of
     Just msg -> putStrLn msg *> exitFailure
