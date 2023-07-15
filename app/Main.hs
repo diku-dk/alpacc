@@ -148,7 +148,7 @@ main = do
                      exitFailure
         Right g -> pure g
   print regex
-  let x = nfaFromRegEx regex :: NFA Word64
+  let x = nfaFromRegEx regex :: NFAContext Word64
   print x
   let maybe_program = futharkKeyGeneration q k grammar
   case grammarError grammar of
