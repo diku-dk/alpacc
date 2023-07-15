@@ -1,6 +1,7 @@
 module Alpacc.RegularExpression (regExFromText, pRegEx, nfaFromRegEx, NFA) where
 
 import Control.Monad.State
+import Data.Bifunctor (Bifunctor (..))
 import Data.Map (Map)
 import Data.Map qualified as Map hiding (Map)
 import Data.Set (Set)
@@ -66,63 +67,86 @@ regExFromText :: FilePath -> Text -> Either String RegEx
 regExFromText fname s =
   either (Left . errorBundlePretty) Right $ parse (pRegEx <* eof) fname s
 
-data NFA s = NFA
+data NFAContext s = NFAContext
   { states :: Set s,
     transitions :: Map (s, Maybe Char) (Set s),
     initial :: s,
-    accepting :: s
+    accepting :: s,
+    stateMap :: Map s s
   }
   deriving (Show)
 
-initNFA :: (Ord s, Enum s, Bounded s) => NFA s
-initNFA =
-  NFA
+initNFAContext :: (Ord s, Enum s, Bounded s) => NFAContext s
+initNFAContext =
+  NFAContext
     { states = Set.fromList [minBound, succ minBound],
       transitions = Map.empty,
       initial = minBound,
-      accepting = succ minBound
+      accepting = succ minBound,
+      stateMap = Map.fromList [(minBound, minBound), (succ minBound, succ minBound)]
     }
 
-newState :: (Ord s, Enum s) => State (NFA s) s
+newState :: (Ord s, Enum s) => State (NFAContext s) s
 newState = do
   nfa <- get
   let max_state = Set.findMax $ states nfa
   let new_max_state = succ max_state
   let new_states = Set.insert new_max_state $ states nfa
-  put (nfa {states = new_states})
+  let state_map = stateMap nfa
+  let new_state_map = Map.insert new_max_state new_max_state state_map
+  put (nfa {states = new_states, stateMap = new_state_map})
   return new_max_state
 
-upsert :: (Ord s) => s -> Maybe Char -> s -> State (NFA s) ()
+upsert :: (Ord s) => s -> Maybe Char -> s -> State (NFAContext s) ()
 upsert s c s' = do
   nfa <- get
   let trans = transitions nfa
-  let key = (s, c)
+  let state_map = stateMap nfa
+  let key = (state_map Map.! s, c)
   let new_trans =
         if key `Map.member` trans
           then Map.adjust (Set.insert s') key trans
           else Map.insert key (Set.singleton s') trans
   put $ nfa {transitions = new_trans}
-  return ()
+
+setEqual :: (Ord s) => s -> s -> State (NFAContext s) ()
+setEqual s s' = do
+  nfa <- get
+  let state_map = stateMap nfa
+  let new_state_map = Map.insert s' s state_map
+  let replace s'' = if s'' == s' then s else s''
+  let new_transitions =
+        fmap (Set.map replace)
+          . Map.mapKeys (first replace)
+          $ transitions nfa
+  put
+    ( nfa
+        { transitions = new_transitions,
+          stateMap = new_state_map,
+          initial = replace $ initial nfa,
+          accepting = replace $ accepting nfa
+        }
+    )
 
 epsilon :: Maybe a
 epsilon = Nothing
 
-mkNFA' :: (Ord s, Enum s) => (s, s) -> RegEx -> State (NFA s) ()
-mkNFA' (s, s') Epsilon = upsert s epsilon s'
-mkNFA' (s, s') (Literal c) = upsert s (Just c) s'
-mkNFA' (s, s'') (Concat a b) = do
+mkNFA' :: (Ord s, Enum s) => s -> s -> RegEx -> State (NFAContext s) ()
+mkNFA' s s' Epsilon = upsert s epsilon s'
+mkNFA' s s' (Literal c) = upsert s (Just c) s'
+mkNFA' s s'' (Concat a b) = do
   s' <- newState
-  mkNFA' (s, s') a
-  mkNFA' (s', s'') b
-mkNFA' (s, s') (Alter a b) = do
-  mkNFA' (s, s') a
-  mkNFA' (s, s') b
-mkNFA' (s, s') (Star a) = do
-  mkNFA' (s, s') a
-  upsert s' epsilon s
+  mkNFA' s s' a
+  mkNFA' s' s'' b
+mkNFA' s s' (Alter a b) = do
+  mkNFA' s s' a
+  mkNFA' s s' b
+mkNFA' s s' (Star a) = do
+  mkNFA' s s' a
+  setEqual s s'
 
-nfaFromRegEx :: (Ord s, Enum s, Bounded s) => RegEx -> NFA s
-nfaFromRegEx regex = execState (mkNFA' states regex) init_nfa
+nfaFromRegEx :: (Ord s, Enum s, Bounded s) => RegEx -> NFAContext s
+nfaFromRegEx regex = execState (mkNFA' s s' regex) init_nfa
   where
     init_nfa = initNFA
-    states = (initial init_nfa, accepting init_nfa)
+    (s, s') = (initial init_nfa, accepting init_nfa)
