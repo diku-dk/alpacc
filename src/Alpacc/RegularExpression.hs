@@ -2,6 +2,7 @@ module Alpacc.RegularExpression (regExFromText, pRegEx, nfaFromRegEx, NFAContext
 
 import Control.Monad.State
 import Data.Bifunctor (Bifunctor (..))
+import Data.Char (isAlphaNum)
 import Data.Map (Map)
 import Data.Map qualified as Map hiding (Map)
 import Data.Set (Set)
@@ -53,15 +54,36 @@ pAlter = pConcat `chainl1` (lexeme (string "|") >> return Alter)
 pRegEx :: Parser RegEx
 pRegEx = pAlter
 
+pRange :: Parser RegEx
+pRange =
+  between (lexeme "[") (lexeme "]") $
+    foldr1 Alter . concatMap toLists
+      <$> many1
+        ( (,)
+            <$> satisfy isAlphaNum
+            <* lexeme "-"
+            <*> satisfy isAlphaNum
+        )
+  where
+    toLists (a, b) = map Literal [a .. b]
+
 pTerm :: Parser RegEx
 pTerm = do
   term <-
     choice
-      [ pLiteral,
+      [ pRange,
+        pLiteral,
         between (lexeme "(") (lexeme ")") pRegEx
       ]
-  s <- many (char '*')
-  return $ if null s then term else Star term
+  s <- optional (many (char '*' <|> char '+'))
+  return $ case s of
+    Just postfixes -> addPostfix term postfixes
+    Nothing -> term
+  where
+    addPostfix regex [] = regex
+    addPostfix regex ('*':xs) = addPostfix (Star regex) xs
+    addPostfix regex ('+':xs) = addPostfix (Concat regex (Star regex)) xs
+    addPostfix _ _ = error "This error should not happen."
 
 regExFromText :: FilePath -> Text -> Either String RegEx
 regExFromText fname s =
@@ -97,8 +119,8 @@ newState = do
   put (nfa {states = new_states, stateMap = new_state_map})
   return new_max_state
 
-upsert :: (Ord s) => s -> Maybe Char -> s -> State (NFAContext s) ()
-upsert s c s' = do
+newTransition :: (Ord s) => s -> Maybe Char -> s -> State (NFAContext s) ()
+newTransition s c s' = do
   nfa <- get
   let trans = transitions nfa
   let state_map = stateMap nfa
@@ -132,8 +154,8 @@ epsilon :: Maybe a
 epsilon = Nothing
 
 mkNFA' :: (Ord s, Enum s) => s -> s -> RegEx -> State (NFAContext s) ()
-mkNFA' s s' Epsilon = upsert s epsilon s'
-mkNFA' s s' (Literal c) = upsert s (Just c) s'
+mkNFA' s s' Epsilon = newTransition s epsilon s'
+mkNFA' s s' (Literal c) = newTransition s (Just c) s'
 mkNFA' s s'' (Concat a b) = do
   s' <- newState
   mkNFA' s s' a
