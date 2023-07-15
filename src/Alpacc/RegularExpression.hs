@@ -1,4 +1,4 @@
-module Alpacc.RegularExpression (regExFromText, pRegEx, nfaFromRegEx, NFA) where
+module Alpacc.RegularExpression (regExFromText, pRegEx, nfaFromRegEx, NFAContext) where
 
 import Control.Monad.State
 import Data.Bifunctor (Bifunctor (..))
@@ -148,5 +148,5 @@ mkNFA' s s' (Star a) = do
 nfaFromRegEx :: (Ord s, Enum s, Bounded s) => RegEx -> NFAContext s
 nfaFromRegEx regex = execState (mkNFA' s s' regex) init_nfa
   where
-    init_nfa = initNFA
+    init_nfa = initNFAContext
     (s, s') = (initial init_nfa, accepting init_nfa)
