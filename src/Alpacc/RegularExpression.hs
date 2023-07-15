@@ -77,7 +77,13 @@ pTerm = do
       ]
   s <- optional (many (char '*' <|> char '+'))
   return $ case s of
-    Just postfixes -> addPostfix term postfixes
+    -- I did a derivation and found (s*)+ = (s+)* = s* so it should hold if
+    -- * occurs in a sequence of applied postfix operation then it will equal *.
+    -- If only + occurs in the postfix sequence then then due to (s+)+ = s+ it
+    -- will simply correspond to ss*.
+    Just postfixes -> if any (== '*') postfixes
+        then Star term
+        else Concat term (Star term) -- addPostfix term postfixes
     Nothing -> term
   where
     addPostfix regex [] = regex
