@@ -75,6 +75,12 @@ regularExpressionCase8 =
     ["catfish", "catcatfish", "dogdogdog4", "fish3", "catdogfish0", "cat3"]
     ["catdoga", "0fishfish", "4cat4", " dogdogdogdog", "ddogfish3", "xy", ""]
 
+regularExpressionCase9 =
+  regularExpressionCase
+    "()"
+    ["catdoga", "0fishfish", "4cat4", " dogdogdogdog", "ddogfish3", "xy"]
+    [""]
+
 tests =
   TestLabel "Regular Expression tests" $
     TestList
@@ -86,5 +92,6 @@ tests =
         regularExpressionCase5,
         regularExpressionCase6,
         regularExpressionCase7,
-        regularExpressionCase8
+        regularExpressionCase8,
+        regularExpressionCase9
       ]
