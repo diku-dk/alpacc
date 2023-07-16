@@ -43,6 +43,9 @@ lexeme = Lexer.lexeme space
 pLiteral :: Parser RegEx
 pLiteral = Literal <$> lexeme (satisfy (`elem` ['a' .. 'z'] ++ ['0' .. '9']))
 
+many1 :: Parser a -> Parser [a]
+many1 p = liftM2 (:) p (many p)
+
 chainl1 :: Parser a -> Parser (a -> a -> a) -> Parser a
 chainl1 p op = p >>= rest
   where
@@ -53,19 +56,11 @@ chainl1 p op = p >>= rest
         rest (f x y)
         <|> return x
 
-many1 :: Parser a -> Parser [a]
-many1 p = liftM2 (:) p (many p)
-
 pConcat :: Parser RegEx
-pConcat = foldl1 Concat <$> many1 pTerm
-
-pEpsilon :: Parser RegEx
-pEpsilon = do
-  _ <- string ""
-  return Epsilon
+pConcat = foldl Concat Epsilon <$> many pTerm
 
 pAlter :: Parser RegEx
-pAlter = (pConcat <|> pEpsilon) `chainl1` (lexeme (string "|") >> return Alter)
+pAlter = pConcat `chainl1` (lexeme (string "|") >> return Alter)
 
 pRegEx :: Parser RegEx
 pRegEx = pAlter
