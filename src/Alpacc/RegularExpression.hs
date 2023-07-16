@@ -1,17 +1,23 @@
-module Alpacc.RegularExpression (regExFromText, pRegEx, nfaFromRegEx, NFAContext) where
+module Alpacc.RegularExpression (regExFromText, pRegEx, dfaFromRegEx, nfaFromRegEx) where
 
 import Control.Monad.State
 import Data.Bifunctor (Bifunctor (..))
 import Data.Char (isAlphaNum)
+import Data.Foldable (Foldable (..))
 import Data.Map (Map)
 import Data.Map qualified as Map hiding (Map)
+import Data.Maybe (maybeToList)
 import Data.Set (Set)
 import Data.Set qualified as Set hiding (Set)
 import Data.Text (Text)
 import Data.Void
+import Debug.Trace (traceShow)
 import Text.Megaparsec hiding (State)
 import Text.Megaparsec.Char (char, space1, string)
 import Text.Megaparsec.Char.Lexer qualified as Lexer
+
+debug :: Show b => b -> b
+debug x = traceShow x x
 
 type Parser = Parsec Void Text
 
@@ -77,84 +83,66 @@ pTerm = do
       ]
   s <- optional (many1 (char '*' <|> char '+'))
   return $ case s of
-    -- I did a derivation and found (s*)+ = (s+)* = s* so it should hold if
-    -- * occurs in a sequence of applied postfix operation then it will equal
-    -- s*. If only + occurs in the postfix sequence then then due to (s+)+ = s+
-    -- it will simply correspond to ss*.
-    Just postfixes -> if any (== '*') postfixes
+    -- I did a derivation and found (s*)+ = (s+)* = s* so it should hold if *
+    -- occurs in a sequence of applied postfix operation then it will equal s*.
+    -- If only + occurs in the postfix sequence then then due to (s+)+ = s+ it
+    -- will simply correspond to ss*.
+    Just postfixes ->
+      if any (`elem` ['*']) postfixes
         then Star term
-        else Concat term (Star term) -- addPostfix term postfixes
+        else Concat term (Star term)
     Nothing -> term
-  where
-    addPostfix regex [] = regex
-    addPostfix regex ('*':xs) = addPostfix (Star regex) xs
-    addPostfix regex ('+':xs) = addPostfix (Concat regex (Star regex)) xs
-    addPostfix _ _ = error "This error should not happen."
 
 regExFromText :: FilePath -> Text -> Either String RegEx
 regExFromText fname s =
   either (Left . errorBundlePretty) Right $ parse (pRegEx <* eof) fname s
 
 data NFAContext s = NFAContext
-  { states :: Set s,
-    transitions :: Map (s, Maybe Char) (Set s),
-    initial :: s,
-    accepting :: s,
-    stateMap :: Map s s
+  { states' :: Set s,
+    transitions' :: Map (s, Maybe Char) (Set s),
+    initial' :: s,
+    alphabet' :: Set Char,
+    accepting' :: s,
+    maxState :: s
   }
   deriving (Show)
 
-initNFAContext :: (Ord s, Enum s, Bounded s) => NFAContext s
-initNFAContext =
+initNFAContext :: (Ord s, Enum s) => s -> NFAContext s
+initNFAContext start_state =
   NFAContext
-    { states = Set.fromList [minBound, succ minBound],
-      transitions = Map.empty,
-      initial = minBound,
-      accepting = succ minBound,
-      stateMap = Map.fromList [(minBound, minBound), (succ minBound, succ minBound)]
+    { states' = Set.fromList [start_state, succ start_state],
+      alphabet' = Set.empty,
+      transitions' = Map.empty,
+      initial' = start_state,
+      accepting' = succ start_state,
+      maxState = succ start_state
     }
 
 newState :: (Ord s, Enum s) => State (NFAContext s) s
 newState = do
   nfa <- get
-  let max_state = Set.findMax $ states nfa
+  let max_state = maxState nfa
   let new_max_state = succ max_state
-  let new_states = Set.insert new_max_state $ states nfa
-  let state_map = stateMap nfa
-  let new_state_map = Map.insert new_max_state new_max_state state_map
-  put (nfa {states = new_states, stateMap = new_state_map})
+  let new_states' = Set.insert new_max_state $ states' nfa
+  put
+    ( nfa
+        { states' = new_states',
+          maxState = new_max_state
+        }
+    )
   return new_max_state
 
 newTransition :: (Ord s) => s -> Maybe Char -> s -> State (NFAContext s) ()
 newTransition s c s' = do
   nfa <- get
-  let trans = transitions nfa
-  let state_map = stateMap nfa
-  let key = (state_map Map.! s, c)
+  let trans = transitions' nfa
+  let key = (s, c)
   let new_trans =
         if key `Map.member` trans
           then Map.adjust (Set.insert s') key trans
           else Map.insert key (Set.singleton s') trans
-  put $ nfa {transitions = new_trans}
-
-setEqual :: (Ord s) => s -> s -> State (NFAContext s) ()
-setEqual s s' = do
-  nfa <- get
-  let state_map = stateMap nfa
-  let new_state_map = Map.insert s' s state_map
-  let replace s'' = if s'' == s' then s else s''
-  let new_transitions =
-        fmap (Set.map replace)
-          . Map.mapKeys (first replace)
-          $ transitions nfa
-  put
-    ( nfa
-        { transitions = new_transitions,
-          stateMap = new_state_map,
-          initial = replace $ initial nfa,
-          accepting = replace $ accepting nfa
-        }
-    )
+  let new_alph = Set.fromList (maybeToList c) `Set.union` alphabet' nfa
+  put $ nfa {transitions' = new_trans, alphabet' = new_alph}
 
 epsilon :: Maybe a
 epsilon = Nothing
@@ -166,15 +154,135 @@ mkNFA' s s'' (Concat a b) = do
   s' <- newState
   mkNFA' s s' a
   mkNFA' s' s'' b
-mkNFA' s s' (Alter a b) = do
-  mkNFA' s s' a
-  mkNFA' s s' b
-mkNFA' s s' (Star a) = do
-  mkNFA' s s' a
-  setEqual s s'
+mkNFA' s s'''' (Alter a b) = do
+  s' <- newState
+  s'' <- newState
+  s''' <- newState
+  newTransition s epsilon s'
+  newTransition s epsilon s''
+  mkNFA' s' s''' a
+  mkNFA' s'' s''' b
+  newTransition s''' epsilon s''''
+mkNFA' s s'' (Star a) = do
+  s' <- newState
+  newTransition s epsilon s'
+  newTransition s epsilon s''
+  mkNFA' s' s a
 
-nfaFromRegEx :: (Ord s, Enum s, Bounded s) => RegEx -> NFAContext s
-nfaFromRegEx regex = execState (mkNFA' s s' regex) init_nfa
+mkNFA :: (Show s, Ord s, Enum s) => RegEx -> State (NFAContext s) ()
+mkNFA regex = do
+  nfa <- get
+  let (s, s') = (initial' nfa, accepting' nfa)
+  mkNFA' s s' regex
+
+stateTransitions :: (Show s, Ord s) => Maybe Char -> s -> State (NFAContext s) (Set s)
+stateTransitions c s = do
+  nfa <- get
+  let trans = transitions' nfa
+  let eps_map = Map.filterWithKey (\k _ -> isSymbolTransition k) trans
+  return . Set.unions $ toList eps_map
   where
-    init_nfa = initNFAContext
-    (s, s') = (initial init_nfa, accepting init_nfa)
+    isSymbolTransition (s', c') = s == s' && c == c'
+
+epsilonTransitions :: (Show s, Ord s) => s -> State (NFAContext s) (Set s)
+epsilonTransitions = stateTransitions Nothing
+
+statesTransitions :: (Show s, Ord s) => Set s -> Maybe Char -> State (NFAContext s) (Set s)
+statesTransitions set c = Set.unions <$> mapM (stateTransitions c) (toList set)
+
+epsilonClosure :: (Show s, Ord s) => Set s -> State (NFAContext s) (Set s)
+epsilonClosure set = do
+  new_set <- Set.unions <$> mapM epsilonTransitions (toList set)
+  let set' = new_set `Set.union` set
+  if set == set'
+    then return set'
+    else epsilonClosure set'
+
+nfaFromRegEx :: (Show s, Ord s, Enum s) => s -> RegEx -> NFAContext s
+nfaFromRegEx start_state regex = execState (mkNFA regex) init_nfa
+  where
+    init_nfa = initNFAContext start_state
+
+mkDFATransitionEntry ::
+  (Show s, Ord s, Enum s) =>
+  Set s ->
+  Char ->
+  State (NFAContext s) (Map (Set s, Char) (Set (Set s)))
+mkDFATransitionEntry set c = do
+  _states <- statesTransitions set $ Just c
+  eps_states <- epsilonClosure _states
+  return . Map.singleton (set, c) $ Set.singleton eps_states
+
+mkDFATransitionEntries ::
+  (Show s, Ord s, Enum s) =>
+  Set s ->
+  State (NFAContext s) (Map (Set s, Char) (Set (Set s)))
+mkDFATransitionEntries set = do
+  alph <- gets (toList . alphabet')
+  new_table_entry <- mapM (mkDFATransitionEntry set) alph
+  return $ Map.unionsWith Set.union new_table_entry
+
+mkDFATransitions ::
+  (Show s, Ord s, Enum s) =>
+  Set (Set s) ->
+  Map (Set s, Char) (Set (Set s)) ->
+  [Set s] ->
+  State (NFAContext s) (Map (Set s, Char) (Set (Set s)))
+mkDFATransitions _ table [] = return table
+mkDFATransitions visited table (top : queue) = do
+  entries <- mkDFATransitionEntries top
+  let rest = toList . Set.unions $ Map.elems entries
+  let new_queue = queue ++ rest
+  let new_table = Map.unionWith Set.union entries table
+  let new_visited = Set.insert top visited
+  if top `Set.member` visited
+    then mkDFATransitions visited table queue
+    else mkDFATransitions new_visited new_table new_queue
+
+data DFA s = DFA
+  { states :: Set s,
+    alphabet :: Set Char,
+    transitions :: Map (s, Char) (Set s),
+    initial :: s,
+    accepting :: Set s
+  }
+  deriving (Eq, Show)
+
+dfaMap :: Ord s => (a -> s) -> DFA a -> DFA s
+dfaMap f dfa =
+  dfa
+    { states = Set.map f (states dfa),
+      transitions = Set.map f <$> Map.mapKeys (first f) (transitions dfa),
+      initial = f $ initial dfa,
+      accepting = f `Set.map` accepting dfa
+    }
+
+mkDFA :: (Show s, Enum s, Ord s) => RegEx -> State (NFAContext s) (DFA (Set s))
+mkDFA regex = do
+  mkNFA regex
+  nfa <- get
+  let accept = accepting' nfa
+  new_initial <- epsilonClosure . Set.singleton $ initial' nfa
+  new_transitions <- mkDFATransitions Set.empty Map.empty [new_initial]
+  let (new_states, new_alphabet) = bimap Set.fromList Set.fromList . unzip $ Map.keys new_transitions
+  let new_accepting = Set.filter (accept `Set.member`) new_states
+  return $
+    DFA
+      { states = new_states,
+        alphabet = new_alphabet,
+        transitions = new_transitions,
+        initial = new_initial,
+        accepting = new_accepting
+      }
+
+reenumerateDFA :: (Show s, Show s', Ord s, Enum s, Ord s') => s -> DFA s' -> DFA s
+reenumerateDFA start_state dfa = dfaMap alphabetMap dfa
+  where
+    alphabet' = Map.fromList . flip zip [start_state ..] . toList $ states dfa
+    alphabetMap = (alphabet' Map.!)
+
+dfaFromRegEx :: (Show s, Ord s, Enum s) => s -> RegEx -> DFA s
+dfaFromRegEx start_state regex = reenumerateDFA start_state dfa
+  where
+    dfa = evalState (mkDFA regex) init_nfa
+    init_nfa = initNFAContext 0 :: NFAContext Integer
