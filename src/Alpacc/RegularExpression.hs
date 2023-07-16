@@ -1,4 +1,12 @@
-module Alpacc.RegularExpression (regExFromText, pRegEx, dfaFromRegEx, nfaFromRegEx) where
+module Alpacc.RegularExpression
+  ( regExFromText,
+    pRegEx,
+    dfaFromRegEx,
+    nfaFromRegEx,
+    isMatch,
+    DFA (..),
+  )
+where
 
 import Control.Monad.State
 import Data.Bifunctor (Bifunctor (..))
@@ -10,14 +18,11 @@ import Data.Maybe (maybeToList)
 import Data.Set (Set)
 import Data.Set qualified as Set hiding (Set)
 import Data.Text (Text)
+import Data.Text qualified as Text
 import Data.Void
-import Debug.Trace (traceShow)
 import Text.Megaparsec hiding (State)
 import Text.Megaparsec.Char (char, space1, string)
 import Text.Megaparsec.Char.Lexer qualified as Lexer
-
-debug :: Show b => b -> b
-debug x = traceShow x x
 
 type Parser = Parsec Void Text
 
@@ -36,7 +41,7 @@ lexeme :: Parser a -> Parser a
 lexeme = Lexer.lexeme space
 
 pLiteral :: Parser RegEx
-pLiteral = Literal <$> lexeme (satisfy (`elem` ['a' .. 'z']))
+pLiteral = Literal <$> lexeme (satisfy (`elem` ['a' .. 'z'] ++ ['0' .. '9']))
 
 chainl1 :: Parser a -> Parser (a -> a -> a) -> Parser a
 chainl1 p op = p >>= rest
@@ -54,8 +59,13 @@ many1 p = liftM2 (:) p (many p)
 pConcat :: Parser RegEx
 pConcat = foldl1 Concat <$> many1 pTerm
 
+pEpsilon :: Parser RegEx
+pEpsilon = do
+  _ <- string ""
+  return Epsilon
+
 pAlter :: Parser RegEx
-pAlter = pConcat `chainl1` (lexeme (string "|") >> return Alter)
+pAlter = (pConcat <|> pEpsilon) `chainl1` (lexeme (string "|") >> return Alter)
 
 pRegEx :: Parser RegEx
 pRegEx = pAlter
@@ -97,42 +107,39 @@ regExFromText :: FilePath -> Text -> Either String RegEx
 regExFromText fname s =
   either (Left . errorBundlePretty) Right $ parse (pRegEx <* eof) fname s
 
-data NFAContext s = NFAContext
+data NFA s = NFA
   { states' :: Set s,
     transitions' :: Map (s, Maybe Char) (Set s),
     initial' :: s,
     alphabet' :: Set Char,
-    accepting' :: s,
-    maxState :: s
+    accepting' :: s
   }
   deriving (Show)
 
-initNFAContext :: (Ord s, Enum s) => s -> NFAContext s
-initNFAContext start_state =
-  NFAContext
+initNFA :: (Ord s, Enum s) => s -> NFA s
+initNFA start_state =
+  NFA
     { states' = Set.fromList [start_state, succ start_state],
       alphabet' = Set.empty,
       transitions' = Map.empty,
       initial' = start_state,
-      accepting' = succ start_state,
-      maxState = succ start_state
+      accepting' = succ start_state
     }
 
-newState :: (Ord s, Enum s) => State (NFAContext s) s
+newState :: (Ord s, Enum s) => State (NFA s) s
 newState = do
   nfa <- get
-  let max_state = maxState nfa
+  let max_state = Set.findMax $ states' nfa
   let new_max_state = succ max_state
   let new_states' = Set.insert new_max_state $ states' nfa
   put
     ( nfa
-        { states' = new_states',
-          maxState = new_max_state
+        { states' = new_states'
         }
     )
   return new_max_state
 
-newTransition :: (Ord s) => s -> Maybe Char -> s -> State (NFAContext s) ()
+newTransition :: (Ord s) => s -> Maybe Char -> s -> State (NFA s) ()
 newTransition s c s' = do
   nfa <- get
   let trans = transitions' nfa
@@ -147,7 +154,7 @@ newTransition s c s' = do
 epsilon :: Maybe a
 epsilon = Nothing
 
-mkNFA' :: (Ord s, Enum s) => s -> s -> RegEx -> State (NFAContext s) ()
+mkNFA' :: (Ord s, Enum s) => s -> s -> RegEx -> State (NFA s) ()
 mkNFA' s s' Epsilon = newTransition s epsilon s'
 mkNFA' s s' (Literal c) = newTransition s (Just c) s'
 mkNFA' s s'' (Concat a b) = do
@@ -169,13 +176,13 @@ mkNFA' s s'' (Star a) = do
   newTransition s epsilon s''
   mkNFA' s' s a
 
-mkNFA :: (Show s, Ord s, Enum s) => RegEx -> State (NFAContext s) ()
+mkNFA :: (Show s, Ord s, Enum s) => RegEx -> State (NFA s) ()
 mkNFA regex = do
   nfa <- get
   let (s, s') = (initial' nfa, accepting' nfa)
   mkNFA' s s' regex
 
-stateTransitions :: (Show s, Ord s) => Maybe Char -> s -> State (NFAContext s) (Set s)
+stateTransitions :: (Show s, Ord s) => Maybe Char -> s -> State (NFA s) (Set s)
 stateTransitions c s = do
   nfa <- get
   let trans = transitions' nfa
@@ -184,13 +191,13 @@ stateTransitions c s = do
   where
     isSymbolTransition (s', c') = s == s' && c == c'
 
-epsilonTransitions :: (Show s, Ord s) => s -> State (NFAContext s) (Set s)
+epsilonTransitions :: (Show s, Ord s) => s -> State (NFA s) (Set s)
 epsilonTransitions = stateTransitions Nothing
 
-statesTransitions :: (Show s, Ord s) => Set s -> Maybe Char -> State (NFAContext s) (Set s)
+statesTransitions :: (Show s, Ord s) => Set s -> Maybe Char -> State (NFA s) (Set s)
 statesTransitions set c = Set.unions <$> mapM (stateTransitions c) (toList set)
 
-epsilonClosure :: (Show s, Ord s) => Set s -> State (NFAContext s) (Set s)
+epsilonClosure :: (Show s, Ord s) => Set s -> State (NFA s) (Set s)
 epsilonClosure set = do
   new_set <- Set.unions <$> mapM epsilonTransitions (toList set)
   let set' = new_set `Set.union` set
@@ -198,25 +205,25 @@ epsilonClosure set = do
     then return set'
     else epsilonClosure set'
 
-nfaFromRegEx :: (Show s, Ord s, Enum s) => s -> RegEx -> NFAContext s
+nfaFromRegEx :: (Show s, Ord s, Enum s) => s -> RegEx -> NFA s
 nfaFromRegEx start_state regex = execState (mkNFA regex) init_nfa
   where
-    init_nfa = initNFAContext start_state
+    init_nfa = initNFA start_state
 
 mkDFATransitionEntry ::
   (Show s, Ord s, Enum s) =>
   Set s ->
   Char ->
-  State (NFAContext s) (Map (Set s, Char) (Set (Set s)))
+  State (NFA s) (Map (Set s, Char) (Set s))
 mkDFATransitionEntry set c = do
   _states <- statesTransitions set $ Just c
   eps_states <- epsilonClosure _states
-  return . Map.singleton (set, c) $ Set.singleton eps_states
+  return $ Map.singleton (set, c) eps_states
 
 mkDFATransitionEntries ::
   (Show s, Ord s, Enum s) =>
   Set s ->
-  State (NFAContext s) (Map (Set s, Char) (Set (Set s)))
+  State (NFA s) (Map (Set s, Char) (Set s))
 mkDFATransitionEntries set = do
   alph <- gets (toList . alphabet')
   new_table_entry <- mapM (mkDFATransitionEntry set) alph
@@ -225,13 +232,13 @@ mkDFATransitionEntries set = do
 mkDFATransitions ::
   (Show s, Ord s, Enum s) =>
   Set (Set s) ->
-  Map (Set s, Char) (Set (Set s)) ->
+  Map (Set s, Char) (Set s) ->
   [Set s] ->
-  State (NFAContext s) (Map (Set s, Char) (Set (Set s)))
+  State (NFA s) (Map (Set s, Char) (Set s))
 mkDFATransitions _ table [] = return table
 mkDFATransitions visited table (top : queue) = do
   entries <- mkDFATransitionEntries top
-  let rest = toList . Set.unions $ Map.elems entries
+  let rest = toList $ Map.elems entries
   let new_queue = queue ++ rest
   let new_table = Map.unionWith Set.union entries table
   let new_visited = Set.insert top visited
@@ -242,7 +249,7 @@ mkDFATransitions visited table (top : queue) = do
 data DFA s = DFA
   { states :: Set s,
     alphabet :: Set Char,
-    transitions :: Map (s, Char) (Set s),
+    transitions :: Map (s, Char) s,
     initial :: s,
     accepting :: Set s
   }
@@ -252,12 +259,12 @@ dfaMap :: Ord s => (a -> s) -> DFA a -> DFA s
 dfaMap f dfa =
   dfa
     { states = Set.map f (states dfa),
-      transitions = Set.map f <$> Map.mapKeys (first f) (transitions dfa),
+      transitions = f <$> Map.mapKeys (first f) (transitions dfa),
       initial = f $ initial dfa,
       accepting = f `Set.map` accepting dfa
     }
 
-mkDFA :: (Show s, Enum s, Ord s) => RegEx -> State (NFAContext s) (DFA (Set s))
+mkDFA :: (Show s, Enum s, Ord s) => RegEx -> State (NFA s) (DFA (Set s))
 mkDFA regex = do
   mkNFA regex
   nfa <- get
@@ -285,4 +292,20 @@ dfaFromRegEx :: (Show s, Ord s, Enum s) => s -> RegEx -> DFA s
 dfaFromRegEx start_state regex = reenumerateDFA start_state dfa
   where
     dfa = evalState (mkDFA regex) init_nfa
-    init_nfa = initNFAContext 0 :: NFAContext Integer
+    init_nfa = initNFA 0 :: NFA Integer
+
+isMatch :: Ord s => DFA s -> Text -> Bool
+isMatch dfa = runDFA' start_state
+  where
+    start_state = initial dfa
+    trans = transitions dfa
+    runDFA' s str' =
+      if Text.null str'
+        then s `Set.member` accepting dfa
+        else case maybe_state of
+          Just state' -> runDFA' state' xs
+          Nothing -> False
+      where
+        x = Text.head str'
+        xs = Text.tail str'
+        maybe_state = Map.lookup (s, x) trans

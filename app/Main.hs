@@ -142,13 +142,14 @@ main = do
                      exitFailure
         Right g -> pure g
   regex <-
-      case regExFromText "" "a*|b*" of
+      case regExFromText "" "(a|b)*" of
         Left e -> do hPutStrLn stderr e
                      exitFailure
         Right g -> pure g
   print regex
-  print $ nfaFromRegEx 0 regex
-  print $ dfaFromRegEx 0 regex
+  let dfa = dfaFromRegEx 0 regex :: DFA Integer
+  print dfa
+  print $ isMatch dfa "ababbcbbab"
   let maybe_program = futharkKeyGeneration q k grammar
   case grammarError grammar of
     Just msg -> putStrLn msg *> exitFailure
