@@ -23,6 +23,10 @@ import Data.Void
 import Text.Megaparsec hiding (State)
 import Text.Megaparsec.Char (char, space1, string)
 import Text.Megaparsec.Char.Lexer qualified as Lexer
+import Debug.Trace (traceShow)
+
+debug :: Show b => b -> b
+debug x = traceShow x x
 
 type Parser = Parsec Void Text
 
@@ -268,14 +272,23 @@ mkDFA regex = do
   new_transitions <- mkDFATransitions Set.empty Map.empty [new_initial]
   let (new_states, new_alphabet) = bimap Set.fromList Set.fromList . unzip $ Map.keys new_transitions
   let new_accepting = Set.filter (accept `Set.member`) new_states
-  return $
-    DFA
-      { states = new_states,
-        alphabet = new_alphabet,
-        transitions = new_transitions,
-        initial = new_initial,
-        accepting = new_accepting
-      }
+  return $ if null new_transitions
+      then
+        DFA
+          { states = Set.singleton Set.empty,
+            alphabet = Set.empty,
+            transitions = new_transitions,
+            initial = Set.empty,
+            accepting = Set.singleton Set.empty
+          }
+      else
+        DFA
+          { states = new_states,
+            alphabet = new_alphabet,
+            transitions = new_transitions,
+            initial = new_initial,
+            accepting = new_accepting
+          }
 
 reenumerateDFA :: (Show s, Show s', Ord s, Enum s, Ord s') => s -> DFA s' -> DFA s
 reenumerateDFA start_state dfa = dfaMap alphabetMap dfa
