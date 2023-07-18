@@ -4,7 +4,7 @@ import Alpacc.RegularExpression
 import Data.String.Interpolate (i)
 import Test.HUnit
 
-regularExpressionCase regex valid invalid =
+regularExpressionMatchCase isMatch' regex valid invalid =
   TestLabel [i|RegEx "#{regex}" test.|] $
     TestList [valid_test, invalid_test]
   where
@@ -19,70 +19,158 @@ regularExpressionCase regex valid invalid =
         $ all (isNotMatch dfa) invalid
     Right regex_tree = regExFromText "" regex
     dfa = dfaFromRegEx 0 regex_tree
-    isNotMatch dfa' = not . isMatch dfa'
+    isNotMatch dfa' = not . isMatch' dfa'
 
-regularExpressionCase0 =
-  regularExpressionCase
+regularExpressionMatchCase0 =
+  regularExpressionMatchCase
+    isMatch
     "a*|b*"
     ["", "a", "aa", "aaa", "b", "bb", "bbb"]
     ["ab", "ba", "c", "aba", "bba", "xy"]
 
-regularExpressionCase1 =
-  regularExpressionCase
+regularExpressionMatchParCase0 =
+  regularExpressionMatchCase
+    isMatchPar
+    "a*|b*"
+    ["", "a", "aa", "aaa", "b", "bb", "bbb"]
+    ["ab", "ba", "c", "aba", "bba", "xy"]
+
+regularExpressionMatchCase1 =
+  regularExpressionMatchCase
+    isMatch
     "a*b*"
     ["", "ab", "aab", "b", "bb", "aaa", "abb", "aabbb"]
     ["aba", "bab", "xy", "abab", "bbaaa"]
 
-regularExpressionCase2 =
-  regularExpressionCase
+regularExpressionMatchParCase1 =
+  regularExpressionMatchCase
+    isMatchPar
+    "a*b*"
+    ["", "ab", "aab", "b", "bb", "aaa", "abb", "aabbb"]
+    ["aba", "bab", "xy", "abab", "bbaaa"]
+
+regularExpressionMatchCase2 =
+  regularExpressionMatchCase
+    isMatch
     "a|b|c"
     ["a", "b", "c"]
     ["ab", "abc", "cba", "ac", "bb", "cc", "abcab", "xy", ""]
 
-regularExpressionCase3 =
-  regularExpressionCase
+regularExpressionMatchParCase2 =
+  regularExpressionMatchCase
+    isMatchPar
+    "a|b|c"
+    ["a", "b", "c"]
+    ["ab", "abc", "cba", "ac", "bb", "cc", "abcab", "xy", ""]
+
+regularExpressionMatchCase3 =
+  regularExpressionMatchCase
+    isMatch
     "a+b+c+"
     ["abc", "aabbcc", "aaabbbccc", "aaaaaabbbbbbcccccc", "abbc"]
     ["ab", "acb", "bca", "aabccx", "aabcbccc", "abcabc", "xy", ""]
 
-regularExpressionCase4 =
-  regularExpressionCase
+regularExpressionMatchParCase3 =
+  regularExpressionMatchCase
+    isMatchPar
+    "a+b+c+"
+    ["abc", "aabbcc", "aaabbbccc", "aaaaaabbbbbbcccccc", "abbc"]
+    ["ab", "acb", "bca", "aabccx", "aabcbccc", "abcabc", "xy", ""]
+
+regularExpressionMatchCase4 =
+  regularExpressionMatchCase
+    isMatch
     "[a-z]+"
     ["abc", "aabbcc", "aaabbbccc", "aaaaaabbbbbbcccccc", "abbc", "ab", "acb", "bca", "aabccx", "aabcbccc", "abcabc", "xy"]
     ["", "4234", "324", "1", "<", "#", "\\"]
 
-regularExpressionCase5 =
-  regularExpressionCase
+regularExpressionMatchParCase4 =
+  regularExpressionMatchCase
+    isMatchPar
+    "[a-z]+"
+    ["abc", "aabbcc", "aaabbbccc", "aaaaaabbbbbbcccccc", "abbc", "ab", "acb", "bca", "aabccx", "aabcbccc", "abcabc", "xy"]
+    ["", "4234", "324", "1", "<", "#", "\\"]
+
+regularExpressionMatchCase5 =
+  regularExpressionMatchCase
+    isMatch
     "(a*b|c)d+(e|)"
     ["bd", "bde", "abd", "cd", "abdde", "cdde", "abde"]
     ["a", "b", "aa", "bb", "cc", "ade", "de", "xbdde", "abbddee"]
 
-regularExpressionCase6 =
-  regularExpressionCase
+regularExpressionMatchParCase5 =
+  regularExpressionMatchCase
+    isMatchPar
+    "(a*b|c)d+(e|)"
+    ["bd", "bde", "abd", "cd", "abdde", "cdde", "abde"]
+    ["a", "b", "aa", "bb", "cc", "ade", "de", "xbdde", "abbddee"]
+
+regularExpressionMatchCase6 =
+  regularExpressionMatchCase
+    isMatch
     "(xy*|z)ab+(c|)"
     ["xab", "xyab", "xyyab", "zab", "xabc", "xyabc", "xyyyabc"]
     ["x", "xy", "xz", "ab", "abb", "xyyy", "abc4", "zatbc"]
 
-regularExpressionCase7 =
-  regularExpressionCase
+regularExpressionMatchParCase6 =
+  regularExpressionMatchCase
+    isMatchPar
+    "(xy*|z)ab+(c|)"
+    ["xab", "xyab", "xyyab", "zab", "xabc", "xyabc", "xyyyabc"]
+    ["x", "xy", "xz", "ab", "abb", "xyyy", "abc4", "zatbc"]
+
+regularExpressionMatchCase7 =
+  regularExpressionMatchCase
+    isMatch
     "a*b+c*(d|)e+f"
     ["aabcdeef", "aabbcdeef", "abbcdef", "abbcccdeef", "abdeef"]
     ["aaaeef", "abcdf", "aabbcczdeef", "aabccddeef", "abccddef", "xy", ""]
 
-regularExpressionCase8 =
-  regularExpressionCase
+regularExpressionMatchParCase7 =
+  regularExpressionMatchCase
+    isMatchPar
+    "a*b+c*(d|)e+f"
+    ["aabcdeef", "aabbcdeef", "abbcdef", "abbcccdeef", "abdeef"]
+    ["aaaeef", "abcdf", "aabbcczdeef", "aabccddeef", "abccddef", "xy", ""]
+
+regularExpressionMatchCase8 =
+  regularExpressionMatchCase
+    isMatch
     "(cat|dog|fish)+([0-9]|)"
     ["catfish", "catcatfish", "dogdogdog4", "fish3", "catdogfish0", "cat3"]
     ["catdoga", "0fishfish", "4cat4", " dogdogdogdog", "ddogfish3", "xy", ""]
 
-regularExpressionCase9 =
-  regularExpressionCase
+regularExpressionMatchParCase8 =
+  regularExpressionMatchCase
+    isMatchPar
+    "(cat|dog|fish)+([0-9]|)"
+    ["catfish", "catcatfish", "dogdogdog4", "fish3", "catdogfish0", "cat3"]
+    ["catdoga", "0fishfish", "4cat4", " dogdogdogdog", "ddogfish3", "xy", ""]
+
+regularExpressionMatchCase9 =
+  regularExpressionMatchCase
+    isMatch
     "()"
     [""]
     ["catdoga", "0fishfish", "4cat4", " dogdogdogdog", "ddogfish3", "xy"]
 
-regularExpressionCase10 =
-  regularExpressionCase
+regularExpressionMatchParCase9 =
+  regularExpressionMatchCase
+    isMatchPar
+    "()"
+    [""]
+    ["catdoga", "0fishfish", "4cat4", " dogdogdogdog", "ddogfish3", "xy"]
+
+regularExpressionMatchCase10 =
+  regularExpressionMatchCase
+    isMatch
+    ""
+    [""]
+    ["catdoga", "0fishfish", "4cat4", " dogdogdogdog", "ddogfish3", "xy"]
+
+regularExpressionMatchParCase10 =
+  regularExpressionMatchCase
+    isMatchPar
     ""
     [""]
     ["catdoga", "0fishfish", "4cat4", " dogdogdogdog", "ddogfish3", "xy"]
@@ -90,15 +178,26 @@ regularExpressionCase10 =
 tests =
   TestLabel "Regular Expression tests" $
     TestList
-      [ regularExpressionCase0,
-        regularExpressionCase1,
-        regularExpressionCase2,
-        regularExpressionCase3,
-        regularExpressionCase4,
-        regularExpressionCase5,
-        regularExpressionCase6,
-        regularExpressionCase7,
-        regularExpressionCase8,
-        regularExpressionCase9,
-        regularExpressionCase10
+      [ regularExpressionMatchCase0,
+        regularExpressionMatchCase1,
+        regularExpressionMatchCase2,
+        regularExpressionMatchCase3,
+        regularExpressionMatchCase4,
+        regularExpressionMatchCase5,
+        regularExpressionMatchCase6,
+        regularExpressionMatchCase7,
+        regularExpressionMatchCase8,
+        regularExpressionMatchCase9,
+        regularExpressionMatchCase10,
+        regularExpressionMatchParCase0,
+        regularExpressionMatchParCase1,
+        regularExpressionMatchParCase2,
+        regularExpressionMatchParCase3,
+        regularExpressionMatchParCase4,
+        regularExpressionMatchParCase5,
+        regularExpressionMatchParCase6,
+        regularExpressionMatchParCase7,
+        regularExpressionMatchParCase8,
+        regularExpressionMatchParCase9,
+        regularExpressionMatchParCase10
       ]

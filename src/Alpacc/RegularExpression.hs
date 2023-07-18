@@ -4,6 +4,7 @@ module Alpacc.RegularExpression
     dfaFromRegEx,
     nfaFromRegEx,
     isMatch,
+    isMatchPar,
     DFA (..),
   )
 where
@@ -24,6 +25,7 @@ import Text.Megaparsec hiding (State)
 import Text.Megaparsec.Char (char, space1, string)
 import Text.Megaparsec.Char.Lexer qualified as Lexer
 import Debug.Trace (traceShow)
+import qualified Data.List as List
 
 debug :: Show b => b -> b
 debug x = traceShow x x
@@ -317,3 +319,18 @@ isMatch dfa = runDFA' start_state
         x = Text.head str'
         xs = Text.tail str'
         maybe_state = Map.lookup (s, x) trans
+
+isMatchPar :: DFA Int -> Text -> Bool
+isMatchPar dfa str = all (`Set.member` set_alphabet) str'
+  && final_state `Set.member` accepting dfa
+  where
+    str' = Text.unpack str
+    _initial = initial dfa
+    set_alphabet = alphabet dfa
+    _alphabet = Set.toList set_alphabet
+    _states = Set.toList $ states dfa
+    lookup' = (transitions dfa Map.!)
+    mapping = Map.fromList $ map (\a -> (a,) $ map (\b -> (b, lookup' (b, a))) _states) _alphabet
+    zipper = zipWith (\(a, _) (_, b) -> (a, b)) 
+    paths = map (map snd) $ scanl1 zipper $ map (mapping Map.!) str'
+    final_state = foldl (flip (List.!!)) _initial paths
