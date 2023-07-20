@@ -142,15 +142,15 @@ main = do
         Left e -> do hPutStrLn stderr e
                      exitFailure
         Right g -> pure g
-  regex <-
-      case regExFromText "" "(cat|dog|fish)+([0-9]|)" of
-        Left e -> do hPutStrLn stderr e
-                     exitFailure
-        Right g -> pure g
-  print regex
-  let dfa = dfaFromRegEx 0 regex :: DFA Int
-  print dfa
-  print $ isMatch dfa ""
+  -- regex <-
+  --     case regExFromText "" "(cat|dog|fish)+([0-9]|)" of
+  --       Left e -> do hPutStrLn stderr e
+  --                    exitFailure
+  --       Right g -> pure g
+  -- print regex
+  -- let dfa = dfaFromRegEx 0 regex :: DFA Int
+  -- print dfa
+  -- print $ isMatch dfa ""
   let maybe_program = futharkKeyGeneration q k grammar
   case grammarError grammar of
     Just msg -> putStrLn msg *> exitFailure
