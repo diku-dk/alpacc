@@ -5,6 +5,7 @@ module Alpacc.RegularExpression
     nfaFromRegEx,
     isMatch,
     isMatchPar,
+    parallelLexingTable,
     DFA (..),
   )
 where
@@ -13,19 +14,23 @@ import Control.Monad.State
 import Data.Bifunctor (Bifunctor (..))
 import Data.Char (isAlphaNum)
 import Data.Foldable (Foldable (..))
+import Data.Function (on)
+import Data.List qualified as List
+import Data.List.NonEmpty (NonEmpty)
+import Data.List.NonEmpty qualified as NonEmpty hiding (NonEmpty)
 import Data.Map (Map)
 import Data.Map qualified as Map hiding (Map)
 import Data.Maybe (maybeToList)
+import Data.Semigroup (Semigroup (..))
 import Data.Set (Set)
 import Data.Set qualified as Set hiding (Set)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Void
+import Debug.Trace (traceShow)
 import Text.Megaparsec hiding (State)
 import Text.Megaparsec.Char (char, space1, string)
 import Text.Megaparsec.Char.Lexer qualified as Lexer
-import Debug.Trace (traceShow)
-import qualified Data.List as List
 
 debug :: Show b => b -> b
 debug x = traceShow x x
@@ -113,9 +118,42 @@ data NFA s = NFA
     transitions' :: Map (s, Maybe Char) (Set s),
     initial' :: s,
     alphabet' :: Set Char,
-    accepting' :: s
+    accepting' :: Set s
   }
   deriving (Show)
+
+instance (Ord s, Show s, Enum s) => Semigroup (NFA s) where
+  a <> b =
+    NFA
+      { states' = new_states,
+        transitions' = new_transitions,
+        initial' = new_initial,
+        alphabet' = new_alphabet,
+        accepting' = new_accepting
+      }
+    where
+      new_states = sta `Set.union` sta'
+      new_accepting = accept `Set.union` accept'
+      new_initial = succ $ Set.findMax new_states
+      new_alphabet = alph `Set.union` alph'
+      new_trans_wo_init = Map.unionWith Set.union trans trans'
+      key = (new_initial, epsilon)
+      val = Set.fromList [ini, ini']
+      new_transitions = Map.insert key val new_trans_wo_init
+      NFA
+        { states' = sta,
+          transitions' = trans,
+          initial' = ini,
+          alphabet' = alph,
+          accepting' = accept
+        } = a
+      NFA
+        { states' = sta',
+          transitions' = trans',
+          initial' = ini',
+          alphabet' = alph',
+          accepting' = accept'
+        } = b
 
 initNFA :: (Ord s, Enum s) => s -> NFA s
 initNFA start_state =
@@ -124,7 +162,7 @@ initNFA start_state =
       alphabet' = Set.empty,
       transitions' = Map.empty,
       initial' = start_state,
-      accepting' = succ start_state
+      accepting' = Set.singleton $ succ start_state
     }
 
 newState :: (Ord s, Enum s) => State (NFA s) s
@@ -181,7 +219,8 @@ mkNFA :: (Show s, Ord s, Enum s) => RegEx -> State (NFA s) ()
 mkNFA regex = do
   nfa <- get
   let (s, s') = (initial' nfa, accepting' nfa)
-  mkNFA' s s' regex
+  let accept_list = toList s'
+  mapM_ (\_s -> mkNFA' s _s regex) accept_list
 
 stateTransitions :: (Show s, Ord s) => Maybe Char -> s -> State (NFA s) (Set s)
 stateTransitions c s = do
@@ -256,6 +295,48 @@ data DFA s = DFA
   }
   deriving (Eq, Show)
 
+data TokenizerNFA t s = TokenizerNFA
+  { finalStates :: Map t (Set s),
+    tokenNFA :: NFA s
+  }
+  deriving (Show)
+
+mkTokenizerNFA :: (Ord s, Show s, Enum s, Ord t) => s -> Map t RegEx -> TokenizerNFA t s
+mkTokenizerNFA start regex_map =
+  TokenizerNFA
+    { finalStates = accepting' <$> reenum_nfa_map,
+      tokenNFA = final_dfa
+    }
+  where
+    inital_state = initial' combined_nfa
+    nfa_map = nfaFromRegEx start <$> regex_map
+    combined_nfa = sconcat . NonEmpty.fromList $ toList reenum_nfa_map
+    trans = transitions' combined_nfa
+    toMapEntry = (,Set.singleton inital_state) . (,epsilon)
+    new_transitions = Map.unionWith Set.union trans_to_init trans
+    final_dfa = combined_nfa {transitions' = new_transitions}
+    reenum_nfa_map = snd . foldl folder (start, Map.empty) $ Map.toList nfa_map
+    trans_to_init =
+      Map.fromList
+        . fmap toMapEntry
+        . toList
+        $ accepting' combined_nfa
+
+    folder (s, _nfa_map) (t, nfa) = (new_max, new_map)
+      where
+        new_nfa = reenumerateNFA s nfa
+        new_map = Map.insert t new_nfa _nfa_map
+        new_max = succ . Set.findMax $ states' new_nfa
+
+nfaMap :: Ord s => (a -> s) -> NFA a -> NFA s
+nfaMap f nfa =
+  nfa
+    { states' = Set.map f (states' nfa),
+      transitions' = Set.map f <$> Map.mapKeys (first f) (transitions' nfa),
+      initial' = f $ initial' nfa,
+      accepting' = Set.map f $ accepting' nfa
+    }
+
 dfaMap :: Ord s => (a -> s) -> DFA a -> DFA s
 dfaMap f dfa =
   dfa
@@ -273,8 +354,9 @@ mkDFA regex = do
   new_initial <- epsilonClosure . Set.singleton $ initial' nfa
   new_transitions <- mkDFATransitions Set.empty Map.empty [new_initial]
   let (new_states, new_alphabet) = bimap Set.fromList Set.fromList . unzip $ Map.keys new_transitions
-  let new_accepting = Set.filter (accept `Set.member`) new_states
-  return $ if null new_transitions
+  let new_accepting = Set.filter (any (`Set.member` accept)) new_states
+  return $
+    if null new_transitions
       then
         DFA
           { states = Set.singleton Set.empty,
@@ -298,6 +380,12 @@ reenumerateDFA start_state dfa = dfaMap alphabetMap dfa
     alphabet' = Map.fromList . flip zip [start_state ..] . toList $ states dfa
     alphabetMap = (alphabet' Map.!)
 
+reenumerateNFA :: (Show s, Show s', Ord s, Enum s, Ord s') => s -> NFA s' -> NFA s
+reenumerateNFA start_state nfa = nfaMap alphabetMap nfa
+  where
+    _alphabet = Map.fromList . flip zip [start_state ..] . toList $ states' nfa
+    alphabetMap = (_alphabet Map.!)
+
 dfaFromRegEx :: (Show s, Ord s, Enum s) => s -> RegEx -> DFA s
 dfaFromRegEx start_state regex = reenumerateDFA start_state dfa
   where
@@ -320,17 +408,25 @@ isMatch dfa = runDFA' start_state
         xs = Text.tail str'
         maybe_state = Map.lookup (s, x) trans
 
+parallelLexingTable :: Ord s => DFA s -> Map Char [(s, s)]
+parallelLexingTable dfa = table
+  where
+    _states = Set.toList $ states dfa
+    _alphabet = Set.toList $ alphabet dfa
+    tableLookUp = (transitions dfa Map.!)
+    statesFromChar a = (a,) $ map (\b -> (b, tableLookUp (b, a))) _states
+    table = Map.fromList $ map statesFromChar _alphabet
+
 isMatchPar :: DFA Int -> Text -> Bool
-isMatchPar dfa str = all (`Set.member` set_alphabet) str'
-  && final_state `Set.member` accepting dfa
+isMatchPar dfa str =
+  all (`Set.member` set_alphabet) str'
+    && final_state `Set.member` accepting dfa
   where
     str' = Text.unpack str
     _initial = initial dfa
     set_alphabet = alphabet dfa
-    _alphabet = Set.toList set_alphabet
-    _states = Set.toList $ states dfa
-    lookup' = (transitions dfa Map.!)
-    mapping = Map.fromList $ map (\a -> (a,) $ map (\b -> (b, lookup' (b, a))) _states) _alphabet
-    zipper = zipWith (\(a, _) (_, b) -> (a, b)) 
-    paths = map (map snd) $ scanl1 zipper $ map (mapping Map.!) str'
+    table = parallelLexingTable dfa
+    combineTransitions (a, _) (_, b) = (a, b)
+    zipper = zipWith combineTransitions
+    paths = map (map snd) $ scanl1 zipper $ map (table Map.!) str'
     final_state = foldl (flip (List.!!)) _initial paths
