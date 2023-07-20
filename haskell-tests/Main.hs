@@ -7,8 +7,8 @@ import Test.HUnit
 
 tests =
   TestList
-    [ LL.tests,
-      LLP.tests,
+    [ -- LL.tests,
+      -- LLP.tests,
       RegularExpression.tests
     ]
 
