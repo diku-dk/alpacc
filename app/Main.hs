@@ -137,20 +137,32 @@ main = do
         Left e -> do hPutStrLn stderr e
                      exitFailure
         Right g -> pure g
-  lexer <-
-      case cfgToLexer cfg of
+  dfa <-
+      case cfgToDFA 0 cfg :: Either String (DFA T Integer) of
         Left e -> do hPutStrLn stderr e
                      exitFailure
         Right g -> pure g
-  -- regex <-
-  --     case regExFromText "" "(cat|dog|fish)+([0-9]|)" of
+  -- lparen <-
+  --     case regExFromText "" "l" of
   --       Left e -> do hPutStrLn stderr e
   --                    exitFailure
   --       Right g -> pure g
-  -- print regex
-  -- let dfa = dfaFromRegEx 0 regex :: DFA Int
-  -- print dfa
-  -- print $ isMatch dfa ""
+  -- rparen <-
+  --     case regExFromText "" "ar" of
+  --       Left e -> do hPutStrLn stderr e
+  --                    exitFailure
+  --       Right g -> pure g
+  -- atom <-
+  --     case regExFromText "" "[a-c]+" of
+  --       Left e -> do hPutStrLn stderr e
+  --                    exitFailure
+  --       Right g -> pure g
+  -- let groups = Map.fromList [("lparen", lparen), ("rparen", rparen), ("atom", atom)]
+  -- let regex = mkTokenizerRegEx groups
+  -- let dfa = dfaFromRegEx 0 regex :: DFA String Int
+  -- print $ accepting dfa
+  -- mapM_ print . Map.toList $ tokenMap dfa
+  -- print $ isMatchPar dfa "laaaar"
   let maybe_program = futharkKeyGeneration q k grammar
   case grammarError grammar of
     Just msg -> putStrLn msg *> exitFailure
@@ -158,7 +170,6 @@ main = do
         Left e -> do hPutStrLn stderr e
                      exitFailure
         Right program ->
-          writeFutharkProgram program_path $
-            program <>
-            generateLexer lexer <>
-            "entry parse s = parser.parse (lex char_code accept s)\n"
+          writeFutharkProgram program_path program
+            -- <> generateLexer lexer
+            -- <> "entry parse s = parser.parse (lex char_code accept s)\n"

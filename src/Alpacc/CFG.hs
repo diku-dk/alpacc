@@ -1,7 +1,7 @@
 module Alpacc.CFG
   ( cfgFromText,
     cfgToGrammar,
-    cfgToLexer,
+    cfgToDFA,
     CFG (..),
     TRule (..),
     NTRule (..),
@@ -11,25 +11,29 @@ where
 import Control.Monad (void)
 import Data.Char (isAlphaNum, isLower, isPrint, isUpper)
 import Data.List (nub, nubBy)
-import Data.Set qualified as S
-import Data.Text qualified as T
+import Data.Set qualified as Set hiding (Set)
+import Data.Set (Set)
+import Data.Text qualified as Text hiding (Text)
+import Data.Text (Text)
+import Data.Map qualified as Map hiding (Map)
+import Data.Map (Map)
 import Data.Void
 import Alpacc.Grammar
 import Alpacc.Lexer
+import Alpacc.RegularExpression
 import Text.Megaparsec
 import Text.Megaparsec.Char (char, space1)
 import Text.Megaparsec.Char.Lexer qualified as Lexer
+import Data.Foldable
+import Debug.Trace (traceShow)
 
--- Extremely trivial; improve later.
-data Regex
-  = RegexSpanPlus [(Char, Char)] -- [x-y]+
-  | RegexConst T.Text
-  deriving (Show)
+debug :: Show b => b -> b
+debug x = traceShow x x
 
 -- | Terminal formation rule.
 data TRule = TRule
   { ruleT :: T,
-    ruleRegex :: Regex
+    ruleRegex :: RegEx T
   }
   deriving (Show)
 
@@ -46,11 +50,11 @@ data CFG = CFG
   }
   deriving (Show)
 
-symbolTerminal :: Symbol NT T -> S.Set T
-symbolTerminal (Terminal t) = S.singleton t
+symbolTerminal :: Symbol NT T -> Set T
+symbolTerminal (Terminal t) = Set.singleton t
 symbolTerminal (Nonterminal _) = mempty
 
-ruleTerminals :: NTRule -> S.Set T
+ruleTerminals :: NTRule -> Set T
 ruleTerminals = foldMap (foldMap symbolTerminal) . ruleProductions
 
 cfgToGrammar :: CFG -> Either String (Grammar NT T)
@@ -59,32 +63,33 @@ cfgToGrammar (CFG {tRules, ntRules}) =
   let productions = concatMap ruleProds ntRules
       nonterminals = map ruleNT ntRules
       start = ruleNT $ head ntRules
-      terminals = nub $ map ruleT tRules ++ S.toList (foldMap ruleTerminals ntRules)
+      terminals = nub $ map ruleT tRules ++ toList (foldMap ruleTerminals ntRules)
    in Right $ Grammar {start, terminals, nonterminals, productions}
   where
     ruleProds NTRule {ruleNT, ruleProductions} =
       map (Production ruleNT) ruleProductions
 
-cfgToLexer :: CFG -> Either String [LexerRule]
-cfgToLexer (CFG {tRules, ntRules}) =
-  mapM rule $ nubBy sameT $ tRules <> map mkImplicitRule implicit
+implicitTRules :: CFG -> Either String [TRule]
+implicitTRules (CFG {tRules, ntRules}) = mapM implicitLitToRegEx implicit
   where
-    sameT x y = ruleT x == ruleT y
     declared = map ruleT tRules
-    implicit = filter (`notElem` declared) $ S.toList $ foldMap ruleTerminals ntRules
-    rule (TRule {ruleRegex = RegexConst s})
-      | [c] <- T.unpack s =
-          Right $ LChar c
-    rule (TRule {ruleRegex = RegexSpanPlus xys}) =
-      Right $ LChars xys
-    rule (TRule {ruleT = T s}) =
-      Left $ "Cannot handle rule for terminal " <> T.unpack s
-    rule (TRule {ruleT = TLit s}) =
-      Left $ "Cannot handle rule for terminal " <> T.unpack s
-    mkImplicitRule (T t) = TRule {ruleT = T t, ruleRegex = RegexConst t}
-    mkImplicitRule (TLit t) = TRule {ruleT = TLit t, ruleRegex = RegexConst t}
+    implicit = filter (`notElem` declared) $ toList $ foldMap ruleTerminals ntRules
+    implicitLitToRegEx t@(TLit s) = Right $ TRule {ruleT=t, ruleRegex=regex}
+      where
+        regex = foldl1 Concat $ fmap Literal (Text.unpack s)
+    implicitLitToRegEx (T s) = Left $ "Can not create literal from: " <> Text.unpack s
 
-type Parser = Parsec Void T.Text
+tRuleToTuple :: TRule -> (T, RegEx T)
+tRuleToTuple (TRule {ruleT=t, ruleRegex=regex}) = (t, regex)
+
+cfgToDFA :: (Show s, Ord s, Enum s) => s -> CFG -> Either String (DFA T s)
+cfgToDFA start_state cfg@(CFG {tRules}) = do
+  implicit_t_rules <- implicitTRules cfg
+  let all_t_rules = implicit_t_rules ++ tRules
+  let terminal_map = Map.fromList $ tRuleToTuple <$> all_t_rules
+  return . dfaFromRegEx start_state $ mkTokenizerRegEx terminal_map
+
+type Parser = Parsec Void Text
 
 space :: Parser ()
 space = Lexer.space space1 (Lexer.skipLineComment "#") empty
@@ -93,12 +98,12 @@ lexeme :: Parser a -> Parser a
 lexeme = Lexer.lexeme space
 
 pNT :: Parser NT
-pNT = lexeme (NT . T.pack <$> p) <?> "nonterminal"
+pNT = lexeme (NT . Text.pack <$> p) <?> "nonterminal"
   where
     p = (:) <$> satisfy isUpper <*> many (satisfy ok)
     ok c = isAlphaNum c || c `elem` ("'*" :: String)
 
-pStringLit :: Parser T.Text
+pStringLit :: Parser Text
 pStringLit = lexeme $ char '"' *> takeWhile1P Nothing ok <* char '"'
   where
     ok c = isPrint c && c /= '"'
@@ -115,29 +120,9 @@ pTSym =
 pSymbol :: Parser (Symbol NT T)
 pSymbol = Terminal <$> pTSym <|> Nonterminal <$> pNT
 
-enclose :: Parser () -> Parser () -> Parser a -> Parser a
-enclose pl pr x = pl *> x <* pr
-
-brackets :: Parser a -> Parser a
-brackets = enclose (void (lexeme "[")) (void (lexeme "]"))
-
-pRegex :: Parser Regex
-pRegex =
-  brackets
-    ( RegexSpanPlus
-        <$> many
-          ( (,)
-              <$> satisfy isAlphaNum
-              <* lexeme "-"
-              <*> satisfy isAlphaNum
-          )
-    )
-    <* lexeme "+"
-    <|> RegexConst <$> pStringLit
-
 pTRule :: Parser TRule
 pTRule =
-  TRule <$> pT <* lexeme "=" <*> pRegex <* lexeme ";"
+  TRule <$> pT <* lexeme "=" <*> pRegEx <* lexeme ";"
     <?> "terminal rule"
 
 pNTRule :: Parser NTRule
@@ -150,6 +135,6 @@ pNTRule =
 pCFG :: Parser CFG
 pCFG = CFG <$> many pTRule <*> many pNTRule
 
-cfgFromText :: FilePath -> T.Text -> Either String CFG
+cfgFromText :: FilePath -> Text -> Either String CFG
 cfgFromText fname s =
   either (Left . errorBundlePretty) Right $ parse (pCFG <* eof) fname s
