@@ -14,20 +14,24 @@ module type grammar = {
   val k : i64
   val max_ao : i64
   val max_pi : i64
+  val transitions_size : i64
+  type state_type
   type lookahead_type
   type lookback_type
-  type transitions_type
   type char
+  val ne_transitions : [transitions_size](state_type, state_type)
   val lookback_array_to_tuple [n] : [n]terminal -> lookback_type
   val lookahead_array_to_tuple [n] : [n]terminal -> lookahead_type
   val start_terminal : terminal
   val end_terminal : terminal
   val ne : ([max_ao]bracket, [max_pi]terminal)
   val key_to_config : (lookback_type, lookahead_type) -> maybe ([max_ao]bracket, [max_pi]terminal)
-  val char_to_transitions : char -> transitions_type
+  val char_to_transitions : char -> [transitions_size](state_type, state_type)
 }
 
 module mk_parser(G: grammar) = {
+  type transition_type = (G.state_type, G.state_type)
+
   def lookback_chunks [n] (arr : [n]terminal) =
     let arr' = replicate G.q u32.highest ++ arr
     in iota n |> map (\i -> arr'[i:i + G.q] |> G.lookback_array_to_tuple)
@@ -112,6 +116,14 @@ module mk_parser(G: grammar) = {
                |> tail
                |> map (\a -> a - 1)
           else []
+  
+  def combine_transitions (a : transition_type) (b : transition_type) : transition_type =
+      (a.0, b.1)
+
+  def solve_transitions = scan (map2 combine_transitions) G.ne_transitions
+
+  def transitions [n] (str : [n]G.char) =
+    map G.char_to_transitions str
 }
 
 -- End of parser.fut
