@@ -25,6 +25,7 @@ import Data.Set qualified as Set
 import Data.String.Interpolate (i)
 import Data.Tuple.Extra
 import Data.Maybe (fromJust)
+import Data.Foldable
 
 -- import Debug.Trace (traceShow)
 -- debug x = traceShow x x
@@ -179,20 +180,21 @@ selectCharSize dfa = maybeToEither err $ selectFutUInt max_alph
 
 -- | This assumes the states have been reenumerated for the DFA such that each
 -- states has an integer value from 0 to n and the number of states is n + 1.
-selectTransitionsSize :: DFA t Integer -> Either String [FutUInt]
-selectTransitionsSize dfa = do
-  uint <- maybeToEither err $ selectFutUInt max_state
-  return $ replicate number_of_states uint
+selectStateSize :: DFA t Integer -> Either String FutUInt
+selectStateSize dfa = maybeToEither err $ selectFutUInt max_state
   where
     max_state = fromIntegral . maximum $ states dfa
-    number_of_states = Set.size $ states dfa
     max_uint = maxFutUInt (maxBound :: FutUInt)
     err = [i|The number of states must be positive and less then or equal to #{max_uint}.|]
+
+neutralTransitions :: Show s => DFA t s -> String
+neutralTransitions dfa = toArray . fmap (\a -> [i|(#{a}, #{a})|]) . toList $ states dfa
 
 futharkLexerFunction :: DFA t Integer -> String
 futharkLexerFunction dfa =
     [i|
-def char_to_transitions (c : char) : transitions_type =
+def char_to_transitions (c : char) : [transitions_size](state_type, state_type) =
+  sized transitions_size <| 
   match c
   #{str_lexer_table}
   case _ -> #{str_default_case}
@@ -200,11 +202,11 @@ def char_to_transitions (c : char) : transitions_type =
   where
     default_case = fromJust $ defaultTransitions dfa
     table = fromJust $ parallelLexingTable dfa
-    str_default_case = toTuple $ tupleToStr <$> default_case
+    str_default_case = toArray $ tupleToStr <$> default_case
     str_lexer_table =
       futharkTableCases
         . Map.toList
-        $ toTuple . fmap tupleToStr <$> Map.mapKeys (show . ord) table
+        $ toArray . fmap tupleToStr <$> Map.mapKeys (show . ord) table
 
 -- | Creates Futhark source code which contains a parallel parser that can
 -- create the productions list for a input which is indexes of terminals.
@@ -219,7 +221,7 @@ generateParser q k grammar regex = do
   start_terminal <- maybeToEither "The left turnstile \"⊢\" terminal could not be found, you should complain to a developer." maybe_start_terminal
   end_terminal <- maybeToEither "The right turnstile \"⊣\" terminal could not be found, you should complain to a developer." maybe_end_terminal
   table <- llpParserTableWithStartsHomomorphisms q k grammar
-  transitions_type <- toTuple . fmap show <$> selectTransitionsSize dfa
+  state_type <- selectStateSize dfa
   char_size <- selectCharSize dfa
   let (max_ao, max_pi, ne, futhark_table) =
         futharkParserTable q k augmented_grammar table
@@ -235,8 +237,10 @@ module parser = mk_parser {
 type lookahead_type = #{lookahead_type}
 type lookback_type = #{lookback_type}
 type char = #{char_size}
-type transitions_type = #{transitions_type}
+type state_type = #{state_type}
 
+def transitions_size : i64 = #{transition_size}
+def ne_transitions : [transitions_size](state_type, state_type) = sized transitions_size #{ne_transitions}
 def q : i64 = #{q}
 def k : i64 = #{k}
 def max_ao : i64 = #{max_ao}
@@ -275,3 +279,5 @@ def ne : ([max_ao]bracket, [max_pi]u32) =
     lookback_type = toTuple $ replicate q "u32"
     lookahead_type = toTuple $ replicate k "u32"
     lexer_function = futharkLexerFunction dfa
+    ne_transitions = neutralTransitions dfa
+    transition_size = Set.size $ states dfa
