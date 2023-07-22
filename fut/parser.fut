@@ -19,14 +19,13 @@ module type grammar = {
   type lookahead_type
   type lookback_type
   type char
-  val ne_transitions : [transitions_size](state_type, state_type)
   val lookback_array_to_tuple [n] : [n]terminal -> lookback_type
   val lookahead_array_to_tuple [n] : [n]terminal -> lookahead_type
   val start_terminal : terminal
   val end_terminal : terminal
   val ne : ([max_ao]bracket, [max_pi]terminal)
   val key_to_config : (lookback_type, lookahead_type) -> maybe ([max_ao]bracket, [max_pi]terminal)
-  val char_to_transitions : char -> [transitions_size](state_type, state_type)
+  val char_to_transitions : char -> [transitions_size](maybe (state_type, state_type))
 }
 
 module mk_parser(G: grammar) = {
@@ -117,12 +116,18 @@ module mk_parser(G: grammar) = {
                |> map (\a -> a - 1)
           else []
   
-  def combine_transitions (a : transition_type) (b : transition_type) : transition_type =
-      (a.0, b.1)
+  def combine_transitions (a : maybe transition_type) (b : maybe transition_type) : maybe transition_type =
+      match (a, b)
+      case (#just x, #just y) -> #just (x.0, y.1)
+      case (#nothing, #just _) -> b
+      case (#just _, #nothing) -> a
+      case (#nothing, #nothing) -> #nothing
 
-  def solve_transitions = scan (map2 combine_transitions) G.ne_transitions
+  def solve_transitions [n] (t : [n][G.transitions_size](maybe transition_type)) : [n][G.transitions_size](maybe transition_type) =  
+    let ne = replicate G.transitions_size #nothing
+    in scan (map2 combine_transitions) ne t
 
-  def transitions [n] (str : [n]G.char) =
+  def transitions [n] (str : [n]G.char) : [n][](maybe transition_type) =
     map G.char_to_transitions str
 }
 
