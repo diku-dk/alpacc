@@ -1,34 +1,31 @@
 module Alpacc.CFG
   ( cfgFromText,
     cfgToGrammar,
-    cfgToDFA,
+    cfgToRegEx,
     CFG (..),
     TRule (..),
     NTRule (..),
   )
 where
 
-import Control.Monad (void)
 import Data.Char (isAlphaNum, isLower, isPrint, isUpper)
-import Data.List (nub, nubBy)
+import Data.List (nub)
 import Data.Set qualified as Set hiding (Set)
 import Data.Set (Set)
 import Data.Text qualified as Text hiding (Text)
 import Data.Text (Text)
 import Data.Map qualified as Map hiding (Map)
-import Data.Map (Map)
 import Data.Void
 import Alpacc.Grammar
-import Alpacc.Lexer
 import Alpacc.RegularExpression
 import Text.Megaparsec
 import Text.Megaparsec.Char (char, space1)
 import Text.Megaparsec.Char.Lexer qualified as Lexer
 import Data.Foldable
-import Debug.Trace (traceShow)
-
-debug :: Show b => b -> b
-debug x = traceShow x x
+-- import Debug.Trace (traceShow)
+-- 
+-- debug :: Show b => b -> b
+-- debug x = traceShow x x
 
 -- | Terminal formation rule.
 data TRule = TRule
@@ -82,12 +79,12 @@ implicitTRules (CFG {tRules, ntRules}) = mapM implicitLitToRegEx implicit
 tRuleToTuple :: TRule -> (T, RegEx T)
 tRuleToTuple (TRule {ruleT=t, ruleRegex=regex}) = (t, regex)
 
-cfgToDFA :: (Show s, Ord s, Enum s) => s -> CFG -> Either String (DFA T s)
-cfgToDFA start_state cfg@(CFG {tRules}) = do
+cfgToRegEx :: CFG -> Either String (RegEx T)
+cfgToRegEx cfg@(CFG {tRules}) = do
   implicit_t_rules <- implicitTRules cfg
   let all_t_rules = implicit_t_rules ++ tRules
   let terminal_map = Map.fromList $ tRuleToTuple <$> all_t_rules
-  return . dfaFromRegEx start_state $ mkTokenizerRegEx terminal_map
+  return $ mkTokenizerRegEx terminal_map
 
 type Parser = Parsec Void Text
 

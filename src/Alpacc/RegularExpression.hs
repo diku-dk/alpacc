@@ -8,28 +8,31 @@ module Alpacc.RegularExpression
     parallelLexingTable,
     mkTokenizerRegEx,
     DFA (..),
-    RegEx (..)
+    RegEx (..),
+    addDeadStateDFA,
+    defaultTransitions
   )
 where
 
 import Control.Monad.State
 import Data.Bifunctor (Bifunctor (..))
 import Data.Char (isAlphaNum)
+import Data.Composition
 import Data.Foldable (Foldable (..))
 import Data.List qualified as List
 import Data.Map (Map)
 import Data.Map qualified as Map hiding (Map)
-import Data.Maybe (maybeToList)
+import Data.Maybe (fromMaybe, maybeToList, fromJust)
 import Data.Set (Set)
 import Data.Set qualified as Set hiding (Set)
 import Data.Text (Text)
 import Data.Text qualified as Text
+import Data.Tuple.Extra (both)
 import Data.Void
 import Debug.Trace (traceShow)
 import Text.Megaparsec hiding (State)
 import Text.Megaparsec.Char (char, space1, string)
 import Text.Megaparsec.Char.Lexer qualified as Lexer
-import Data.Tuple.Extra (both)
 
 debug :: Show b => b -> b
 debug x = traceShow x x
@@ -39,6 +42,7 @@ type Parser = Parsec Void Text
 data RegEx t
   = Epsilon
   | Literal Char
+  | Range [Either Char (Char, Char)]
   | Star (RegEx t)
   | Alter (RegEx t) (RegEx t)
   | Concat (RegEx t) (RegEx t)
@@ -82,15 +86,16 @@ pRegEx = pAlter
 pRange :: Parser (RegEx t)
 pRange =
   between (lexeme "[") (lexeme "]") $
-    foldr1 Alter . concatMap toLists
+    Range
       <$> many1
-        ( (,)
+        ( Right
+            .: (,)
             <$> satisfy isAlphaNum
             <* lexeme "-"
             <*> satisfy isAlphaNum
+            <|> Left
+            <$> satisfy isAlphaNum
         )
-  where
-    toLists (a, b) = map Literal [a .. b]
 
 pTerm :: Parser (RegEx t)
 pTerm = do
@@ -179,17 +184,15 @@ mkNFA' s s'' (Concat a b) = do
   s' <- newState
   mkNFA' s s' a
   mkNFA' s' s'' b
-mkNFA' s s' (Alter a b) = do
-  mkNFA' s s' a
-  mkNFA' s s' b
-  -- s' <- newState
-  -- s'' <- newState
-  -- s''' <- newState
-  -- newTransition s epsilon s'
-  -- newTransition s epsilon s''
-  -- mkNFA' s' s''' a
-  -- mkNFA' s'' s''' b
-  -- newTransition s''' epsilon s''''
+mkNFA' s s'''' (Alter a b) = do
+  s' <- newState
+  s'' <- newState
+  s''' <- newState
+  newTransition s epsilon s'
+  newTransition s epsilon s''
+  mkNFA' s' s''' a
+  mkNFA' s'' s''' b
+  newTransition s''' epsilon s''''
 mkNFA' s s'' (Star a) = do
   s' <- newState
   newTransition s epsilon s'
@@ -198,6 +201,14 @@ mkNFA' s s'' (Star a) = do
 mkNFA' s s' (Token t a) = do
   markToken t s s'
   mkNFA' s s' a
+mkNFA' s s'' (Range range) = do
+  let chars = concatMap toChars range
+  s' <- newState
+  mapM_ (\c -> newTransition s (Just c) s') chars
+  newTransition s' epsilon s''
+  where
+    toChars (Right (a, b)) = [a .. b]
+    toChars (Left a) = [a]
 
 mkTokenizerRegEx :: Map t (RegEx t) -> RegEx t
 mkTokenizerRegEx regex_map =
@@ -282,6 +293,7 @@ data DFA t s = DFA
     transitions :: Map (s, Char) s,
     initial :: s,
     accepting :: Set s,
+    deadState :: Maybe s,
     tokenMap :: Map t (Set s, Set s)
   }
   deriving (Eq, Show)
@@ -303,7 +315,8 @@ dfaMap f dfa =
       transitions = f <$> Map.mapKeys (first f) (transitions dfa),
       initial = f $ initial dfa,
       accepting = f `Set.map` accepting dfa,
-      tokenMap = both (Set.map f) <$> tokenMap dfa
+      tokenMap = both (Set.map f) <$> tokenMap dfa,
+      deadState = f <$> deadState dfa
     }
 
 mkDFAFromNFA :: (Show s, Enum s, Ord s) => State (NFA t s) (DFA t (Set s))
@@ -325,7 +338,8 @@ mkDFAFromNFA = do
             transitions = new_transitions,
             initial = Set.empty,
             accepting = Set.singleton Set.empty,
-            tokenMap = Map.empty
+            tokenMap = Map.empty,
+            deadState = Nothing
           }
       else
         DFA
@@ -334,7 +348,8 @@ mkDFAFromNFA = do
             transitions = new_transitions,
             initial = new_initial,
             accepting = new_accepting,
-            tokenMap = both newStates <$> token_map
+            tokenMap = both newStates <$> token_map,
+            deadState = Nothing
           }
 
 mkDFAFromRegEx :: (Ord t, Show s, Enum s, Ord s) => RegEx t -> State (NFA t s) (DFA t (Set s))
@@ -376,25 +391,46 @@ isMatch dfa = runDFA' start_state
         xs = Text.tail str'
         maybe_state = Map.lookup (s, x) trans
 
-parallelLexingTable :: Ord s => DFA t s -> Map Char [(s, s)]
-parallelLexingTable dfa = table
+defaultTransitions :: DFA t s -> Maybe [(s, s)]
+defaultTransitions DFA {deadState = Nothing} = Nothing
+defaultTransitions DFA {states = _states, deadState = Just s} =
+  Just $ map (,s) $ toList _states
+
+parallelLexingTable :: (Ord s, Show s) => DFA t s -> Maybe (Map Char [(s, s)])
+parallelLexingTable DFA {deadState = Nothing} = Nothing
+parallelLexingTable
+  DFA
+    { transitions = _transitions,
+      alphabet = _alphabet,
+      states = _states,
+      deadState = Just s
+    } = Just table
+    where
+      tableLookUp key = fromMaybe s (Map.lookup key _transitions)
+      statesFromChar a = (a,) $ map (\b -> (b, tableLookUp (b, a))) $ toList _states
+      table = Map.fromList $ map statesFromChar $ toList _alphabet
+
+addDeadStateDFA :: (Enum s, Ord s) => DFA t s -> DFA t s
+addDeadStateDFA dfa =
+  dfa
+    { states = new_states,
+      deadState = Just dead_state
+    }
   where
-    _states = Set.toList $ states dfa
-    _alphabet = Set.toList $ alphabet dfa
-    tableLookUp = (transitions dfa Map.!)
-    statesFromChar a = (a,) $ map (\b -> (b, tableLookUp (b, a))) _states
-    table = Map.fromList $ map statesFromChar _alphabet
+    _states = states dfa
+    dead_state = succ $ maximum _states
+    new_states = Set.insert dead_state _states
 
 isMatchPar :: DFA t Int -> Text -> Bool
-isMatchPar dfa str =
-  all (`Set.member` set_alphabet) str'
-    && last final_state `Set.member` accepting dfa
+isMatchPar dfa' str = last final_state `Set.member` accepting dfa
   where
+    dfa = addDeadStateDFA dfa'
     str' = Text.unpack str
     _initial = initial dfa
-    set_alphabet = alphabet dfa
-    table = parallelLexingTable dfa
+    table = fromJust $ parallelLexingTable dfa
+    default_case = fromJust $ defaultTransitions dfa
     combineTransitions (a, _) (_, b) = (a, b)
     zipper = zipWith combineTransitions
-    paths = map (map snd) $ scanl1 zipper $ map (table Map.!) str'
+    tableLookUp key = fromMaybe default_case (Map.lookup key table)
+    paths = map (map snd) $ scanl1 zipper $ map tableLookUp str'
     final_state = debug $ scanl (flip (List.!!)) _initial paths
