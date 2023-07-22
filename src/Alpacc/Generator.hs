@@ -25,7 +25,6 @@ import Data.Set qualified as Set
 import Data.String.Interpolate (i)
 import Data.Tuple.Extra
 import Data.Maybe (fromJust)
-import Data.Foldable
 
 -- import Debug.Trace (traceShow)
 -- debug x = traceShow x x
@@ -187,13 +186,10 @@ selectStateSize dfa = maybeToEither err $ selectFutUInt max_state
     max_uint = maxFutUInt (maxBound :: FutUInt)
     err = [i|The number of states must be positive and less then or equal to #{max_uint}.|]
 
-neutralTransitions :: Show s => DFA t s -> String
-neutralTransitions dfa = toArray . fmap (\a -> [i|(#{a}, #{a})|]) . toList $ states dfa
-
 futharkLexerFunction :: DFA t Integer -> String
 futharkLexerFunction dfa =
     [i|
-def char_to_transitions (c : char) : [transitions_size](state_type, state_type) =
+def char_to_transitions (c : char) : [transitions_size](maybe (state_type, state_type)) =
   sized transitions_size <| 
   match c
   #{str_lexer_table}
@@ -202,11 +198,12 @@ def char_to_transitions (c : char) : [transitions_size](state_type, state_type) 
   where
     default_case = fromJust $ defaultTransitions dfa
     table = fromJust $ parallelLexingTable dfa
-    str_default_case = toArray $ tupleToStr <$> default_case
+    toJust = ("#just "++)
+    str_default_case = toArray $ toJust . tupleToStr <$> default_case
     str_lexer_table =
       futharkTableCases
         . Map.toList
-        $ toArray . fmap tupleToStr <$> Map.mapKeys (show . ord) table
+        $ toArray . fmap (toJust . tupleToStr) <$> Map.mapKeys (show . ord) table
 
 -- | Creates Futhark source code which contains a parallel parser that can
 -- create the productions list for a input which is indexes of terminals.
@@ -240,7 +237,6 @@ type char = #{char_size}
 type state_type = #{state_type}
 
 def transitions_size : i64 = #{transition_size}
-def ne_transitions : [transitions_size](state_type, state_type) = sized transitions_size #{ne_transitions}
 def q : i64 = #{q}
 def k : i64 = #{k}
 def max_ao : i64 = #{max_ao}
@@ -279,5 +275,4 @@ def ne : ([max_ao]bracket, [max_pi]u32) =
     lookback_type = toTuple $ replicate q "u32"
     lookahead_type = toTuple $ replicate k "u32"
     lexer_function = futharkLexerFunction dfa
-    ne_transitions = neutralTransitions dfa
     transition_size = Set.size $ states dfa
