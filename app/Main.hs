@@ -14,10 +14,7 @@ import System.Exit (exitFailure)
 import Alpacc.LL (closureAlgorithm)
 import qualified Data.Set as Set
 import Alpacc.CFG
-import Alpacc.Lexer
-import Alpacc.RegularExpression
 import Debug.Trace (traceShow)
-import qualified Data.Map as Map
 
 debug :: Show b => b -> b
 debug x = traceShow x x
@@ -100,7 +97,6 @@ grammarError grammar
   | not $ null nt_dups = Just [i|The given grammar contains duplicate nonterminals because of #{nt_dups_str}.|]
   | not $ null t_dups = Just [i|The given grammar contains duplicate terminals because of #{t_dups_str}.|]
   | not $ null p_dups = Just [i|The given grammar contains duplicate productions because of #{p_dups_str}.|]
-  -- | isLeftRecursive grammar = Just [i|The given grammar contains left recursion.|]
   | not $ null nonproductive = Just [i|The given grammar contains nonproductive productions due to the following nonterminals #{nonproductive_str}.|]
   | otherwise = Nothing
   where
@@ -137,33 +133,12 @@ main = do
         Left e -> do hPutStrLn stderr e
                      exitFailure
         Right g -> pure g
-  dfa <-
-      case cfgToDFA 0 cfg :: Either String (DFA T Integer) of
+  regex <-
+      case cfgToRegEx cfg of
         Left e -> do hPutStrLn stderr e
                      exitFailure
         Right g -> pure g
-  -- lparen <-
-  --     case regExFromText "" "l" of
-  --       Left e -> do hPutStrLn stderr e
-  --                    exitFailure
-  --       Right g -> pure g
-  -- rparen <-
-  --     case regExFromText "" "ar" of
-  --       Left e -> do hPutStrLn stderr e
-  --                    exitFailure
-  --       Right g -> pure g
-  -- atom <-
-  --     case regExFromText "" "[a-c]+" of
-  --       Left e -> do hPutStrLn stderr e
-  --                    exitFailure
-  --       Right g -> pure g
-  -- let groups = Map.fromList [("lparen", lparen), ("rparen", rparen), ("atom", atom)]
-  -- let regex = mkTokenizerRegEx groups
-  -- let dfa = dfaFromRegEx 0 regex :: DFA String Int
-  -- print $ accepting dfa
-  -- mapM_ print . Map.toList $ tokenMap dfa
-  -- print $ isMatchPar dfa "laaaar"
-  let maybe_program = futharkKeyGeneration q k grammar
+  let maybe_program = generateParser q k grammar regex
   case grammarError grammar of
     Just msg -> putStrLn msg *> exitFailure
     Nothing -> case maybe_program of

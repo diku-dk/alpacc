@@ -16,12 +16,15 @@ module type grammar = {
   val max_pi : i64
   type lookahead_type
   type lookback_type
+  type transitions_type
+  type char
   val lookback_array_to_tuple [n] : [n]terminal -> lookback_type
   val lookahead_array_to_tuple [n] : [n]terminal -> lookahead_type
   val start_terminal : terminal
   val end_terminal : terminal
   val ne : ([max_ao]bracket, [max_pi]terminal)
   val key_to_config : (lookback_type, lookahead_type) -> maybe ([max_ao]bracket, [max_pi]terminal)
+  val char_to_transitions : char -> transitions_type
 }
 
 module mk_parser(G: grammar) = {
@@ -110,16 +113,5 @@ module mk_parser(G: grammar) = {
                |> map (\a -> a - 1)
           else []
 }
-
-def lexer_error = u32.highest-2
-def whitespace = u32.highest-1
-
-def terminals [n] (accept: u32 -> u32 -> u32) (xs: [n]u32) : []terminal =
-  let f i a b = accept a (if i == n-1 then whitespace else b)
-  in map3 f (indices xs) xs (rotate 1 xs)
-     |> filter (!=whitespace)
-
-def lex (char_code: u8 -> u32) (accept: u32 -> u32 -> u32) (s: []u8) : []terminal =
-  terminals accept (map char_code s)
 
 -- End of parser.fut
