@@ -218,6 +218,10 @@ generateParser q k grammar regex = do
   start_terminal <- maybeToEither "The left turnstile \"⊢\" terminal could not be found, you should complain to a developer." maybe_start_terminal
   end_terminal <- maybeToEither "The right turnstile \"⊣\" terminal could not be found, you should complain to a developer." maybe_end_terminal
   table <- llpParserTableWithStartsHomomorphisms q k grammar
+  default_transitions' <- maybeToEither "The neutral transition could not be constructed." $ defaultTransitions dfa
+  dead_state <- maybeToEither "The given DFA has no dead state." $ deadState dfa
+  let dead_transition = tupleToStr (dead_state, dead_state)
+  let default_transitions = toArray $ tupleToStr <$> default_transitions'
   state_type <- selectStateSize dfa
   char_size <- selectCharSize dfa
   let (max_ao, max_pi, ne, futhark_table) =
@@ -236,7 +240,10 @@ type lookback_type = #{lookback_type}
 type char = #{char_size}
 type state_type = #{state_type}
 
+def initial_state : state_type = #{initial_state}
 def transitions_size : i64 = #{transition_size}
+def dead_transition : (state_type, state_type) = #{dead_transition}
+def dead_transitions : [transitions_size](state_type, state_type) = sized transitions_size #{default_transitions}
 def q : i64 = #{q}
 def k : i64 = #{k}
 def max_ao : i64 = #{max_ao}
@@ -276,3 +283,4 @@ def ne : ([max_ao]bracket, [max_pi]u32) =
     lookahead_type = toTuple $ replicate k "u32"
     lexer_function = futharkLexerFunction dfa
     transition_size = Set.size $ states dfa
+    initial_state = initial dfa
