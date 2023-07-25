@@ -19,6 +19,9 @@ module type grammar = {
   type lookahead_type
   type lookback_type
   type char
+  val initial_state : state_type
+  val dead_transition : (state_type, state_type)
+  val dead_transitions : [transitions_size](state_type, state_type)
   val lookback_array_to_tuple [n] : [n]terminal -> lookback_type
   val lookahead_array_to_tuple [n] : [n]terminal -> lookahead_type
   val start_terminal : terminal
@@ -123,9 +126,23 @@ module mk_parser(G: grammar) = {
       case (#just _, #nothing) -> a
       case (#nothing, #nothing) -> #nothing
 
-  def solve_transitions [n] (t : [n][G.transitions_size](maybe transition_type)) : [n][G.transitions_size](maybe transition_type) =  
+  def solve_transitions [n] (arr : [n][G.transitions_size](maybe transition_type)) : [1 + n][G.transitions_size](maybe transition_type) =  
     let ne = replicate G.transitions_size #nothing
-    in scan (map2 combine_transitions) ne t
+    let initial_transitions : [1][G.transitions_size](maybe transition_type) =
+      [replicate G.transitions_size (#just (G.initial_state, G.initial_state))]
+    let arr' = initial_transitions ++ arr
+    in scan (map2 combine_transitions) ne arr'
+  
+  def f [n][m] (arr : [n][m](maybe transition_type)) : [n][m]transition_type =
+    map2 (\i v ->
+      map2 (\j w -> 
+        let curr = from_just G.dead_transition w
+        in if i == 0
+           then (G.initial_state, curr.1)
+           else let prev = from_just G.dead_transition arr[i - 1][j]
+                in (prev.1, curr.1)
+      ) (indices v) v
+    ) (indices arr) arr
 
   def transitions [n] (str : [n]G.char) : [n][](maybe transition_type) =
     map G.char_to_transitions str
