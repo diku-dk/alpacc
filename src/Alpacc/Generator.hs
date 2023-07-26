@@ -24,10 +24,12 @@ import Data.Map qualified as Map
 import Data.Set qualified as Set
 import Data.String.Interpolate (i)
 import Data.Tuple.Extra
-import Data.Maybe (fromJust)
+import Data.Maybe (fromJust, mapMaybe)
+import Data.Set (Set)
+import Data.Foldable
 
--- import Debug.Trace (traceShow)
--- debug x = traceShow x x
+import Debug.Trace (traceShow)
+debug x = traceShow x x
 
 maxFutUInt :: FutUInt -> Integer
 maxFutUInt U8 = 255
@@ -189,8 +191,8 @@ selectStateSize dfa = maybeToEither err $ selectFutUInt max_state
 futharkLexerFunction :: DFA t Integer -> String
 futharkLexerFunction dfa =
     [i|
-def char_to_transitions (c : char) : [transitions_size](maybe (state_type, state_type)) =
-  sized transitions_size <| 
+def char_to_transitions (c : char) : maybe ([transitions_size](state_type, state_type)) =
+  fmap_maybe (sized transitions_size) <| 
   match c
   #{str_lexer_table}
   case _ -> #{str_default_case}
@@ -198,12 +200,23 @@ def char_to_transitions (c : char) : [transitions_size](maybe (state_type, state
   where
     default_case = fromJust $ defaultTransitions dfa
     table = fromJust $ parallelLexingTable dfa
-    toJust = ("#just "++)
-    str_default_case = toArray $ toJust . tupleToStr <$> default_case
+    toJust = ("#just " ++)
+    str_default_case = toJust . toArray $ tupleToStr <$> default_case
     str_lexer_table =
       futharkTableCases
         . Map.toList
-        $ toArray . fmap (toJust . tupleToStr) <$> Map.mapKeys (show . ord) table
+        $ toJust . toArray . fmap tupleToStr <$> Map.mapKeys (show . ord) table
+
+generateTerminalStates :: Show t => t -> Integer -> (Set Integer, Set Integer) -> String
+generateTerminalStates t idx (starts, ends) =
+  [i|
+-- states related to #{show t}
+def start_states_related_to_#{idx} = #{starts_arr}
+def end_states_related_to_#{idx} = #{ends_arr}
+  |]
+  where
+    starts_arr = toArray $ show <$> Set.toList starts
+    ends_arr = toArray $ show <$> Set.toList ends
 
 -- | Creates Futhark source code which contains a parallel parser that can
 -- create the productions list for a input which is indexes of terminals.
@@ -212,7 +225,7 @@ generateParser ::
   Int ->
   Int ->
   Grammar nt t ->
-  RegEx T ->
+  RegEx t ->
   Either String String
 generateParser q k grammar regex = do
   start_terminal <- maybeToEither "The left turnstile \"⊢\" terminal could not be found, you should complain to a developer." maybe_start_terminal
@@ -226,8 +239,8 @@ generateParser q k grammar regex = do
   char_size <- selectCharSize dfa
   let (max_ao, max_pi, ne, futhark_table) =
         futharkParserTable q k augmented_grammar table
-      brackets_ty = "(" <> List.intercalate "," (replicate max_ao "bracket") <> ")"
-      productions_ty = "(" <> List.intercalate "," (replicate max_pi "u32") <> ")"
+      -- brackets_ty = "(" <> List.intercalate "," (replicate max_ao "bracket") <> ")"
+      -- productions_ty = "(" <> List.intercalate "," (replicate max_pi "u32") <> ")"
       brackets = List.intercalate "," $ zipWith (<>) (replicate max_ao "b") $ map show [(0 :: Int) ..]
       productions = List.intercalate "," $ zipWith (<>) (replicate max_pi "p") $ map show [(0 :: Int) ..]
   return $
@@ -248,8 +261,12 @@ def q : i64 = #{q}
 def k : i64 = #{k}
 def max_ao : i64 = #{max_ao}
 def max_pi : i64 = #{max_pi}
+def accepting_size : i64 = #{accepting_size}
+def accepting_states : [accepting_size]state_type = #{accepting_states_str}
 def start_terminal : terminal = #{start_terminal}
 def end_terminal : terminal = #{end_terminal}
+
+#{terminal_state_str}
 
 def lookback_array_to_tuple [n] (arr : [n]u32) =
   #{toTupleIndexArray "arr" q}
@@ -259,10 +276,9 @@ def lookahead_array_to_tuple [n] (arr : [n]u32) =
 
 def key_to_config (key : (lookback_type, lookahead_type))
                 : maybe ([max_ao]bracket, [max_pi]u32) =
-  (\\r -> match (r: maybe (#{brackets_ty}, #{productions_ty}))
-          case #nothing -> #nothing
-          case #just ((#{brackets}),(#{productions})) ->
-            #just (sized max_ao [#{brackets}], sized max_pi [#{productions}])) <|
+  fmap_maybe (\\((#{brackets}),(#{productions})) ->
+    (sized max_ao [#{brackets}], sized max_pi [#{productions}])
+  ) <|
   match key
   #{futhark_table}
 
@@ -284,3 +300,15 @@ def ne : ([max_ao]bracket, [max_pi]u32) =
     lexer_function = futharkLexerFunction dfa
     transition_size = Set.size $ states dfa
     initial_state = initial dfa
+    unAugmented (AugmentedTerminal t) = Just t
+    unAugmented _ = Nothing
+    liftFirst (Just a, b) = Just (a, b)
+    liftFirst _ = Nothing
+    terminal_index_map = Map.fromList $ mapMaybe (liftFirst . BI.first unAugmented) (zip terminals' [0..])
+    terminal_map = terminalMap dfa
+    terminal_state_idxs = Map.mapKeys (\key -> (key, terminal_index_map Map.! key)) terminal_map
+    terminal_state_strs = Map.mapWithKey (uncurry generateTerminalStates) terminal_state_idxs
+    terminal_state_str = unlines $ toList terminal_state_strs
+    accepting_states = accepting dfa
+    accepting_size = show $ Set.size accepting_states
+    accepting_states_str = ("sized accepting_size " ++) . toArray $ show <$> Set.toList accepting_states
