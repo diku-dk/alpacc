@@ -211,10 +211,12 @@ generateTerminalStates :: Show t => t -> Integer -> (Set Integer, Set Integer) -
 generateTerminalStates t idx (starts, ends) =
   [i|
 -- states related to #{show t}
-def start_states_related_to_#{idx} = #{starts_arr}
-def end_states_related_to_#{idx} = #{ends_arr}
+def start_states_related_to_#{idx} : [#{starts_size}]state_type = #{starts_arr}
+def end_states_related_to_#{idx} : [#{ends_size}]state_type = #{ends_arr}
   |]
   where
+    starts_size = Set.size starts
+    ends_size = Set.size ends 
     starts_arr = toArray $ show <$> Set.toList starts
     ends_arr = toArray $ show <$> Set.toList ends
 
