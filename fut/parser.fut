@@ -9,18 +9,25 @@ type bracket = #left u64 | #right u64 | #epsilon
 type maybe 'a = #just a | #nothing
 type terminal = u32
 
+def fmap_maybe 'a 'b (f : a -> b) (m : maybe a) : maybe b =
+  match m
+  case #just m' -> #just (f m')
+  case #nothing -> #nothing
+
 module type grammar = {
   val q : i64
   val k : i64
   val max_ao : i64
   val max_pi : i64
   val transitions_size : i64
+  val accepting_size : i64
   type state_type
   type lookahead_type
   type lookback_type
   type char
   val initial_state : state_type
   val dead_transition : (state_type, state_type)
+  val accepting_states : [accepting_size]state_type
   val dead_transitions : [transitions_size](state_type, state_type)
   val lookback_array_to_tuple [n] : [n]terminal -> lookback_type
   val lookahead_array_to_tuple [n] : [n]terminal -> lookahead_type
@@ -28,7 +35,7 @@ module type grammar = {
   val end_terminal : terminal
   val ne : ([max_ao]bracket, [max_pi]terminal)
   val key_to_config : (lookback_type, lookahead_type) -> maybe ([max_ao]bracket, [max_pi]terminal)
-  val char_to_transitions : char -> [transitions_size](maybe (state_type, state_type))
+  val char_to_transitions : char -> maybe ([transitions_size](state_type, state_type))
 }
 
 module mk_parser(G: grammar) = {
@@ -119,32 +126,21 @@ module mk_parser(G: grammar) = {
                |> map (\a -> a - 1)
           else []
   
-  def combine_transitions (a : maybe transition_type) (b : maybe transition_type) : maybe transition_type =
-      match (a, b)
-      case (#just x, #just y) -> #just (x.0, y.1)
-      case (#nothing, #just _) -> b
-      case (#just _, #nothing) -> a
-      case (#nothing, #nothing) -> #nothing
+  def combine (a : transition_type) (b : transition_type) : transition_type =
+    (a.0, b.1)
 
-  def solve_transitions [n] (arr : [n][G.transitions_size](maybe transition_type)) : [1 + n][G.transitions_size](maybe transition_type) =  
-    let ne = replicate G.transitions_size #nothing
-    let initial_transitions : [1][G.transitions_size](maybe transition_type) =
-      [replicate G.transitions_size (#just (G.initial_state, G.initial_state))]
-    let arr' = initial_transitions ++ arr
-    in scan (map2 combine_transitions) ne arr'
-  
-  def f [n][m] (arr : [n][m](maybe transition_type)) : [n][m]transition_type =
-    map2 (\i v ->
-      map2 (\j w -> 
-        let curr = from_just G.dead_transition w
-        in if i == 0
-           then (G.initial_state, curr.1)
-           else let prev = from_just G.dead_transition arr[i - 1][j]
-                in (prev.1, curr.1)
-      ) (indices v) v
-    ) (indices arr) arr
+  def combine_transitions [n] (a : maybe ([n]transition_type)) (b : maybe ([n]transition_type)) : maybe ([n]transition_type) =
+    match (a, b)
+    case (#just x, #just y) -> #just(map2 combine x y)
+    case (#nothing, #just _) -> b
+    case (#just _, #nothing) -> a
+    case (#nothing, #nothing) -> #nothing
 
-  def transitions [n] (str : [n]G.char) : [n][](maybe transition_type) =
+  def solve_transitions [n] (arr : [n](maybe ([G.transitions_size]transition_type))) : [n][G.transitions_size]transition_type =
+    scan combine_transitions #nothing arr
+    |> map (from_just (copy G.dead_transitions))
+
+  def transitions [n] (str : [n]G.char) : [n](maybe ([]transition_type)) =
     map G.char_to_transitions str
 }
 

@@ -127,7 +127,7 @@ data NFA t s = NFA
     initial' :: s,
     alphabet' :: Set Char,
     accepting' :: Set s,
-    tokenMap' :: Map t (Set s, Set s)
+    terminalMap' :: Map t (Set s, Set s)
   }
   deriving (Show)
 
@@ -139,7 +139,7 @@ initNFA start_state =
       transitions' = Map.empty,
       initial' = start_state,
       accepting' = Set.singleton $ succ start_state,
-      tokenMap' = Map.empty
+      terminalMap' = Map.empty
     }
 
 newState :: (Ord s, Enum s) => State (NFA t s) s
@@ -171,8 +171,8 @@ markToken :: Ord t => t -> s -> s -> State (NFA t s) ()
 markToken t s s' = do
   nfa <- get
   let val = (Set.singleton s, Set.singleton s')
-  let new_token_map = Map.insert t val $ tokenMap' nfa
-  put (nfa {tokenMap' = new_token_map})
+  let new_token_map = Map.insert t val $ terminalMap' nfa
+  put (nfa {terminalMap' = new_token_map})
 
 epsilon :: Maybe a
 epsilon = Nothing
@@ -294,7 +294,7 @@ data DFA t s = DFA
     initial :: s,
     accepting :: Set s,
     deadState :: Maybe s,
-    tokenMap :: Map t (Set s, Set s)
+    terminalMap :: Map t (Set s, Set s)
   }
   deriving (Eq, Show)
 
@@ -305,7 +305,7 @@ nfaMap f nfa =
       transitions' = Set.map f <$> Map.mapKeys (first f) (transitions' nfa),
       initial' = f $ initial' nfa,
       accepting' = Set.map f $ accepting' nfa,
-      tokenMap' = both (Set.map f) <$> tokenMap' nfa
+      terminalMap' = both (Set.map f) <$> terminalMap' nfa
     }
 
 dfaMap :: (Ord s', Ord s) => (s' -> s) -> DFA t s' -> DFA t s
@@ -315,7 +315,7 @@ dfaMap f dfa =
       transitions = f <$> Map.mapKeys (first f) (transitions dfa),
       initial = f $ initial dfa,
       accepting = f `Set.map` accepting dfa,
-      tokenMap = both (Set.map f) <$> tokenMap dfa,
+      terminalMap = both (Set.map f) <$> terminalMap dfa,
       deadState = f <$> deadState dfa
     }
 
@@ -323,7 +323,7 @@ mkDFAFromNFA :: (Show s, Enum s, Ord s) => State (NFA t s) (DFA t (Set s))
 mkDFAFromNFA = do
   nfa <- get
   let accept = accepting' nfa
-  let token_map = tokenMap' nfa
+  let token_map = terminalMap' nfa
   new_initial <- epsilonClosure . Set.singleton $ initial' nfa
   new_transitions <- mkDFATransitions Set.empty Map.empty [new_initial]
   let (new_states, new_alphabet) = bimap Set.fromList Set.fromList . unzip $ Map.keys new_transitions
@@ -338,7 +338,7 @@ mkDFAFromNFA = do
             transitions = new_transitions,
             initial = Set.empty,
             accepting = Set.singleton Set.empty,
-            tokenMap = Map.empty,
+            terminalMap = Map.empty,
             deadState = Nothing
           }
       else
@@ -348,7 +348,7 @@ mkDFAFromNFA = do
             transitions = new_transitions,
             initial = new_initial,
             accepting = new_accepting,
-            tokenMap = both newStates <$> token_map,
+            terminalMap = both newStates <$> token_map,
             deadState = Nothing
           }
 
