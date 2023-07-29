@@ -10,7 +10,8 @@ module Alpacc.RegularExpression
     DFA (..),
     RegEx (..),
     addDeadStateDFA,
-    defaultTransitions
+    defaultTransitions,
+    transitionsTerminalMap
   )
 where
 
@@ -27,7 +28,6 @@ import Data.Set (Set)
 import Data.Set qualified as Set hiding (Set)
 import Data.Text (Text)
 import Data.Text qualified as Text
-import Data.Tuple.Extra (both)
 import Data.Void
 import Debug.Trace (traceShow)
 import Text.Megaparsec hiding (State)
@@ -127,7 +127,7 @@ data NFA t s = NFA
     initial' :: s,
     alphabet' :: Set Char,
     accepting' :: Set s,
-    terminalMap' :: Map t (Set s, Set s)
+    terminalMap' :: Map t (Set s)
   }
   deriving (Show)
 
@@ -167,45 +167,60 @@ newTransition s c s' = do
   let new_alph = Set.fromList (maybeToList c) `Set.union` alphabet' nfa
   put $ nfa {transitions' = new_trans, alphabet' = new_alph}
 
-markToken :: Ord t => t -> s -> s -> State (NFA t s) ()
-markToken t s s' = do
+markToken :: (Ord t, Ord s) => t -> Set s -> State (NFA t s) ()
+markToken t set = do
   nfa <- get
-  let val = (Set.singleton s, Set.singleton s')
-  let new_token_map = Map.insert t val $ terminalMap' nfa
+  let map' = terminalMap' nfa
+  let new_token_map =
+        if t `Map.member` map'
+          then Map.adjust (Set.union set) t map'
+          else Map.insert t set map'
   put (nfa {terminalMap' = new_token_map})
 
 epsilon :: Maybe a
 epsilon = Nothing
 
-mkNFA' :: (Ord t, Ord s, Enum s) => s -> s -> RegEx t -> State (NFA t s) ()
-mkNFA' s s' Epsilon = newTransition s epsilon s'
-mkNFA' s s' (Literal c) = newTransition s (Just c) s'
+mkNFA' :: (Ord t, Ord s, Enum s) => s -> s -> RegEx t -> State (NFA t s) (Set s)
+mkNFA' s s' Epsilon = do
+  newTransition s epsilon s'
+  return Set.empty
+mkNFA' s s' (Literal c) = do
+  newTransition s (Just c) s'
+  return Set.empty
 mkNFA' s s'' (Concat a b) = do
   s' <- newState
-  mkNFA' s s' a
-  mkNFA' s' s'' b
+  new <- mkNFA' s s' a
+  new' <- mkNFA' s' s'' b
+  return $ new `Set.union` new' `Set.union` Set.singleton s'
 mkNFA' s s'''' (Alter a b) = do
   s' <- newState
   s'' <- newState
   s''' <- newState
   newTransition s epsilon s'
   newTransition s epsilon s''
-  mkNFA' s' s''' a
-  mkNFA' s'' s''' b
+  new <- mkNFA' s' s''' a
+  new' <- mkNFA' s'' s''' b
   newTransition s''' epsilon s''''
+  return $ new `Set.union` new' `Set.union` Set.fromList [s', s'', s'']
 mkNFA' s s'' (Star a) = do
   s' <- newState
   newTransition s epsilon s'
   newTransition s epsilon s''
-  mkNFA' s' s a
-mkNFA' s s' (Token t a) = do
-  markToken t s s'
-  mkNFA' s s' a
-mkNFA' s s'' (Range range) = do
-  let chars = concatMap toChars range
+  new <- mkNFA' s' s a
+  return $ new `Set.union` Set.fromList [s']
+mkNFA' s s''' (Token t a) = do
   s' <- newState
+  s'' <- newState
+  newTransition s epsilon s'
+  newTransition s'' epsilon s'''
+  new <- mkNFA' s' s'' a
+  let token_states = new `Set.union` Set.fromList [s', s'']
+  markToken t token_states
+  return token_states
+mkNFA' s s' (Range range) = do
+  let chars = concatMap toChars range
   mapM_ (\c -> newTransition s (Just c) s') chars
-  newTransition s' epsilon s''
+  return Set.empty
   where
     toChars (Right (a, b)) = [a .. b]
     toChars (Left a) = [a]
@@ -294,9 +309,30 @@ data DFA t s = DFA
     initial :: s,
     accepting :: Set s,
     deadState :: Maybe s,
-    terminalMap :: Map t (Set s, Set s)
+    terminalMap :: Map t (Set s)
   }
   deriving (Eq, Show)
+
+transitionsList :: Ord s => DFA t s -> [(s, s, Char)]
+transitionsList = Map.elems . Map.mapWithKey (\(s, c) s' -> (s, s', c)) . transitions
+
+invertTerminalMap :: (Ord s, Ord t) => DFA t s -> Map s (Set t)
+invertTerminalMap dfa = Map.fromList $ toTuple <$> states_list
+  where
+    stateTerminals s = Set.fromList $ filter (isStateTerminal s) terminals 
+    isStateTerminal s = Set.member s . (terminal_map Map.!)
+    terminal_map = terminalMap dfa
+    terminals = Map.keys terminal_map 
+    states_list = toList $ states dfa
+    toTuple s = (s, stateTerminals s) 
+
+transitionsTerminalMap :: (Ord s, Ord t) => DFA t s -> Map (s, s, Char) (Set t)
+transitionsTerminalMap dfa = Map.fromList $ toTuple <$> transitionsList dfa
+  where
+    inverted_map = invertTerminalMap dfa
+    lookupMap = (inverted_map Map.!)
+    commonTerminals s s' = lookupMap s `Set.intersection` lookupMap s'
+    toTuple k@(s, s', _) = (k, commonTerminals s s')
 
 nfaMap :: (Ord s', Ord s) => (s' -> s) -> NFA t s' -> NFA t s
 nfaMap f nfa =
@@ -305,7 +341,7 @@ nfaMap f nfa =
       transitions' = Set.map f <$> Map.mapKeys (first f) (transitions' nfa),
       initial' = f $ initial' nfa,
       accepting' = Set.map f $ accepting' nfa,
-      terminalMap' = both (Set.map f) <$> terminalMap' nfa
+      terminalMap' = Set.map f <$> terminalMap' nfa
     }
 
 dfaMap :: (Ord s', Ord s) => (s' -> s) -> DFA t s' -> DFA t s
@@ -315,7 +351,7 @@ dfaMap f dfa =
       transitions = f <$> Map.mapKeys (first f) (transitions dfa),
       initial = f $ initial dfa,
       accepting = f `Set.map` accepting dfa,
-      terminalMap = both (Set.map f) <$> terminalMap dfa,
+      terminalMap = Set.map f <$> terminalMap dfa,
       deadState = f <$> deadState dfa
     }
 
@@ -348,7 +384,7 @@ mkDFAFromNFA = do
             transitions = new_transitions,
             initial = new_initial,
             accepting = new_accepting,
-            terminalMap = both newStates <$> token_map,
+            terminalMap = newStates <$> token_map,
             deadState = Nothing
           }
 
