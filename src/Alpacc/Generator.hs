@@ -207,19 +207,6 @@ def char_to_transitions (c : char) : maybe ([transitions_size](state_type, state
         . Map.toList
         $ toJust . toArray . fmap tupleToStr <$> Map.mapKeys (show . ord) table
 
-generateTerminalStates :: Show t => t -> Integer -> (Set Integer, Set Integer) -> String
-generateTerminalStates t idx (starts, ends) =
-  [i|
--- states related to #{show t}
-def start_states_related_to_#{idx} : [#{starts_size}]state_type = #{starts_arr}
-def end_states_related_to_#{idx} : [#{ends_size}]state_type = #{ends_arr}
-  |]
-  where
-    starts_size = Set.size starts
-    ends_size = Set.size ends 
-    starts_arr = toArray $ show <$> Set.toList starts
-    ends_arr = toArray $ show <$> Set.toList ends
-
 -- | Creates Futhark source code which contains a parallel parser that can
 -- create the productions list for a input which is indexes of terminals.
 generateParser ::
@@ -268,8 +255,6 @@ def accepting_states : [accepting_size]state_type = #{accepting_states_str}
 def start_terminal : terminal = #{start_terminal}
 def end_terminal : terminal = #{end_terminal}
 
-#{terminal_state_str}
-
 def lookback_array_to_tuple [n] (arr : [n]u32) =
   #{toTupleIndexArray "arr" q}
 
@@ -308,9 +293,7 @@ def ne : ([max_ao]bracket, [max_pi]u32) =
     liftFirst _ = Nothing
     terminal_index_map = Map.fromList $ mapMaybe (liftFirst . BI.first unAugmented) (zip terminals' [0..])
     terminal_map = terminalMap dfa
-    terminal_state_idxs = Map.mapKeys (\key -> (key, terminal_index_map Map.! key)) terminal_map
-    terminal_state_strs = Map.mapWithKey (uncurry generateTerminalStates) terminal_state_idxs
-    terminal_state_str = unlines $ toList terminal_state_strs
+    transitions_map = Set.map (terminal_index_map Map.!) <$> transitionsTerminalMap dfa
     accepting_states = accepting dfa
     accepting_size = show $ Set.size accepting_states
     accepting_states_str = ("sized accepting_size " ++) . toArray $ show <$> Set.toList accepting_states
