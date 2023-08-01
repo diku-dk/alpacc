@@ -191,7 +191,7 @@ selectStateSize dfa = maybeToEither err $ selectFutUInt max_state
 futharkLexerFunction :: DFA t Integer -> String
 futharkLexerFunction dfa =
     [i|
-def char_to_transitions (c : char) : maybe ([transitions_size](state_type, state_type)) =
+def char_to_transitions (c : char) : maybe ([transitions_size](i64, i64)) =
   fmap_maybe (sized transitions_size) <| 
   match c
   #{str_lexer_table}
@@ -210,15 +210,15 @@ def char_to_transitions (c : char) : maybe ([transitions_size](state_type, state
 transitionTable :: Map ((Integer, Integer), Int) [Integer] -> String
 transitionTable table =
   [i|
-def f x =
-  match x
+def transition_to_terminal_set (n : ((i64, i64), char)) : bitset_u8.bitset[(number_of_terminals - 1) / bitset_u8.nbs + 1] =
+  match n
   #{cases}
-  case _ -> bitset_u8.from_array 10  []
+  case _ -> bitset_u8.from_array number_of_terminals []
 |]
   where
     cases = futharkTableCases . Map.toList $ _table
     toStr ((x, y), z) = [i|((#{x}, #{y}), #{z})|]
-    _table = ("bitset_u8.from_array 10 "++) . show <$> Map.mapKeys toStr table
+    _table = ([i|bitset_u8.from_array number_of_terminals |]++) . show <$> Map.mapKeys toStr table
 
 -- | Creates Futhark source code which contains a parallel parser that can
 -- create the productions list for a input which is indexes of terminals.
@@ -237,7 +237,6 @@ generateParser q k grammar regex = do
   dead_state <- maybeToEither "The given DFA has no dead state." $ deadState dfa
   let dead_transition = tupleToStr (dead_state, dead_state)
   let default_transitions = toArray $ tupleToStr <$> default_transitions'
-  state_type <- selectStateSize dfa
   char_size <- selectCharSize dfa
   let (max_ao, max_pi, ne, futhark_table) =
         futharkParserTable q k augmented_grammar table
@@ -253,18 +252,18 @@ module parser = mk_parser {
 type lookahead_type = #{lookahead_type}
 type lookback_type = #{lookback_type}
 type char = #{char_size}
-type state_type = #{state_type}
 
-def initial_state : state_type = #{initial_state}
+def number_of_terminals : i64 = #{number_of_terminals}
+def initial_state : i64 = #{initial_state}
 def transitions_size : i64 = #{transition_size}
-def dead_transition : (state_type, state_type) = #{dead_transition}
-def dead_transitions : [transitions_size](state_type, state_type) = sized transitions_size #{default_transitions}
+def dead_transition : (i64, i64) = #{dead_transition}
+def dead_transitions : [transitions_size](i64, i64) = sized transitions_size #{default_transitions}
 def q : i64 = #{q}
 def k : i64 = #{k}
 def max_ao : i64 = #{max_ao}
 def max_pi : i64 = #{max_pi}
 def accepting_size : i64 = #{accepting_size}
-def accepting_states : [accepting_size]state_type = #{accepting_states_str}
+def accepting_states : [accepting_size]i64 = #{accepting_states_str}
 def start_terminal : terminal = #{start_terminal}
 def end_terminal : terminal = #{end_terminal}
 
@@ -288,10 +287,12 @@ def ne : ([max_ao]bracket, [max_pi]u32) =
 
 #{lexer_function}
 
-#{transitionTable $ terminal_map}
+#{transition_function}
 }
 |]
   where
+
+    number_of_terminals = length terminals'
     dfa = addDeadStateDFA $ dfaFromRegEx 0 regex
     maybe_start_terminal = List.elemIndex RightTurnstile terminals' :: Maybe Int
     maybe_end_terminal = List.elemIndex LeftTurnstile terminals' :: Maybe Int
@@ -306,6 +307,7 @@ def ne : ([max_ao]bracket, [max_pi]u32) =
     unAugmented _ = Nothing
     liftFirst (Just a, b) = Just (a, b)
     liftFirst _ = Nothing
+    transition_function = transitionTable $ terminal_map
     terminal_index_map = Map.fromList $ mapMaybe (liftFirst . BI.first unAugmented) (zip terminals' [0..])
     terminal_map = fmap (terminal_index_map Map.!) . toList <$> Map.mapKeys (second ord) (terminalMap dfa)
     accepting_states = accepting dfa

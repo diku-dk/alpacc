@@ -24,25 +24,26 @@ module type grammar = {
   val max_pi : i64
   val transitions_size : i64
   val accepting_size : i64
-  type state_type
   type lookahead_type
   type lookback_type
   type char
-  val initial_state : state_type
-  val dead_transition : (state_type, state_type)
-  val accepting_states : [accepting_size]state_type
-  val dead_transitions : [transitions_size](state_type, state_type)
+  val number_of_terminals : i64
+  val initial_state : i64
+  val dead_transition : (i64, i64)
+  val accepting_states : [accepting_size]i64
+  val dead_transitions : [transitions_size](i64, i64)
   val lookback_array_to_tuple [n] : [n]terminal -> lookback_type
   val lookahead_array_to_tuple [n] : [n]terminal -> lookahead_type
   val start_terminal : terminal
   val end_terminal : terminal
   val ne : ([max_ao]bracket, [max_pi]terminal)
   val key_to_config : (lookback_type, lookahead_type) -> maybe ([max_ao]bracket, [max_pi]terminal)
-  val char_to_transitions : char -> maybe ([transitions_size](state_type, state_type))
+  val char_to_transitions : char -> maybe ([transitions_size](i64, i64))
+  val transition_to_terminal_set : ((i64, i64), char) -> bitset_u8.bitset[(number_of_terminals - 1) / bitset_u8.nbs + 1]
 }
 
 module mk_parser(G: grammar) = {
-  type transition_type = (G.state_type, G.state_type)
+  type transition_type = (i64, i64)
 
   def lookback_chunks [n] (arr : [n]terminal) =
     let arr' = replicate G.q u32.highest ++ arr
@@ -145,6 +146,23 @@ module mk_parser(G: grammar) = {
 
   def transitions [n] (str : [n]G.char) : [n](maybe ([]transition_type)) =
     map G.char_to_transitions str
+  
+  -- | This is completely wrong it should be done in parallel.
+  def path [n] (trans: [n][G.transitions_size]transition_type) : [n]transition_type =
+    (loop result = (replicate n (-1, -1), G.initial_state) for i < n do
+      let old_arr = result.0
+      let old_st = result.1
+      let new_arr = old_arr with [i] = trans[i][old_st]
+      let new_st = new_arr[i].1
+      in (new_arr, new_st)
+    ) |> (.0)
+
+  def lex [n] (str : [n]G.char) : [n]bitset_u8.bitset[(G.number_of_terminals - 1) / bitset_u8.nbs + 1] =
+    transitions str
+    |> solve_transitions
+    |> path
+    |> flip zip str
+    |> map G.transition_to_terminal_set
 }
 
 -- End of parser.fut
