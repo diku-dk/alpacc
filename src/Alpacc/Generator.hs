@@ -207,6 +207,19 @@ def char_to_transitions (c : char) : maybe ([transitions_size](state_type, state
         . Map.toList
         $ toJust . toArray . fmap tupleToStr <$> Map.mapKeys (show . ord) table
 
+transitionTable :: Map ((Integer, Integer), Int) [Integer] -> String
+transitionTable table =
+  [i|
+def f x =
+  match x
+  #{cases}
+  case _ -> bitset_u8.from_array 10  []
+|]
+  where
+    cases = futharkTableCases . Map.toList $ _table
+    toStr ((x, y), z) = [i|((#{x}, #{y}), #{z})|]
+    _table = ("bitset_u8.from_array 10 "++) . show <$> Map.mapKeys toStr table
+
 -- | Creates Futhark source code which contains a parallel parser that can
 -- create the productions list for a input which is indexes of terminals.
 generateParser ::
@@ -274,6 +287,8 @@ def ne : ([max_ao]bracket, [max_pi]u32) =
   in (sized max_ao a, sized max_pi b)
 
 #{lexer_function}
+
+#{transitionTable $ terminal_map}
 }
 |]
   where
@@ -292,8 +307,7 @@ def ne : ([max_ao]bracket, [max_pi]u32) =
     liftFirst (Just a, b) = Just (a, b)
     liftFirst _ = Nothing
     terminal_index_map = Map.fromList $ mapMaybe (liftFirst . BI.first unAugmented) (zip terminals' [0..])
-    terminal_map = terminalMap dfa
-    transitions_map = Set.map (terminal_index_map Map.!) <$> transitionsTerminalMap dfa
+    terminal_map = fmap (terminal_index_map Map.!) . toList <$> Map.mapKeys (second ord) (terminalMap dfa)
     accepting_states = accepting dfa
     accepting_size = show $ Set.size accepting_states
     accepting_states_str = ("sized accepting_size " ++) . toArray $ show <$> Set.toList accepting_states

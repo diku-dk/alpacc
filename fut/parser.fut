@@ -4,10 +4,13 @@
 -- module.
 
 import "lib/github.com/diku-dk/sorts/radix_sort"
+import "lib/github.com/diku-dk/containers/bitset"
 
 type bracket = #left u64 | #right u64 | #epsilon
 type maybe 'a = #just a | #nothing
 type terminal = u32
+
+module bitset_u8 = mk_bitset u8
 
 def fmap_maybe 'a 'b (f : a -> b) (m : maybe a) : maybe b =
   match m
