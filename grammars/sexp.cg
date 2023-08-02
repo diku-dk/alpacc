@@ -1,4 +1,4 @@
 atom = [a-z0-9]+;
 
-E = atom | "a(" E0 ")b";
+E = atom | "(" E0 ")";
 E0 = | E E0;
