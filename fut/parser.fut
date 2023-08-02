@@ -61,8 +61,7 @@ module mk_parser(G: grammar) = {
   def is_left (b : bracket) : bool =
     match b
     case #left _ -> true
-    case #right _ -> false
-    case #epsilon -> false
+    case _ -> false
 
   def depths [n] (input : [n]bracket) : maybe ([n]i64) =
     let left_brackets =
@@ -116,7 +115,7 @@ module mk_parser(G: grammar) = {
     case _ -> ne
 
   def parse [n] (arr : [n]u32) : []u32 =
-    let arr' = replicate 1 G.start_terminal ++ (map (+2) arr) ++ replicate 1 G.end_terminal
+    let arr' = [G.start_terminal] ++ arr ++ [G.end_terminal]
     let configs = keys arr' |> map G.key_to_config
     in if any (is_nothing) configs
        then []
@@ -157,12 +156,38 @@ module mk_parser(G: grammar) = {
       in (new_arr, new_st)
     ) |> (.0)
 
-  def lex [n] (str : [n]G.char) : [n]bitset_u8.bitset[(G.number_of_terminals - 1) / bitset_u8.nbs + 1] =
+  def minimum (set : bitset_u8.bitset[(G.number_of_terminals - 1) / bitset_u8.nbs + 1]) : i64 =
+    let m = bitset_u8.to_array set
+        |> reduce_comm (i64.min) G.number_of_terminals
+    in if m == G.number_of_terminals
+       then -1
+       else m
+  
+  def solve_overlaps [n] (sets : [n]bitset_u8.bitset[(G.number_of_terminals - 1) / bitset_u8.nbs + 1]) : [n]i64 =
+    map (\i ->
+      if i == n - 1
+      then sets[i]
+      else let set' = sets[i] `bitset_u8.intersection` sets[i+1]
+           in if bitset_u8.size set' == 0
+              then sets[i]
+              else set'
+    ) (iota n)
+    |> map minimum
+
+  def remove_repeat_tokens [n] (tokens : [n]i64) : []i64 =
+    filter (\(t, i) ->
+      i == 0 || tokens[i - 1] != t
+    ) (zip tokens (iota n))
+    |> map (.0)
+
+  def lexer [n] (str : [n]G.char) : []i64 =
     transitions str
     |> solve_transitions
     |> path
     |> flip zip str
     |> map G.transition_to_terminal_set
+    |> solve_overlaps
+  
 }
 
 -- End of parser.fut
