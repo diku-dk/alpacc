@@ -192,7 +192,7 @@ futharkLexerFunction :: DFA t Integer -> String
 futharkLexerFunction dfa =
     [i|
 def char_to_transitions (c : char) : maybe ([transitions_size](i64, i64)) =
-  fmap_maybe (sized transitions_size) <| 
+  map_maybe (sized transitions_size) <| 
   match c
   #{str_lexer_table}
   case _ -> #{str_default_case}
@@ -275,7 +275,7 @@ def lookahead_array_to_tuple [n] (arr : [n]u32) =
 
 def key_to_config (key : (lookback_type, lookahead_type))
                 : maybe ([max_ao]bracket, [max_pi]u32) =
-  fmap_maybe (\\((#{brackets}),(#{productions})) ->
+  map_maybe (\\((#{brackets}),(#{productions})) ->
     (sized max_ao [#{brackets}], sized max_pi [#{productions}])
   ) <|
   match key
