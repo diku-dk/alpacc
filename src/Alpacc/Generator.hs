@@ -288,6 +288,10 @@ def ne : ([max_ao]bracket, [max_pi]u32) =
 #{lexer_function}
 
 #{transition_function}
+
+-- #{initialTerminalStates dfa}
+-- #{finalTerminalStates dfa}
+-- #{continueTerminalStates dfa}
 }
 |]
   where

@@ -172,16 +172,20 @@ module mk_parser(G: grammar) = {
     |> map (.[0])
     |> sized n
 
-  def lexer [n] (str : [n]G.char) =
+  def lexer [n] (str : [n]G.char) : []transition_type =
     let path =
       transitions str
       |> solve_transitions
       |> find_path
-    in if not <| any (==path[n - 1].1) G.accepting_states
+    in if any (==path[n - 1].1) G.accepting_states |> not
        then []
-       else zip path str
-            |> map G.transition_to_terminal_set
-            |> solve_overlaps
+       else path
+  
+  def helper path str =
+    zip path str
+    |> map G.transition_to_terminal_set
+    |> solve_overlaps
+
   
 }
 
