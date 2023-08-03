@@ -40,6 +40,7 @@ module type grammar = {
 module mk_parser(G: grammar) = {
   type bitset = bitset_u8.bitset[(G.number_of_terminals - 1) / bitset_u8.nbs + 1] 
   type transition_type = (i64, i64)
+  type trans_vec = [G.transitions_size]transition_type
 
   def lookback_chunks [n] (arr : [n]terminal) =
     let arr' = replicate G.q u32.highest ++ arr
@@ -121,7 +122,7 @@ module mk_parser(G: grammar) = {
   def combine_transitions [n] (a : maybe ([n]transition_type)) (b : maybe ([n]transition_type)) : maybe ([n]transition_type) =
     add_identity (map2 combine) a b
 
-  def solve_transitions [n] (arr : [n](maybe ([G.transitions_size]transition_type))) : [n][G.transitions_size]transition_type =
+  def solve_transitions [n] (arr : [n](maybe trans_vec)) : [n]trans_vec =
     scan combine_transitions #nothing arr
     |> map (from_maybe (copy G.dead_transitions))
 
@@ -129,7 +130,7 @@ module mk_parser(G: grammar) = {
     map G.char_to_transitions str
   
   -- | This is completely wrong it should be done in parallel.
-  def find_path [n] (trans: [n][G.transitions_size]transition_type) : [n]transition_type =
+  def find_path [n] (trans: [n]trans_vec) : [n]transition_type =
     (loop result = (replicate n (-1, -1), G.initial_state) for i < n do
       let old_arr = result.0
       let old_st = result.1
@@ -159,6 +160,27 @@ module mk_parser(G: grammar) = {
     reverse sets
     |> scan solve_overlap full_set
     |> reverse
+    |> map minimum
+  
+  def combine_trans_vec [n] (a : [n](i64, i64)) (b : [n](i64, i64)) : [n](i64, i64) =
+    map2 (\a' b' ->
+      if a'.0 < 0 || a'.1 < 0
+      then b'
+      else if b'.0 < 0 || b'.1 < 0
+           then a'
+           else b[a'.1]
+    ) a b
+  
+  def trans_vec_identity : trans_vec =
+    replicate G.transitions_size (-1, -1)
+
+  def find_path' [n] (trans: [n]trans_vec) : [n]transition_type =
+    [replicate G.transitions_size (G.initial_state, G.initial_state)]
+    |> (++trans)
+    |> scan combine_trans_vec (copy trans_vec_identity)
+    |> tail
+    |> map (.[0])
+    |> sized n
 
   def lexer [n] (str : [n]G.char) =
     let path =
