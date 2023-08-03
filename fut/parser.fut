@@ -128,16 +128,6 @@ module mk_parser(G: grammar) = {
 
   def transitions [n] (str : [n]G.char) : [n](maybe ([]transition_type)) =
     map G.char_to_transitions str
-  
-  -- | This is completely wrong it should be done in parallel.
-  def find_path [n] (trans: [n]trans_vec) : [n]transition_type =
-    (loop result = (replicate n (-1, -1), G.initial_state) for i < n do
-      let old_arr = result.0
-      let old_st = result.1
-      let new_arr = old_arr with [i] = trans[i][old_st]
-      let new_st = new_arr[i].1
-      in (new_arr, new_st)
-    ) |> (.0)
 
   def minimum (set : bitset) : i64 =
     let m = bitset_u8.to_array set
@@ -174,24 +164,23 @@ module mk_parser(G: grammar) = {
   def trans_vec_identity : trans_vec =
     replicate G.transitions_size (-1, -1)
 
-  def find_path' [n] (trans: [n]trans_vec) : [n]transition_type =
+  def find_path [n] (trans: [n]trans_vec) : [n]trans_vec =
     [replicate G.transitions_size (G.initial_state, G.initial_state)]
     |> (++trans)
     |> scan combine_trans_vec (copy trans_vec_identity)
     |> tail
-    |> map (.[0])
     |> sized n
 
-  def lexer [n] (str : [n]G.char) =
-    let path =
-      transitions str
-      |> solve_transitions
-      |> find_path
-    in if not <| any (==path[n - 1].1) G.accepting_states
-       then []
-       else zip path str
-            |> map G.transition_to_terminal_set
-            |> solve_overlaps
+  -- def lexer [n] (str : [n]G.char) =
+  --   let path =
+  --     transitions str
+  --     |> solve_transitions
+  --     |> find_path
+  --   in if not <| any (==path[n - 1].1) G.accepting_states
+  --      then []
+  --      else zip path str
+  --           |> map G.transition_to_terminal_set
+  --           |> solve_overlaps
   
 }
 
