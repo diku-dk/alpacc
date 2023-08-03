@@ -5,17 +5,12 @@
 
 import "lib/github.com/diku-dk/sorts/radix_sort"
 import "lib/github.com/diku-dk/containers/bitset"
+import "lib/github.com/diku-dk/containers/maybe"
 
 type bracket = #left u64 | #right u64 | #epsilon
-type maybe 'a = #just a | #nothing
 type terminal = u32
 
 module bitset_u8 = mk_bitset u8
-
-def fmap_maybe 'a 'b (f : a -> b) (m : maybe a) : maybe b =
-  match m
-  case #just m' -> #just (f m')
-  case #nothing -> #nothing
 
 module type grammar = {
   val q : i64
@@ -43,6 +38,7 @@ module type grammar = {
 }
 
 module mk_parser(G: grammar) = {
+  type bitset = bitset_u8.bitset[(G.number_of_terminals - 1) / bitset_u8.nbs + 1] 
   type transition_type = (i64, i64)
 
   def lookback_chunks [n] (arr : [n]terminal) =
@@ -104,23 +100,13 @@ module mk_parser(G: grammar) = {
          |> and
     case #nothing -> false
 
-  def is_nothing 'a (m : maybe a) : bool =
-    match m
-    case #just _ -> false
-    case #nothing -> true
-
-  def from_just 'a (ne : a) (m : maybe a) : a =
-    match m
-    case #just a -> a
-    case _ -> ne
-
   def parse [n] (arr : [n]u32) : []u32 =
     let arr' = [G.start_terminal] ++ arr ++ [G.end_terminal]
     let configs = keys arr' |> map G.key_to_config
     in if any (is_nothing) configs
        then []
        else
-       let (brackets, productions) = unzip (map (from_just G.ne) configs)
+       let (brackets, productions) = unzip (map (from_maybe G.ne) configs)
        in if brackets |> flatten |> filter (!=#epsilon) |> brackets_matches
           then productions
                |> flatten
@@ -133,21 +119,17 @@ module mk_parser(G: grammar) = {
     (a.0, b.1)
 
   def combine_transitions [n] (a : maybe ([n]transition_type)) (b : maybe ([n]transition_type)) : maybe ([n]transition_type) =
-    match (a, b)
-    case (#just x, #just y) -> #just(map2 combine x y)
-    case (#nothing, #just _) -> b
-    case (#just _, #nothing) -> a
-    case (#nothing, #nothing) -> #nothing
+    add_identity (map2 combine) a b
 
   def solve_transitions [n] (arr : [n](maybe ([G.transitions_size]transition_type))) : [n][G.transitions_size]transition_type =
     scan combine_transitions #nothing arr
-    |> map (from_just (copy G.dead_transitions))
+    |> map (from_maybe (copy G.dead_transitions))
 
   def transitions [n] (str : [n]G.char) : [n](maybe ([]transition_type)) =
     map G.char_to_transitions str
   
   -- | This is completely wrong it should be done in parallel.
-  def path [n] (trans: [n][G.transitions_size]transition_type) : [n]transition_type =
+  def find_path [n] (trans: [n][G.transitions_size]transition_type) : [n]transition_type =
     (loop result = (replicate n (-1, -1), G.initial_state) for i < n do
       let old_arr = result.0
       let old_st = result.1
@@ -156,37 +138,38 @@ module mk_parser(G: grammar) = {
       in (new_arr, new_st)
     ) |> (.0)
 
-  def minimum (set : bitset_u8.bitset[(G.number_of_terminals - 1) / bitset_u8.nbs + 1]) : i64 =
+  def minimum (set : bitset) : i64 =
     let m = bitset_u8.to_array set
         |> reduce_comm (i64.min) G.number_of_terminals
     in if m == G.number_of_terminals
        then -1
        else m
   
-  def solve_overlaps [n] (sets : [n]bitset_u8.bitset[(G.number_of_terminals - 1) / bitset_u8.nbs + 1]) : [n]i64 =
-    map (\i ->
-      if i == n - 1
-      then sets[i]
-      else let set' = sets[i] `bitset_u8.intersection` sets[i+1]
-           in if bitset_u8.size set' == 0
-              then sets[i]
-              else set'
-    ) (iota n)
-    |> map minimum
+  def solve_overlap (set : bitset) (set' : bitset) : bitset =
+    let set'' = set `bitset_u8.intersection` set'
+    in if bitset_u8.size set'' == 0
+       then set'
+       else set''
 
-  def remove_repeat_tokens [n] (tokens : [n]i64) : []i64 =
-    filter (\(t, i) ->
-      i == 0 || tokens[i - 1] != t
-    ) (zip tokens (iota n))
-    |> map (.0)
+  def empty = bitset_u8.empty G.number_of_terminals
 
-  def lexer [n] (str : [n]G.char) : []i64 =
-    transitions str
-    |> solve_transitions
-    |> path
-    |> flip zip str
-    |> map G.transition_to_terminal_set
-    |> solve_overlaps
+  def full_set = bitset_u8.complement empty
+
+  def solve_overlaps [n] (sets : [n]bitset) =
+    reverse sets
+    |> scan solve_overlap full_set
+    |> reverse
+
+  def lexer [n] (str : [n]G.char) =
+    let path =
+      transitions str
+      |> solve_transitions
+      |> find_path
+    in if not <| any (==path[n - 1].1) G.accepting_states
+       then []
+       else zip path str
+            |> map G.transition_to_terminal_set
+            |> solve_overlaps
   
 }
 
