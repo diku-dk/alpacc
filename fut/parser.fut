@@ -152,8 +152,8 @@ module mk_parser(G: grammar) = {
   def solve_overlaps [n] (sets : [n]bitset) =
     reverse sets
     |> scan solve_overlap full_set
-    |> reverse
     |> map minimum
+    |> reverse
   
   def combine_trans_vec [n] (a : [n](i64, i64)) (b : [n](i64, i64)) : [n](i64, i64) =
     map2 (\a' b' ->
@@ -175,21 +175,26 @@ module mk_parser(G: grammar) = {
     |> map (.[0])
     |> sized n
 
-  def lexer [n] (str : [n]G.char) : []transition_type =
+  def lexer [n] (str : [n]G.char) =
     let path =
       transitions str
       |> solve_transitions
       |> find_path
     in if any (==path[n - 1].1) G.accepting_states |> not
        then []
-       else path
-  
-  def helper path str =
-    zip path str
-    |> map G.transition_to_terminal_set
-    |> solve_overlaps
+       else let tokens =
+              zip path str
+              |> map G.transition_to_terminal_set
+              |> solve_overlaps
+            in filter (\i ->
+                if i == 0
+                then true
+                else tokens[i] != tokens[i - 1] ||
+                     (bitset_u8.member path[i - 1].1 G.final_terminal_states[tokens[i]] &&
+                      not (bitset_u8.member path[i - 1].1 G.continue_terminal_states[tokens[i]]))
+               ) (indices tokens)
+               |> map (\i -> tokens[i])
 
-  
 }
 
 -- End of parser.fut

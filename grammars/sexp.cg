@@ -1,4 +1,4 @@
-atom = [a-zA-Z]+;
+atom = fish;
 
 E = atom | "(" E0 ")";
 E0 = | E E0;
