@@ -16,7 +16,6 @@ where
 
 import Control.Monad.State
 import Data.Bifunctor (Bifunctor (..))
-import Data.Char (isAlphaNum)
 import Data.Composition
 import Data.Foldable (Foldable (..))
 import Data.List qualified as List
@@ -55,11 +54,79 @@ space = Lexer.space space1 empty empty
 lexeme :: Parser a -> Parser a
 lexeme = Lexer.lexeme space
 
-validLiterials :: [Char]
-validLiterials = ['a' .. 'z'] ++ ['A' .. 'Z'] ++ ['0' .. '9']
+validLiterials :: [Char] -- missing chars ";\[]()*|+-"
+validLiterials = ['!'..'\''] ++ [','] ++ ['.'..':'] ++ ['<'..'Z'] ++ ['^'..'{'] ++ ['}'..'~']
+
+pBackslash :: Parser Char
+pBackslash = Text.last <$> string "\\\\"
+
+pSemicolon :: Parser Char
+pSemicolon = Text.last <$> string "\\;"
+
+pLeftSquareBracket :: Parser Char
+pLeftSquareBracket = Text.last <$> string "\\["
+
+pRightSquareBracket :: Parser Char
+pRightSquareBracket = Text.last <$> string "\\]"
+
+pLeftParentheses :: Parser Char
+pLeftParentheses = Text.last <$> string "\\("
+
+pRightParentheses :: Parser Char
+pRightParentheses = Text.last <$> string "\\)"
+
+pStar :: Parser Char
+pStar = Text.last <$> string "\\*"
+
+pAdd :: Parser Char
+pAdd = Text.last <$> string "\\+"
+
+pDash :: Parser Char
+pDash = Text.last <$> string "\\-"
+
+pPipe :: Parser Char
+pPipe = Text.last <$> string "\\|"
+
+pSpace :: Parser Char
+pSpace = do
+  _ <- string "\\s"
+  return ' '
+
+pTab :: Parser Char
+pTab = do
+  _ <- string "\\t"
+  return '\t'
+
+pNewline :: Parser Char
+pNewline = do
+  _ <- string "\\n"
+  return '\n'
+
+pCarriageReturn :: Parser Char
+pCarriageReturn = do
+  _ <- string "\\r"
+  return '\r'
+
+pChar :: Parser Char
+pChar =
+  pBackslash <|>
+  pSemicolon <|>
+  pLeftSquareBracket <|>
+  pRightSquareBracket <|>
+  pLeftParentheses <|>
+  pRightParentheses <|>
+  pSpace <|>
+  pTab <|>
+  pNewline <|>
+  pCarriageReturn <|>
+  pStar <|>
+  pAdd <|>
+  pPipe <|>
+  pDash <|>
+  satisfy (`elem` validLiterials)
 
 pLiteral :: Parser (RegEx t)
-pLiteral = Literal <$> lexeme (satisfy (`elem` validLiterials))
+pLiteral = Literal <$> lexeme pChar
 
 many1 :: Parser a -> Parser [a]
 many1 p = liftM2 (:) p (many p)
@@ -90,11 +157,11 @@ pRange =
       <$> many1
         ( Right
             .: (,)
-            <$> satisfy isAlphaNum
+            <$> pChar
             <* lexeme "-"
-            <*> satisfy isAlphaNum
+            <*> pChar
             <|> Left
-            <$> satisfy isAlphaNum
+            <$> pChar
         )
 
 pTerm :: Parser (RegEx t)

@@ -1,5 +1,6 @@
 string = [a-zA-Z]+;
 int = [0-9]+;
+ignore = \s|\n|\t|\r;
 
 J = O | A | string | int;
 

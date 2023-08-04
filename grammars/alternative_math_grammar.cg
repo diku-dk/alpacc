@@ -1,4 +1,6 @@
 num = [0-9]+;
+ignore = \s|\n|\t|\r;
+
 Exp = Exp2 Exp*;
 Exp* = "+" Exp2 Exp*
      | "-" Exp2 Exp*

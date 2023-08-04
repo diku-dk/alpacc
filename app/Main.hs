@@ -145,6 +145,11 @@ main = do
         Left e -> do hPutStrLn stderr e
                      exitFailure
         Right program ->
-          writeFutharkProgram program_path program
-            -- <> generateLexer lexer
-            -- <> "entry parse s = parser.parse (lex char_code accept s)\n"
+          writeFutharkProgram program_path $
+          program
+          <> [i|
+entry parse s =
+  match parser.lexer s
+  case #just s' -> parser.parse s'.0
+  case #nothing -> []
+|]

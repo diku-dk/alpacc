@@ -11,7 +11,6 @@ import Alpacc.LLP
     llpParserTableWithStartsHomomorphisms,
   )
 import Alpacc.RegularExpression
-import Control.DeepSeq
 import Data.Bifunctor qualified as BI
 import Data.Char (ord)
 import Data.Composition
@@ -24,12 +23,8 @@ import Data.Map qualified as Map
 import Data.Set qualified as Set
 import Data.String.Interpolate (i)
 import Data.Tuple.Extra
-import Data.Maybe (fromJust, mapMaybe)
-import Data.Set (Set)
+import Data.Maybe (fromJust)
 import Data.Foldable
-
-import Debug.Trace (traceShow)
-debug x = traceShow x x
 
 maxFutUInt :: FutUInt -> Integer
 maxFutUInt U8 = 255
@@ -181,12 +176,12 @@ selectCharSize dfa = maybeToEither err $ selectFutUInt max_alph
 
 -- | This assumes the states have been reenumerated for the DFA such that each
 -- states has an integer value from 0 to n and the number of states is n + 1.
-selectStateSize :: DFA t Integer -> Either String FutUInt
-selectStateSize dfa = maybeToEither err $ selectFutUInt max_state
-  where
-    max_state = fromIntegral . maximum $ states dfa
-    max_uint = maxFutUInt (maxBound :: FutUInt)
-    err = [i|The number of states must be positive and less then or equal to #{max_uint}.|]
+-- selectStateSize :: DFA t Integer -> Either String FutUInt
+-- selectStateSize dfa = maybeToEither err $ selectFutUInt max_state
+--   where
+--     max_state = fromIntegral . maximum $ states dfa
+--     max_uint = maxFutUInt (maxBound :: FutUInt)
+--     err = [i|The number of states must be positive and less then or equal to #{max_uint}.|]
 
 futharkLexerFunction :: DFA t Integer -> String
 futharkLexerFunction dfa =
@@ -220,26 +215,13 @@ def transition_to_terminal_set (n : ((i64, i64), char)) : bitset_u8.bitset[(numb
     toStr ((x, y), z) = [i|((#{x}, #{y}), #{z})|]
     _table = ([i|bitset_u8.from_array number_of_terminals |]++) . show <$> Map.mapKeys toStr table
 
--- terminalStateTable :: String -> Map Integer (Set Integer) -> String
--- terminalStateTable name table =
---   [i|
--- def #{name} (n : i64) : bitset_u8.bitset[(number_of_states - 1) / bitset_u8.nbs + 1] =
---   match n
---   #{cases}
---   case _ -> bitset_u8.from_array number_of_states []
--- |]
---   where
---     cases = futharkTableCases . Map.toList $ _table
---     _table = ([i|bitset_u8.from_array number_of_states |]++) . show . toList <$> Map.mapKeys show table
-
 -- | Creates Futhark source code which contains a parallel parser that can
 -- create the productions list for a input which is indexes of terminals.
 generateParser ::
-  (Ord nt, Ord t, Show nt, Show t, NFData t, NFData nt) =>
   Int ->
   Int ->
-  Grammar nt t ->
-  RegEx t ->
+  Grammar NT T ->
+  RegEx T ->
   Either String String
 generateParser q k grammar regex = do
   start_terminal <- maybeToEither "The left turnstile \"⊢\" terminal could not be found, you should complain to a developer." maybe_start_terminal
@@ -302,6 +284,8 @@ def ne : ([max_ao]bracket, [max_pi]u32) =
   let (a,b) = #{ne}
   in (sized max_ao a, sized max_pi b)
 
+#{ignore_function}
+
 #{lexer_function}
 
 #{transition_function}
@@ -332,6 +316,10 @@ def ne : ([max_ao]bracket, [max_pi]u32) =
     continue_terminal_states = toSetArray $ continueTerminalStates dfa
     transition_function = transitionTable terminal_map
     terminal_index_map = Map.fromList $ zip terminals' [0..]
+    ignore_function = 
+      case AugmentedTerminal (T "ignore") `Map.lookup` terminal_index_map of
+        Just j -> [i|def is_ignore (t : i64) : bool = #{j} == t|]
+        Nothing -> [i|def is_ignore (_ : i64) : bool = false|]
     terminal_map = fmap (terminal_index_map Map.!) . toList . Set.map AugmentedTerminal <$> Map.mapKeys (second ord) (terminalMap dfa)
     accepting_states = accepting dfa
     accepting_size = show $ Set.size accepting_states

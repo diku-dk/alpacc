@@ -153,7 +153,7 @@ class Grammar:
     def __str__(self) -> str:
         s = ''
         for t in self.terminals:
-            s += f'{t} = "{t}";\n'
+            s += f'{t} = {t};\n'
         def prod(nt):
             nonlocal s
             s += f'{nt} = {" | ".join([" ".join([c for c in r]) for r in self.production_map[nt]])};\n'
@@ -587,7 +587,7 @@ def main():
 
     if args.test_type == 'setup':
         assert 0 == subprocess.check_call(
-            'futhark pkg add github.com/diku-dk/sorts && futhark pkg sync',
+            'futhark pkg add github.com/diku-dk/sorts && futhark pkg add github.com/diku-dk/containers && futhark pkg sync',
             shell=True
         ), "Futharks sorts lib could not be retrieved."
     elif args.test_type == 'stuck':
