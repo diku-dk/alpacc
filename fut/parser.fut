@@ -38,6 +38,7 @@ module type grammar = {
   val key_to_config : (lookback_type, lookahead_type) -> maybe ([max_ao]bracket, [max_pi]terminal)
   val char_to_transitions : char -> maybe ([transitions_size](i64, i64))
   val transition_to_terminal_set : ((i64, i64), char) -> bitset_u8.bitset[(number_of_terminals - 1) / bitset_u8.nbs + 1]
+  val is_ignore : i64 -> bool
 }
 
 module mk_parser(G: grammar) = {
@@ -175,25 +176,36 @@ module mk_parser(G: grammar) = {
     |> map (.[0])
     |> sized n
 
-  def lexer [n] (str : [n]G.char) =
-    let path =
-      transitions str
-      |> solve_transitions
-      |> find_path
-    in if any (==path[n - 1].1) G.accepting_states |> not
-       then []
-       else let tokens =
-              zip path str
-              |> map G.transition_to_terminal_set
-              |> solve_overlaps
-            in filter (\i ->
-                if i == 0
-                then true
-                else tokens[i] != tokens[i - 1] ||
-                     (bitset_u8.member path[i - 1].1 G.final_terminal_states[tokens[i]] &&
-                      not (bitset_u8.member path[i - 1].1 G.continue_terminal_states[tokens[i]]))
-               ) (indices tokens)
-               |> map (\i -> u32.i64 tokens[i])
+  def is_terminal [n] (terminal_strings : [n]i64) (path : [n]transition_type) (i : i64) : bool =
+    not (G.is_ignore terminal_strings[i]) &&
+    (i == 0 ||
+     terminal_strings[i] != terminal_strings[i - 1] ||
+     (bitset_u8.member path[i - 1].1 G.final_terminal_states[terminal_strings[i]] &&
+      not (bitset_u8.member path[i - 1].1 G.continue_terminal_states[terminal_strings[i]])))
+
+  def lexer [n] (str : [n]G.char) : maybe ([]u32, [](i64, i64)) =
+    if n == 0
+    then #just ([], [])
+    else let path =
+           transitions str
+           |> solve_transitions
+           |> find_path
+         in if any (==path[n - 1].1) G.accepting_states |> not
+            then #nothing
+            else let terminal_strings =
+                  zip path str
+                  |> map G.transition_to_terminal_set
+                  |> solve_overlaps
+                 in let terminal_starts = filter (is_terminal terminal_strings path) (indices terminal_strings)
+                    let terminals = map (\i -> u32.i64 terminal_strings[i]) terminal_starts
+                    let len = length terminal_starts - 1
+                    let spans =
+                      map (\i ->
+                        if i == len
+                        then (terminal_starts[i], n - 1)
+                        else (terminal_starts[i], terminal_starts[i + 1] - 1)
+                      ) (indices terminal_starts)
+                    in #just (terminals, spans)
 
 }
 
