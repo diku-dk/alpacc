@@ -193,7 +193,7 @@ module mk_parser(G: grammar) = {
                      (bitset_u8.member path[i - 1].1 G.final_terminal_states[tokens[i]] &&
                       not (bitset_u8.member path[i - 1].1 G.continue_terminal_states[tokens[i]]))
                ) (indices tokens)
-               |> map (\i -> tokens[i])
+               |> map (\i -> u32.i64 tokens[i])
 
 }
 
