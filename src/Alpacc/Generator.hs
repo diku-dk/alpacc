@@ -220,6 +220,18 @@ def transition_to_terminal_set (n : ((i64, i64), char)) : bitset_u8.bitset[(numb
     toStr ((x, y), z) = [i|((#{x}, #{y}), #{z})|]
     _table = ([i|bitset_u8.from_array number_of_terminals |]++) . show <$> Map.mapKeys toStr table
 
+-- terminalStateTable :: String -> Map Integer (Set Integer) -> String
+-- terminalStateTable name table =
+--   [i|
+-- def #{name} (n : i64) : bitset_u8.bitset[(number_of_states - 1) / bitset_u8.nbs + 1] =
+--   match n
+--   #{cases}
+--   case _ -> bitset_u8.from_array number_of_states []
+-- |]
+--   where
+--     cases = futharkTableCases . Map.toList $ _table
+--     _table = ([i|bitset_u8.from_array number_of_states |]++) . show . toList <$> Map.mapKeys show table
+
 -- | Creates Futhark source code which contains a parallel parser that can
 -- create the productions list for a input which is indexes of terminals.
 generateParser ::
@@ -237,7 +249,7 @@ generateParser q k grammar regex = do
   dead_state <- maybeToEither "The given DFA has no dead state." $ deadState dfa
   let dead_transition = tupleToStr (dead_state, dead_state)
   let default_transitions = toArray $ tupleToStr <$> default_transitions'
-  char_size <- selectCharSize dfa
+  char_type <- selectCharSize dfa
   let (max_ao, max_pi, ne, futhark_table) =
         futharkParserTable q k augmented_grammar table
       -- brackets_ty = "(" <> List.intercalate "," (replicate max_ao "bracket") <> ")"
@@ -251,8 +263,9 @@ module parser = mk_parser {
 
 type lookahead_type = #{lookahead_type}
 type lookback_type = #{lookback_type}
-type char = #{char_size}
+type char = #{char_type}
 
+def number_of_states : i64 = #{number_of_states}
 def number_of_terminals : i64 = #{number_of_terminals}
 def initial_state : i64 = #{initial_state}
 def transitions_size : i64 = #{transition_size}
@@ -266,6 +279,10 @@ def accepting_size : i64 = #{accepting_size}
 def accepting_states : [accepting_size]i64 = #{accepting_states_str}
 def start_terminal : terminal = #{start_terminal}
 def end_terminal : terminal = #{end_terminal}
+def final_terminal_states : [number_of_terminals](bitset_u8.bitset[(number_of_states - 1) / bitset_u8.nbs + 1]) =
+  sized number_of_terminals #{final_terminal_states}
+def continue_terminal_states : [number_of_terminals](bitset_u8.bitset[(number_of_states - 1) / bitset_u8.nbs + 1]) =
+  sized number_of_terminals #{continue_terminal_states}
 
 def lookback_array_to_tuple [n] (arr : [n]u32) =
   #{toTupleIndexArray "arr" q}
@@ -288,14 +305,9 @@ def ne : ([max_ao]bracket, [max_pi]u32) =
 #{lexer_function}
 
 #{transition_function}
-
--- #{initialTerminalStates dfa}
--- #{finalTerminalStates dfa}
--- #{continueTerminalStates dfa}
 }
 |]
   where
-
     number_of_terminals = length terminals'
     dfa = addDeadStateDFA $ dfaFromRegEx 0 regex
     maybe_start_terminal = List.elemIndex RightTurnstile terminals' :: Maybe Int
@@ -307,13 +319,20 @@ def ne : ([max_ao]bracket, [max_pi]u32) =
     lexer_function = futharkLexerFunction dfa
     transition_size = Set.size $ states dfa
     initial_state = initial dfa
-    unAugmented (AugmentedTerminal t) = Just t
-    unAugmented _ = Nothing
-    liftFirst (Just a, b) = Just (a, b)
-    liftFirst _ = Nothing
-    transition_function = transitionTable $ terminal_map
-    terminal_index_map = Map.fromList $ mapMaybe (liftFirst . BI.first unAugmented) (zip terminals' [0..])
-    terminal_map = fmap (terminal_index_map Map.!) . toList <$> Map.mapKeys (second ord) (terminalMap dfa)
+    number_of_states = Set.size $ states dfa
+    empty_states = Map.fromList $ (,Set.empty) <$> terminals'
+    toSetArray = 
+      toArray
+      . map (("bitset_u8.from_array number_of_states " ++) . show . toList . snd)
+      . Map.toAscList
+      . Map.mapKeys (terminal_index_map Map.!)
+      . Map.unionWith Set.union empty_states
+      . Map.mapKeys AugmentedTerminal
+    final_terminal_states = toSetArray $ finalTerminalStates dfa
+    continue_terminal_states = toSetArray $ continueTerminalStates dfa
+    transition_function = transitionTable terminal_map
+    terminal_index_map = Map.fromList $ zip terminals' [0..]
+    terminal_map = fmap (terminal_index_map Map.!) . toList . Set.map AugmentedTerminal <$> Map.mapKeys (second ord) (terminalMap dfa)
     accepting_states = accepting dfa
     accepting_size = show $ Set.size accepting_states
     accepting_states_str = ("sized accepting_size " ++) . toArray $ show <$> Set.toList accepting_states
