@@ -22,11 +22,14 @@ module type grammar = {
   type lookahead_type
   type lookback_type
   type char
+  val number_of_states : i64
   val number_of_terminals : i64
   val initial_state : i64
   val dead_transition : (i64, i64)
   val accepting_states : [accepting_size]i64
   val dead_transitions : [transitions_size](i64, i64)
+  val final_terminal_states : [number_of_terminals](bitset_u8.bitset[(number_of_states - 1) / bitset_u8.nbs + 1])
+  val continue_terminal_states : [number_of_terminals](bitset_u8.bitset[(number_of_states - 1) / bitset_u8.nbs + 1])
   val lookback_array_to_tuple [n] : [n]terminal -> lookback_type
   val lookahead_array_to_tuple [n] : [n]terminal -> lookahead_type
   val start_terminal : terminal
