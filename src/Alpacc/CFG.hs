@@ -1,7 +1,7 @@
 module Alpacc.CFG
   ( cfgFromText,
     cfgToGrammar,
-    cfgToRegEx,
+    cfgToDFA,
     CFG (..),
     TRule (..),
     NTRule (..),
@@ -9,7 +9,7 @@ module Alpacc.CFG
 where
 
 import Data.Char (isAlphaNum, isLower, isPrint, isUpper)
-import Data.List (nub)
+import Data.List qualified as List
 import Data.Set qualified as Set hiding (Set)
 import Data.Set (Set)
 import Data.Text qualified as Text hiding (Text)
@@ -22,6 +22,7 @@ import Text.Megaparsec
 import Text.Megaparsec.Char (char, space1)
 import Text.Megaparsec.Char.Lexer qualified as Lexer
 import Data.Foldable
+
 -- import Debug.Trace (traceShow)
 -- 
 -- debug :: Show b => b -> b
@@ -60,8 +61,11 @@ cfgToGrammar (CFG {tRules, ntRules}) =
   let productions = concatMap ruleProds ntRules
       nonterminals = map ruleNT ntRules
       start = ruleNT $ head ntRules
-      terminals = nub $ map ruleT tRules ++ toList (foldMap ruleTerminals ntRules)
-   in Right $ Grammar {start, terminals, nonterminals, productions}
+      terminals = List.nub $ map ruleT tRules ++ toList (foldMap ruleTerminals ntRules)
+      grammar = Grammar {start, terminals, nonterminals, productions}
+   in case grammarError grammar of
+        Just err -> Left err
+        Nothing -> Right grammar
   where
     ruleProds NTRule {ruleNT, ruleProductions} =
       map (Production ruleNT) ruleProductions
@@ -79,12 +83,13 @@ implicitTRules (CFG {tRules, ntRules}) = mapM implicitLitToRegEx implicit
 tRuleToTuple :: TRule -> (T, RegEx T)
 tRuleToTuple (TRule {ruleT=t, ruleRegex=regex}) = (t, regex)
 
-cfgToRegEx :: CFG -> Either String (RegEx T)
-cfgToRegEx cfg@(CFG {tRules}) = do
+cfgToDFA :: CFG -> Either String (DFA T Integer)
+cfgToDFA cfg@(CFG {tRules}) = do
   implicit_t_rules <- implicitTRules cfg
   let all_t_rules = implicit_t_rules ++ tRules
   let terminal_map = Map.fromList $ tRuleToTuple <$> all_t_rules
-  return $ mkTokenizerRegEx terminal_map
+  let regex = mkTokenizerRegEx terminal_map
+  return . addDeadStateDFA $ dfaFromRegEx (0 :: Integer) regex
 
 type Parser = Parsec Void Text
 
