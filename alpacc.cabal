@@ -12,7 +12,7 @@ license-file:       LICENSE
 author:             William Due
 maintainer:         williamhenrichdue@gmail.com
 category:           Language
-extra-source-files: CHANGELOG.md fut/parser.fut
+extra-source-files: CHANGELOG.md futhark/parser.fut futhark/lexer.fut
 
 library
   default-language:   GHC2021
@@ -26,6 +26,7 @@ library
     DeriveFunctor
     ExtendedDefaultRules
     DeriveGeneric
+    TemplateHaskell
 
   build-depends:
     , base
@@ -48,7 +49,10 @@ library
     Alpacc.Grammar
     Alpacc.LL
     Alpacc.LLP
-    Alpacc.Generator
+    Alpacc.Generator.Futhark.Lexer
+    Alpacc.Generator.Futhark.Parser
+    Alpacc.Generator.Futhark.Util
+    Alpacc.Generator.Futhark.Generator
     Alpacc.Lexer
     Alpacc.RegularExpression
 
@@ -71,6 +75,7 @@ executable alpacc
     DeriveFunctor
     ExtendedDefaultRules
     DeriveGeneric
+    TemplateHaskell
 
   build-depends:
     optparse-applicative
@@ -104,6 +109,7 @@ test-suite test-alpacc
     DeriveFunctor
     ExtendedDefaultRules
     DeriveGeneric
+    TemplateHaskell
 
   type:             exitcode-stdio-1.0
   hs-source-dirs:   haskell-tests

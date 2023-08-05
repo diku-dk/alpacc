@@ -3,7 +3,7 @@ module Main where
 import qualified Data.Text.IO as T
 import System.IO
 import Alpacc.Grammar
-import Alpacc.Generator
+import Alpacc.Generator.Futhark.Generator
 import Prelude hiding (last)
 import Data.Maybe
 import Options.Applicative
@@ -138,18 +138,11 @@ main = do
         Left e -> do hPutStrLn stderr e
                      exitFailure
         Right g -> pure g
-  let maybe_program = generateParser q k grammar regex
+  let maybe_program = generate q k grammar regex
   case grammarError grammar of
     Just msg -> putStrLn msg *> exitFailure
     Nothing -> case maybe_program of
         Left e -> do hPutStrLn stderr e
                      exitFailure
         Right program ->
-          writeFutharkProgram program_path $
-          program
-          <> [i|
-entry parse s =
-  match parser.lexer s
-  case #just s' -> parser.parse s'.0
-  case #nothing -> []
-|]
+          writeFutharkProgram program_path program
