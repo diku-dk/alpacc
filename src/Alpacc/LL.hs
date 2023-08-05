@@ -5,7 +5,6 @@ module Alpacc.LL
     follow,
     last,
     before,
-    fixedPointIterate,
     llTable,
     llParse,
     leftmostDerivations,
@@ -25,7 +24,6 @@ module Alpacc.LL
     firstAndFollow,
     lastAndBefore,
     firstMap,
-    closureAlgorithm,
     leftFactorNonterminals,
     isLeftRecursive,
     truncatedProduct,
@@ -40,7 +38,7 @@ import qualified Data.Map as Map
 import Data.Maybe
 import Data.Set (Set)
 import qualified Data.Set as Set
-import Data.Tuple.Extra (dupe, both)
+import Data.Tuple.Extra (both)
 import Alpacc.Grammar
 import Prelude hiding (last)
 import Data.Sequence (Seq (..), (<|), (><))
@@ -51,6 +49,7 @@ import Data.Composition
 import Control.DeepSeq
 import GHC.Generics
 import Data.String.Interpolate (i)
+import Alpacc.Util
 
 -- import Debug.Trace (traceShow)
 -- debug x = traceShow x x
@@ -200,13 +199,6 @@ naiveFollow :: (Show nt, Show t, Ord nt, Ord t) => Int -> Grammar nt t -> nt -> 
 naiveFollow k grammar = (follow_map Map.!)
   where
     follow_map = naiveFollows k grammar
-
--- | Performs fixed point iteration until a predicate holds true.
-fixedPointIterate :: (Show b, Eq b) => (b -> b -> Bool) -> (b -> b) -> b -> b
-fixedPointIterate cmp f = fst . head . dropWhile (uncurry cmp) . iterateFunction
-  where
-    iterateFunction = drop 1 . iterate swapApply . dupe
-    swapApply (n, _) = (f n, n)
 
 -- | Determines the nullablity of each nonterminal using the algorithm described
 -- in Introduction to Compiler Design.
@@ -627,16 +619,6 @@ llParse k grammar = parse
       parse (input, symbols production ++ ys, index : parsed)
     parse ([], [], parsed) = Just ([], [], reverse parsed)
     parse (_, _, _) = Nothing
-
--- https://zerobone.net/blog/cs/non-productive-cfg-rules/
-closureAlgorithm :: (Ord nt, Ord t, Show nt, Show t) => Grammar nt t -> Set nt
-closureAlgorithm grammar = fixedPointIterate (/=) (`newProductives` prods) Set.empty
-  where
-    prods = productions grammar
-    isProductive1 set (Nonterminal nt) = nt `Set.member` set
-    isProductive1 _ (Terminal _) = True
-    isProductive set = all (isProductive1 set) . symbols
-    newProductives set = Set.fromList . fmap nonterminal . List.filter (isProductive set)
 
 -- Note: I am not sure if this is one hundred percent correct.
 leftFactorNonterminals :: (Ord nt, Ord t) => Grammar nt t -> [nt]

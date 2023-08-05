@@ -1,20 +1,15 @@
 module Main where
 
-import qualified Data.Text.IO as T
+import qualified Data.Text.IO as TextIO
 import System.IO
-import Alpacc.Grammar
 import Alpacc.Generator.Futhark.Generator
 import Prelude hiding (last)
 import Data.Maybe
 import Options.Applicative
-import Data.String.Interpolate (i)
 import System.FilePath.Posix (stripExtension, takeFileName)
-import qualified Data.List as List
 import System.Exit (exitFailure)
-import Alpacc.LL (closureAlgorithm)
-import qualified Data.Set as Set
-import Alpacc.CFG
 import Debug.Trace (traceShow)
+import Alpacc.CFG
 
 debug :: Show b => b -> b
 debug x = traceShow x x
@@ -92,22 +87,6 @@ isFileInput :: Input -> Bool
 isFileInput StdInput = False
 isFileInput (FileInput _) = True
 
-grammarError :: (Ord nt, Ord t, Show nt, Show t) => Grammar nt t -> Maybe String
-grammarError grammar
-  | not $ null nt_dups = Just [i|The given grammar contains duplicate nonterminals because of #{nt_dups_str}.|]
-  | not $ null t_dups = Just [i|The given grammar contains duplicate terminals because of #{t_dups_str}.|]
-  | not $ null p_dups = Just [i|The given grammar contains duplicate productions because of #{p_dups_str}.|]
-  | not $ null nonproductive = Just [i|The given grammar contains nonproductive productions due to the following nonterminals #{nonproductive_str}.|]
-  | otherwise = Nothing
-  where
-    nts = Set.fromList $ nonterminals grammar
-    nonproductive = nts `Set.difference` closureAlgorithm grammar
-    nonproductive_str = List.intercalate ", " . fmap show $ Set.toList nonproductive
-    (nt_dups, t_dups, p_dups) = grammarDuplicates grammar
-    nt_dups_str = List.intercalate ", " . fmap show $ nt_dups
-    t_dups_str = List.intercalate ", " . fmap show $ t_dups
-    p_dups_str = List.intercalate ", " $ fmap show p_dups
-
 main :: IO ()
 main = do
   options <- execParser opts
@@ -120,29 +99,18 @@ main = do
         Nothing -> case input_method of
           StdInput -> "parser.fut"
           FileInput path -> (++".fut") . fromJust . stripExtension "cg" $ takeFileName path
+  
   contents <- case input_method of
-        StdInput -> T.getContents
-        FileInput path -> T.readFile path
+        StdInput -> TextIO.getContents
+        FileInput path -> TextIO.readFile path
+  
   cfg <-
     case cfgFromText program_path contents of
         Left e -> do hPutStrLn stderr e
                      exitFailure
         Right g -> pure g
-  grammar <-
-      case cfgToGrammar cfg of
-        Left e -> do hPutStrLn stderr e
-                     exitFailure
-        Right g -> pure g
-  regex <-
-      case cfgToRegEx cfg of
-        Left e -> do hPutStrLn stderr e
-                     exitFailure
-        Right g -> pure g
-  let maybe_program = generate q k grammar regex
-  case grammarError grammar of
-    Just msg -> putStrLn msg *> exitFailure
-    Nothing -> case maybe_program of
-        Left e -> do hPutStrLn stderr e
-                     exitFailure
-        Right program ->
-          writeFutharkProgram program_path program
+  
+  case generate q k cfg of
+    Left e -> do hPutStrLn stderr e
+                 exitFailure
+    Right program -> writeFutharkProgram program_path program

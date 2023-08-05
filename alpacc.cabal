@@ -12,7 +12,10 @@ license-file:       LICENSE
 author:             William Due
 maintainer:         williamhenrichdue@gmail.com
 category:           Language
-extra-source-files: CHANGELOG.md futhark/parser.fut futhark/lexer.fut
+extra-source-files:
+  CHANGELOG.md
+  futhark/parser.fut
+  futhark/lexer.fut
 
 library
   default-language:   GHC2021
@@ -49,6 +52,7 @@ library
     Alpacc.Grammar
     Alpacc.LL
     Alpacc.LLP
+    Alpacc.Util
     Alpacc.Generator.Futhark.Lexer
     Alpacc.Generator.Futhark.Parser
     Alpacc.Generator.Futhark.Util

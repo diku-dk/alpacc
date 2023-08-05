@@ -24,18 +24,22 @@ module Alpacc.Grammar
     unpackTerminal,
     substringGrammar,
     rightSymbols,
-    grammarDuplicates
+    grammarDuplicates,
+    grammarError
   )
 where
 
+import Data.String.Interpolate (i)
 import Control.DeepSeq
 import Data.Text (Text)
 import qualified Data.Text as Text hiding (Text)
 import Data.Bifunctor (Bifunctor (bimap, first, second))
 import qualified Data.List as List
 import Data.Map (Map)
+import Alpacc.Util
 import qualified Data.Map as Map hiding (Map)
 import qualified Data.Set as Set
+import Data.Set (Set)
 import GHC.Generics
 import Text.ParserCombinators.ReadP
     ( ReadP,
@@ -352,8 +356,8 @@ augmentGrammar grammar =
     augmented_terminals = AugmentedTerminal <$> terminals grammar
     terminals' = RightTurnstile : LeftTurnstile : augmented_terminals
     start' = Nonterminal . AugmentedNonterminal $ start grammar
-    leftPad = replicate 1 $ Terminal RightTurnstile
-    rightPad = replicate 1 $ Terminal LeftTurnstile
+    leftPad = [Terminal RightTurnstile]
+    rightPad = [Terminal LeftTurnstile]
     symbols' = leftPad ++ [start'] ++ rightPad
     augmentProduction = bimap AugmentedNonterminal AugmentedTerminal
 
@@ -454,3 +458,30 @@ hasDuplicates = Set.toList . auxiliary Set.empty Set.empty
       where
         new_visited = Set.insert x visited
         new_dups = Set.insert x dups
+
+
+grammarError :: (Ord nt, Ord t, Show nt, Show t) => Grammar nt t -> Maybe String
+grammarError grammar
+  | not $ null nt_dups = Just [i|The given grammar contains duplicate nonterminals because of #{nt_dups_str}.|]
+  | not $ null t_dups = Just [i|The given grammar contains duplicate terminals because of #{t_dups_str}.|]
+  | not $ null p_dups = Just [i|The given grammar contains duplicate productions because of #{p_dups_str}.|]
+  | not $ null nonproductive = Just [i|The given grammar contains nonproductive productions due to the following nonterminals #{nonproductive_str}.|]
+  | otherwise = Nothing
+  where
+    nts = Set.fromList $ nonterminals grammar
+    nonproductive = nts `Set.difference` closureAlgorithm grammar
+    nonproductive_str = List.intercalate ", " . fmap show $ Set.toList nonproductive
+    (nt_dups, t_dups, p_dups) = grammarDuplicates grammar
+    nt_dups_str = List.intercalate ", " . fmap show $ nt_dups
+    t_dups_str = List.intercalate ", " . fmap show $ t_dups
+    p_dups_str = List.intercalate ", " $ fmap show p_dups
+
+-- https://zerobone.net/blog/cs/non-productive-cfg-rules/
+closureAlgorithm :: (Ord nt, Ord t, Show nt, Show t) => Grammar nt t -> Set nt
+closureAlgorithm grammar = fixedPointIterate (/=) (`newProductives` prods) Set.empty
+  where
+    prods = productions grammar
+    isProductive1 set (Nonterminal nt) = nt `Set.member` set
+    isProductive1 _ (Terminal _) = True
+    isProductive set = all (isProductive1 set) . symbols
+    newProductives set = Set.fromList . fmap nonterminal . List.filter (isProductive set)
