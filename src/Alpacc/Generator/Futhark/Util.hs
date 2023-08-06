@@ -1,5 +1,6 @@
 module Alpacc.Generator.Futhark.Util
-  ( lpad,
+  ( FutUInt (..),
+    lpad,
     rpad,
     maxFutUInt,
     selectFutUInt,
@@ -29,14 +30,14 @@ instance Show FutUInt where
   show U32 = "u32"
   show U64 = "u64"
 
-selectFutUInt :: Integer -> Maybe FutUInt
+selectFutUInt :: Integer -> Either String FutUInt
 selectFutUInt max_size
-  | max_size < 0 = Nothing
-  | max_size <= maxFutUInt U8 = Just U8
-  | max_size <= maxFutUInt U16 = Just U16
-  | max_size <= maxFutUInt U32 = Just U32
-  | max_size <= maxFutUInt U64 = Just U64
-  | otherwise = Nothing
+  | max_size < 0 = Left "Max size may not be negative."
+  | max_size <= maxFutUInt U8 = Right U8
+  | max_size <= maxFutUInt U16 = Right U16
+  | max_size <= maxFutUInt U32 = Right U32
+  | max_size <= maxFutUInt U64 = Right U64
+  | otherwise = Left "The maximum size was too big to find a Futhark integral type."
 
 -- | Adds m padding to the left side of a list.
 lpad :: a -> Int -> [a] -> [a]
