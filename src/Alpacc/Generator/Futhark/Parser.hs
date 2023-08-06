@@ -104,20 +104,6 @@ def right (s : bracket) : bracket =
   bracket_module.set_bit (bracket_module.num_bits - 1) s 0
 |] 
 
-findTerminalIntegral ::
-  Map (Symbol (AugmentedNonterminal NT) (AugmentedTerminal T)) Integer ->
-  Either String FutUInt
-findTerminalIntegral index_map = findSize _max
-  where
-    _max = maximum $ Map.filterWithKey (\k _ -> isTerminal k) index_map
-    findSize max_size
-      | max_size < 0 = Left "Max size may not be negative."
-      | max_size < maxFutUInt U8 = Right U8
-      | max_size < maxFutUInt U16 = Right U16
-      | max_size < maxFutUInt U32 = Right U32
-      | max_size < maxFutUInt U64 = Right U64
-      | otherwise = Left "There are too many terminals to find a Futhark integral type."
-
 findBracketIntegral ::
   Map (Symbol (AugmentedNonterminal NT) (AugmentedTerminal T)) Integer ->
   Either String FutUInt
@@ -153,12 +139,12 @@ generateParser ::
   Int ->
   Grammar NT T ->
   Map (Symbol (AugmentedNonterminal NT) (AugmentedTerminal T)) Integer ->
+  FutUInt ->
   Either String String
-generateParser q k grammar symbol_index_map = do
+generateParser q k grammar symbol_index_map terminal_type = do
   start_terminal <- maybeToEither "The left turnstile \"⊢\" terminal could not be found, you should complain to a developer." maybe_start_terminal
   end_terminal <- maybeToEither "The right turnstile \"⊣\" terminal could not be found, you should complain to a developer." maybe_end_terminal
   table <- llpParserTableWithStartsHomomorphisms q k grammar
-  terminal_type <- findTerminalIntegral symbol_index_map
   bracket_type <- findBracketIntegral symbol_index_map
   production_type <- findProductionIntegral $ productions grammar
   let integer_table = toIntegerLLPTable symbol_index_map table
