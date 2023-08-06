@@ -25,7 +25,7 @@ tupleToStr (a, b) = [i|(#{a}, #{b})|]
 futharkLexerFunction :: DFA t Integer -> String
 futharkLexerFunction dfa =
     [i|
-def char_to_transitions (c : u8) : maybe ([transitions_size](i64, i64)) =
+def char_to_transitions (c : char) : maybe transition_vector =
   map_maybe (sized transitions_size) <| 
   match c
   #{str_lexer_table}
@@ -44,7 +44,7 @@ def char_to_transitions (c : u8) : maybe ([transitions_size](i64, i64)) =
 transitionTable :: Map ((Integer, Integer), Int) [Integer] -> String
 transitionTable table =
   [i|
-def transition_to_terminal_set (n : ((i64, i64), u8)) : bitset_u8.bitset[(number_of_terminals - 1) / bitset_u8.nbs + 1] =
+def transition_to_terminal_set (n : (transition, char)) : terminal_bitset =
   match n
   #{cases}
   case _ -> bitset_u8.from_array number_of_terminals []
@@ -53,29 +53,57 @@ def transition_to_terminal_set (n : ((i64, i64), u8)) : bitset_u8.bitset[(number
     cases = futharkTableCases . Map.toList $ _table
     toStr ((x, y), z) = [i|((#{x}, #{y}), #{z})|]
     _table = ([i|bitset_u8.from_array number_of_terminals |]++) . show <$> Map.mapKeys toStr table
+      
+findStateIntegral ::
+  DFA T Integer ->
+  Either String FutUInt
+findStateIntegral = selectFutUInt . maximum . states
+
+findCharIntegral ::
+  DFA T Integer ->
+  Either String FutUInt
+findCharIntegral = selectFutUInt . toInteger . maximum . Set.map ord . alphabet
 
 generateLexer ::
   DFA T Integer ->
   Map T Integer ->
+  FutUInt ->
   Either String String
-generateLexer dfa terminal_index_map = do
+generateLexer dfa terminal_index_map terminal_type = do
   default_transitions' <- maybeToEither "The neutral transition could not be constructed." $ defaultTransitions dfa
+  state_type <- findStateIntegral dfa
+  char_type <- findCharIntegral dfa
   let default_transitions = toArray $ tupleToStr <$> default_transitions'
   return $
     futharkLexer
       <> [i|
 module lexer = mk_lexer {
 
+module terminal_module = #{terminal_type}
+module state_module = #{state_type}
+module char_module = #{char_type}
+
+type terminal = terminal_module.t
+type state = state_module.t
+type char = char_module.t
+
+def transitions_size : i64 = #{transition_size}
+type transition = (state, state)
+type transition_vector = [transitions_size]transition
+
 def number_of_states : i64 = #{number_of_states}
 def number_of_terminals : i64 = #{number_of_terminals}
-def initial_state : i64 = #{initial_state}
-def transitions_size : i64 = #{transition_size}
-def dead_transitions : [transitions_size](i64, i64) = sized transitions_size #{default_transitions}
+def initial_state : state = #{initial_state}
+def dead_transitions : [transitions_size]transition = sized transitions_size #{default_transitions}
 def accepting_size : i64 = #{accepting_size}
-def accepting_states : [accepting_size]i64 = #{accepting_states_str}
-def final_terminal_states : [number_of_terminals](bitset_u8.bitset[(number_of_states - 1) / bitset_u8.nbs + 1]) =
+def accepting_states : [accepting_size]state = #{accepting_states_str}
+
+type terminal_bitset = bitset_u8.bitset[(number_of_terminals - 1) / bitset_u8.nbs + 1] 
+type states_bitset = bitset_u8.bitset[(number_of_states - 1) / bitset_u8.nbs + 1] 
+
+def final_terminal_states : [number_of_terminals]states_bitset =
   sized number_of_terminals #{final_terminal_states}
-def continue_terminal_states : [number_of_terminals](bitset_u8.bitset[(number_of_states - 1) / bitset_u8.nbs + 1]) =
+def continue_terminal_states : [number_of_terminals]states_bitset =
   sized number_of_terminals #{continue_terminal_states}
 
 #{ignore_function}
@@ -104,8 +132,8 @@ def continue_terminal_states : [number_of_terminals](bitset_u8.bitset[(number_of
     transition_function = transitionTable terminal_map
     ignore_function = 
       case T "ignore" `Map.lookup` terminal_index_map of
-        Just j -> [i|def is_ignore (t : i64) : bool = #{j} == t|]
-        Nothing -> [i|def is_ignore (_ : i64) : bool = false|]
+        Just j -> [i|def is_ignore (t : terminal) : bool = #{j} == t|]
+        Nothing -> [i|def is_ignore (_ : terminal) : bool = false|]
     terminal_map = fmap (terminal_index_map Map.!) . toList <$> Map.mapKeys (second ord) (terminalMap dfa)
     accepting_states = accepting dfa
     accepting_size = show $ Set.size accepting_states
