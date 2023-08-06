@@ -116,9 +116,9 @@ module mk_lexer(L: lexer_context) = {
         then (terminal_starts[i], n - 1)
         else (terminal_starts[i], terminal_starts[i + 1] - 1)
       ) (indices terminal_starts)
-    in if any (state_module.==path_with_init[n].1) L.accepting_states |> not
-       then #nothing
-       else #just (terminals, spans)
+    in if any (state_module.==path_with_init[n].1) L.accepting_states
+       then #just (terminals, spans)
+       else #nothing
 }
 
 -- End of lexer.fut
