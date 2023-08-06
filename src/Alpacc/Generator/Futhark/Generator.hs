@@ -51,6 +51,6 @@ generate q k cfg = do
     unlines
       [ parser
       , lexer
-      , parseFunction
+      -- , parseFunction
       ]
     

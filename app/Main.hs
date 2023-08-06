@@ -71,12 +71,11 @@ parameters = Parameters
   <*> lookbackParameter
   <*> lookaheadParameter
 
-opts :: ParserInfo Parameters
-opts = info (parameters <**> helper)
+options :: ParserInfo Parameters
+options = info (parameters <**> helper)
   ( fullDesc
   <> progDesc "Creates a parallel parser in Futhark using FILE."
   <> header "Alpacc" )
-
 
 writeFutharkProgram :: String -> String -> IO ()
 writeFutharkProgram program_path program = do
@@ -89,16 +88,17 @@ isFileInput (FileInput _) = True
 
 main :: IO ()
 main = do
-  options <- execParser opts
-  let input_method = input options
-  let q = lookback options
-  let k = lookahead options
-  let outfile = output options
-  let program_path = case outfile of
-        Just path -> path
-        Nothing -> case input_method of
-          StdInput -> "parser.fut"
-          FileInput path -> (++".fut") . fromJust . stripExtension "cg" $ takeFileName path
+  _options <- execParser options
+  let input_method = input _options
+  let q = lookback _options
+  let k = lookahead _options
+  let outfile = output _options
+  let program_path =
+        case outfile of
+          Just path -> path
+          Nothing -> case input_method of
+            StdInput -> "parser.fut"
+            FileInput path -> (++".fut") . fromJust . stripExtension "cg" $ takeFileName path
   
   contents <- case input_method of
         StdInput -> TextIO.getContents
