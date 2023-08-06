@@ -15,7 +15,7 @@ parseFunction :: String
 parseFunction = [i|
 entry parse s =
   match lexer.lex s
-  case #just s' -> parser.parse s'.0
+  case #just (r, _) -> parser.parse r
   case #nothing -> []
 |]
 
