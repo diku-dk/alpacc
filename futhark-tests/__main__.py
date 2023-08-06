@@ -69,6 +69,10 @@ class Grammar:
         ) -> None:
         self.start = start
         self.terminals = terminals
+        # This limit is made because the u8 type is hardcoded in the tests.
+        # If the number of terminals were to exceed the parser generator would
+        # change the type. 
+        assert(len(terminals) < 255)
         self.nonterminals = nonterminals
         self.productions = productions
         self.production_map = self.create_production_map()
@@ -298,9 +302,9 @@ class LLParser:
         self.grammar = ExtendedGrammar.extend(k, grammar)
         self.first = create_first(k, self.grammar)
         self.follow = follow_map(k, self.grammar, self.first)
-        self.table = self.creat_ll_table()
+        self.table = self.create_ll_table()
 
-    def creat_ll_table(self):
+    def create_ll_table(self):
         
         prods = self.grammar.productions
 
@@ -489,13 +493,13 @@ FUTHARK_TEST_HEADER = """-- ==
 """
 
 def to_futhark_test(inp, out):
-    def to_u32(s):
-        return str(s) + 'u32'
+    def to_u8(s):
+        return str(s) + 'u8'
 
     def to_array(arr):
         if len(arr) == 0:
-            return 'empty([0]u32)'
-        return f'[{", ".join(map(to_u32, arr))}]'
+            return 'empty([0]u8)'
+        return f'[{", ".join(map(to_u8, arr))}]'
 
     def to_str(arr):
         return '"' + ''.join(map(str,arr)) + '"'
@@ -549,11 +553,8 @@ def generate_parser_test(
         valid_strings_set = set(map(lambda x: tuple(x[1]), valid_strings))
         ll_parser = LLParser(k, grammar)
 
-        # Sometimes the index does not correspond to a valid terminal
-        # - produce X then.
-        num_terminals = len(grammar.terminals)
         def indices_to_terminals(indices):
-            return [grammar.terminals[i] if i < num_terminals else 'X' for i in indices]
+            return [grammar.terminals[i] for i in indices]
 
         with open(f'{name}.fut', 'a') as fp:
             fp.write('\n'.join(['-- ' + l for l in str(grammar).splitlines()]))
@@ -562,7 +563,7 @@ def generate_parser_test(
                 expected = ll_parser.parse(string)
                 fp.write(f'{to_futhark_test(string, expected)}')
 
-            for indices in string_combinations[len(grammar.nonterminals)]:
+            for indices in string_combinations[len(grammar.terminals)]:
                 if indices in valid_strings_set:
                     continue
                 fp.write(to_futhark_test(indices_to_terminals(indices), []))

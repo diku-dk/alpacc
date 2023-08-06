@@ -78,13 +78,11 @@ module mk_lexer(L: lexer_context) = {
   def compose_transition_vectors_identity =
     add_identity compose_transition_vectors
 
-  def find_path [n] (transition_vectors: [n](maybe transition_vector)) : [n]transition =
+  def find_path [n] (transition_vectors: [n](maybe transition_vector)) : [1 + n]transition =
     [#just (replicate L.transitions_size (L.initial_state, L.initial_state))]
     |> (++transition_vectors)
     |> scan compose_transition_vectors_identity #nothing
-    |> tail
     |> map (head <-< from_maybe (copy L.dead_transitions))
-    |> sized n
 
   def is_terminal [n] (terminal_strings : [n]terminal) (path : [n]transition) (i : i64) : bool =
     let current_terminal = terminal_strings[i]
@@ -100,29 +98,27 @@ module mk_lexer(L: lexer_context) = {
        )
 
   def lex [n] (str : [n]char) : maybe ([]terminal, [](i64, i64)) =
-    if n == 0
-    then #just ([], [])
-    else let path =
-           transitions str
-           |> solve_transitions
-           |> find_path
-         in if any (state_module.==path[n - 1].1) L.accepting_states |> not
-            then #nothing
-            else let terminal_strings =
-                  zip path str
-                  |> map L.transition_to_terminal_set
-                  |> solve_overlaps
-                 in let terminal_starts = filter (is_terminal terminal_strings path) (indices terminal_strings)
-                    let terminals = map (\i -> terminal_strings[i]) terminal_starts
-                    let len = length terminal_starts - 1
-                    let spans =
-                      map (\i ->
-                        if i == len
-                        then (terminal_starts[i], n - 1)
-                        else (terminal_starts[i], terminal_starts[i + 1] - 1)
-                      ) (indices terminal_starts)
-                    in #just (terminals, spans)
-
+    let path_with_init =
+      transitions str
+      |> solve_transitions
+      |> find_path
+    let path = tail path_with_init |> sized n
+    let terminal_strings =
+      zip path str
+      |> map L.transition_to_terminal_set
+      |> solve_overlaps
+    let terminal_starts = filter (is_terminal terminal_strings path) (indices terminal_strings)
+    let terminals = map (\i -> terminal_strings[i]) terminal_starts
+    let len = length terminal_starts - 1
+    let spans =
+      map (\i ->
+        if i == len
+        then (terminal_starts[i], n - 1)
+        else (terminal_starts[i], terminal_starts[i + 1] - 1)
+      ) (indices terminal_starts)
+    in if any (state_module.==path_with_init[n].1) L.accepting_states |> not
+       then #nothing
+       else #just (terminals, spans)
 }
 
 -- End of lexer.fut
