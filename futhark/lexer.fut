@@ -1,6 +1,6 @@
 -- Start of lexer.fut
 --
--- The generic plexer, expressed as a parameterised
+-- The generic parallel lexer, expressed as a parameterised
 -- module.
 
 import "lib/github.com/diku-dk/containers/bitset"
