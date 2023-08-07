@@ -16,9 +16,11 @@ import Data.Foldable (Foldable (..))
 import Data.List qualified as List
 import Data.Map (Map)
 import Data.Map qualified as Map hiding (Map)
-import Data.Maybe (fromMaybe, fromJust)
+import Data.Maybe (fromMaybe, fromJust, mapMaybe)
 import Data.Set (Set)
 import Data.Set qualified as Set hiding (Set)
+import Data.Sequence (Seq)
+import Data.Sequence qualified as Seq hiding (Seq)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Tuple.Extra (both)
@@ -243,3 +245,18 @@ isMatchPar dfa' str = last final_state `Set.member` accepting dfa
     tableLookUp key = fromMaybe default_case (Map.lookup key table)
     paths = map (map snd) $ scanl1 zipper $ map tableLookUp str'
     final_state = scanl (flip (List.!!)) _initial paths
+
+-- f :: Ord s => DFA t s -> [t]
+-- f dfa = []
+--   where
+--     graph = transitions dfa
+--     start = initial dfa
+--     alpha = toList $ alphabet dfa
+--     edge (s, c) = do
+--       s' <- Map.lookup (s, c) graph
+--       return ((s, s'), c)
+--     vertices = map (snd . fst)
+--     notVisted visited = filter ((`Set.notMember` visited) . snd . fst)
+--     edges s = mapMaybe (edge . (s,)) alpha
+
+

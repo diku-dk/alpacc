@@ -12,7 +12,7 @@ regularExpressionMatchCase isMatch' regex valid invalid =
     valid_test =
       TestCase $
         assertBool [i|Valid RegEx Strings for "#{regex}" test.|] $
-          all (isMatch dfa) valid
+          all (isMatch' dfa) valid
     invalid_test =
       TestCase
         $ assertBool

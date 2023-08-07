@@ -16,6 +16,8 @@ import Text.Megaparsec.Char (char, space1, string)
 import Text.Megaparsec.Char.Lexer qualified as Lexer
 import Data.Map (Map)
 import Data.Map qualified as Map hiding (Map)
+import Data.Set (Set)
+import Data.Set qualified as Set hiding (Set)
 
 type Parser = Parsec Void Text
 
@@ -35,8 +37,8 @@ space = Lexer.space space1 empty empty
 lexeme :: Parser a -> Parser a
 lexeme = Lexer.lexeme space
 
-validLiterials :: [Char] -- missing chars ";\[]()*|+-"
-validLiterials = ['!'..'\''] ++ [','] ++ ['.'..':'] ++ ['<'..'Z'] ++ ['^'..'{'] ++ ['}'..'~']
+validLiterials :: Set Char -- missing chars ";\[]()*|+-"
+validLiterials = Set.fromList $ ['!'..'\''] ++ [','] ++ ['.'..':'] ++ ['<'..'Z'] ++ ['^'..'{'] ++ ['}'..'~']
 
 pBackslash :: Parser Char
 pBackslash = Text.last <$> string "\\\\"
