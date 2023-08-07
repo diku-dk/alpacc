@@ -1,5 +1,6 @@
-atom = [a-zA-Z]+;
-ignore = \s|\n|\t|\r;
-
-E = atom | "(" E0 ")";
-E0 = | E E0;
+atom = fish;
+fish = f(i|)sh;
+# ignore = \s|\n|\t|\r;
+# 
+E = atom | fish;
+# E0 = | E E0;

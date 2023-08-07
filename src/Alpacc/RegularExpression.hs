@@ -27,14 +27,11 @@ import Data.Set qualified as Set hiding (Set)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Void
-import Debug.Trace (traceShow)
 import Text.Megaparsec hiding (State)
 import Text.Megaparsec.Char (char, space1, string)
 import Text.Megaparsec.Char.Lexer qualified as Lexer
 import Data.Tuple.Extra (both)
-
-debug :: Show b => b -> b
-debug x = traceShow x x
+import Alpacc.Debug
 
 type Parser = Parsec Void Text
 
@@ -384,17 +381,15 @@ mkDFATransitions ::
   Set (Set s) ->
   Map (Set s, Char) (Set s) ->
   [Set s] ->
-  State (NFA t s) (Map (Set s, Char) (Set s))
-mkDFATransitions _ table [] = return table
+  State (NFA t s) (Either String (Map (Set s, Char) (Set s)))
+mkDFATransitions _ table [] = return $ Right table
 mkDFATransitions visited table (top : queue) = do
   entries <- mkDFATransitionEntries top
-  let rest = toList $ Map.elems entries
-  let new_queue = queue ++ rest
-  let new_table = Map.unionWith Set.union entries table
   let new_visited = Set.insert top visited
-  if top `Set.member` visited
-    then mkDFATransitions visited table queue
-    else mkDFATransitions new_visited new_table new_queue
+  let rest = Map.elems entries
+  let new_queue = filter (`Set.notMember` new_visited) $ queue ++ rest
+  let new_table = Map.unionWith Set.union entries table
+  mkDFATransitions new_visited new_table new_queue
 
 data DFA t s = DFA
   { states :: Set s,
@@ -424,55 +419,59 @@ dfaMap f dfa =
       continueTerminalStates = Set.map f <$> continueTerminalStates dfa
     }
 
-mkDFAFromNFA :: (Show s, Enum s, Ord s, Ord t) => State (NFA t s) (DFA t (Set s))
+mkDFAFromNFA :: (Show s, Enum s, Ord s, Ord t) => State (NFA t s) (Either String (DFA t (Set s)))
 mkDFAFromNFA = do
-  nfa <- get
-  let accept = accepting' nfa
-  let token_map = terminalMap' nfa
-  new_initial <- epsilonClosure . Set.singleton $ initial' nfa
-  new_transitions <- mkDFATransitions Set.empty Map.empty [new_initial]
-  let (new_states, new_alphabet) = bimap Set.fromList Set.fromList . unzip $ Map.keys new_transitions
-  let newStates' set = Set.filter (any (`Set.member` set)) new_states
-  let new_accepting = newStates' accept
-  let new_final_terminal_states = newStates' <$> finalTerminalStates' nfa
-  let new_initial_terminal_states = newStates' <$> initialTerminalStates' nfa
-  let new_continue_terminal_states = newStates' <$> continueTerminalStates' nfa
-  return $
-    if null new_transitions
-      then
-        DFA
-          { states = Set.singleton Set.empty,
-            alphabet = Set.empty,
-            transitions = new_transitions,
-            initial = Set.empty,
-            accepting = Set.singleton Set.empty,
-            terminalMap = Map.empty,
-            deadState = Nothing,
-            finalTerminalStates = Map.empty,
-            initialTerminalStates = Map.empty,
-            continueTerminalStates = Map.empty
-          }
-      else
-        DFA
-          { states = new_states,
-            alphabet = new_alphabet,
-            transitions = new_transitions,
-            initial = new_initial,
-            accepting = new_accepting,
-            terminalMap = newTokenMap new_states token_map,
-            deadState = Nothing,
-            finalTerminalStates = new_final_terminal_states,
-            initialTerminalStates = new_initial_terminal_states,
-            continueTerminalStates = new_continue_terminal_states
-          }
+  nfa' <- get
+  new_initial' <- epsilonClosure . Set.singleton $ initial' nfa'
+  either_transitions' <- mkDFATransitions Set.empty Map.empty [new_initial']
+  return $ constructDFA new_initial' nfa' either_transitions'
   where
     newTokenMap states' = Map.unionsWith Set.union . fmap (newStates states') . Map.toList 
     newStates states' (((s, s'), c), t) =
       Map.fromList [(((a, b), c), t) | a <- newState' s, b <- newState' s']
       where
         newState' _s = toList $ Set.filter (Set.member _s) states'
+    
+    constructDFA new_initial nfa either_transitions = do
+      new_transitions <- either_transitions
+      let accept = accepting' nfa
+      let token_map = terminalMap' nfa
+      let (new_states, new_alphabet) = bimap Set.fromList Set.fromList . unzip $ Map.keys new_transitions
+      let newStates' set = Set.filter (any (`Set.member` set)) new_states
+      let new_accepting = newStates' accept
+      let new_final_terminal_states = newStates' <$> finalTerminalStates' nfa
+      let new_initial_terminal_states = newStates' <$> initialTerminalStates' nfa
+      let new_continue_terminal_states = newStates' <$> continueTerminalStates' nfa
+      return $
+        if null new_transitions
+          then
+            DFA
+              { states = Set.singleton Set.empty,
+                alphabet = Set.empty,
+                transitions = new_transitions,
+                initial = Set.empty,
+                accepting = Set.singleton Set.empty,
+                terminalMap = Map.empty,
+                deadState = Nothing,
+                finalTerminalStates = Map.empty,
+                initialTerminalStates = Map.empty,
+                continueTerminalStates = Map.empty
+              }
+          else
+            DFA
+              { states = new_states,
+                alphabet = new_alphabet,
+                transitions = new_transitions,
+                initial = new_initial,
+                accepting = new_accepting,
+                terminalMap = newTokenMap new_states token_map,
+                deadState = Nothing,
+                finalTerminalStates = new_final_terminal_states,
+                initialTerminalStates = new_initial_terminal_states,
+                continueTerminalStates = new_continue_terminal_states
+              }
 
-mkDFAFromRegEx :: (Ord t, Show s, Enum s, Ord s) => RegEx t -> State (NFA t s) (DFA t (Set s))
+mkDFAFromRegEx :: (Ord t, Show s, Enum s, Ord s) => RegEx t -> State (NFA t s) (Either String (DFA t (Set s)))
 mkDFAFromRegEx regex = do
   mkNFA regex
   mkDFAFromNFA
@@ -483,8 +482,8 @@ reenumerateDFA start_state dfa = dfaMap alphabetMap dfa
     alphabet' = Map.fromList . flip zip [start_state ..] . toList $ states dfa
     alphabetMap = (alphabet' Map.!)
 
-dfaFromRegEx :: (Ord t, Show s, Ord s, Enum s) => s -> RegEx t -> DFA t s
-dfaFromRegEx start_state regex = reenumerateDFA start_state dfa
+dfaFromRegEx :: (Ord t, Show s, Ord s, Enum s) => s -> RegEx t -> Either String (DFA t s)
+dfaFromRegEx start_state regex = reenumerateDFA start_state <$> dfa
   where
     dfa = evalState (mkDFAFromRegEx regex) init_nfa
     init_nfa = initNFA 0 :: NFA t Integer
@@ -547,4 +546,4 @@ isMatchPar dfa' str = last final_state `Set.member` accepting dfa
     zipper = zipWith combineTransitions
     tableLookUp key = fromMaybe default_case (Map.lookup key table)
     paths = map (map snd) $ scanl1 zipper $ map tableLookUp str'
-    final_state = debug $ scanl (flip (List.!!)) _initial paths
+    final_state = scanl (flip (List.!!)) _initial paths
