@@ -3,7 +3,7 @@ module Alpacc.Generator.Futhark.Lexer
 where
 
 import Alpacc.Grammar
-import Alpacc.RegularExpression
+import Alpacc.Lexer.DFA
 import Data.Char (ord)
 import Data.Either.Extra (maybeToEither)
 import Data.Map (Map)
