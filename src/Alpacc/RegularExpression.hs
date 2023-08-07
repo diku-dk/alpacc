@@ -31,7 +31,6 @@ import Text.Megaparsec hiding (State)
 import Text.Megaparsec.Char (char, space1, string)
 import Text.Megaparsec.Char.Lexer qualified as Lexer
 import Data.Tuple.Extra (both)
-import Alpacc.Debug
 
 type Parser = Parsec Void Text
 
