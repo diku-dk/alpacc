@@ -1,6 +1,7 @@
 module RegularExpression (tests) where
 
-import Alpacc.RegularExpression
+import Alpacc.Lexer.RegularExpression
+import Alpacc.Lexer.DFA
 import Data.String.Interpolate (i)
 import Test.HUnit
 
@@ -18,7 +19,7 @@ regularExpressionMatchCase isMatch' regex valid invalid =
           [i|Invalid RegEx Strings for "#{regex}" test.|]
         $ all (isNotMatch dfa) invalid
     Right regex_tree = regExFromText "" regex
-    dfa = dfaFromRegEx 0 regex_tree
+    Right dfa = dfaFromRegEx 0 regex_tree
     isNotMatch dfa' = not . isMatch' dfa'
 
 regularExpressionMatchCase0 =
