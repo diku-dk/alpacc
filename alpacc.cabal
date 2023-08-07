@@ -58,8 +58,9 @@ library
     Alpacc.Generator.Futhark.Parser
     Alpacc.Generator.Futhark.Util
     Alpacc.Generator.Futhark.Generator
-    Alpacc.Lexer
-    Alpacc.RegularExpression
+    Alpacc.Lexer.RegularExpression
+    Alpacc.Lexer.NFA
+    Alpacc.Lexer.DFA
 
   hs-source-dirs:     src
 

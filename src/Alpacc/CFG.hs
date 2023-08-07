@@ -17,7 +17,8 @@ import Data.Text (Text)
 import Data.Map qualified as Map hiding (Map)
 import Data.Void
 import Alpacc.Grammar
-import Alpacc.RegularExpression
+import Alpacc.Lexer.RegularExpression
+import Alpacc.Lexer.DFA
 import Text.Megaparsec
 import Text.Megaparsec.Char (char, space1)
 import Text.Megaparsec.Char.Lexer qualified as Lexer
