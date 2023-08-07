@@ -6,7 +6,8 @@ module Alpacc.Lexer.DFA
     dfaFromRegEx,
     isMatch,
     isMatchPar,
-    parallelLexingTable
+    parallelLexingTable,
+    overlappingTerminals
   )
 where
 
@@ -19,13 +20,12 @@ import Data.Map qualified as Map hiding (Map)
 import Data.Maybe (fromMaybe, fromJust, mapMaybe)
 import Data.Set (Set)
 import Data.Set qualified as Set hiding (Set)
-import Data.Sequence (Seq)
-import Data.Sequence qualified as Seq hiding (Seq)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Tuple.Extra (both)
 import Alpacc.Lexer.RegularExpression
 import Alpacc.Lexer.NFA
+import Alpacc.Debug (debug)
 
 stateTransitions :: (Show s, Ord s) => Maybe Char -> s -> State (NFA t s) (Set s)
 stateTransitions c s = do
@@ -124,12 +124,12 @@ mkDFAFromNFA = do
   either_transitions' <- mkDFATransitions Set.empty Map.empty [new_initial']
   return $ constructDFA new_initial' nfa' either_transitions'
   where
-    newTokenMap states' = Map.unionsWith Set.union . fmap (newStates states') . Map.toList 
+    newTokenMap states' = Map.unionsWith Set.union . fmap (newStates states') . Map.toList
     newStates states' (((s, s'), c), t) =
       Map.fromList [(((a, b), c), t) | a <- newState' s, b <- newState' s']
       where
         newState' _s = toList $ Set.filter (Set.member _s) states'
-    
+
     constructDFA new_initial nfa either_transitions = do
       new_transitions <- either_transitions
       let accept = accepting' nfa
@@ -246,17 +246,33 @@ isMatchPar dfa' str = last final_state `Set.member` accepting dfa
     paths = map (map snd) $ scanl1 zipper $ map tableLookUp str'
     final_state = scanl (flip (List.!!)) _initial paths
 
--- f :: Ord s => DFA t s -> [t]
--- f dfa = []
---   where
---     graph = transitions dfa
---     start = initial dfa
---     alpha = toList $ alphabet dfa
---     edge (s, c) = do
---       s' <- Map.lookup (s, c) graph
---       return ((s, s'), c)
---     vertices = map (snd . fst)
---     notVisted visited = filter ((`Set.notMember` visited) . snd . fst)
---     edges s = mapMaybe (edge . (s,)) alpha
+overlappingTerminals :: (Ord s, Ord t, Show t, Show s) => DFA t s -> Set t
+overlappingTerminals dfa = dfs 0 Set.empty ne start
+  where
+    terminal_map = terminalMap dfa
+    ne = Set.unions terminal_map
+    accept = accepting dfa
+    graph = transitions dfa
+    start = initial dfa
+    alpha = toList $ alphabet dfa
+    edge (s, c) = do
+      s' <- Map.lookup (s, c) graph
+      return ((s, s'), c)
+    notVisted visited = filter ((`Set.notMember` visited) . snd . fst)
+    edges s = mapMaybe (edge . (s,)) alpha
 
+    dfs (d :: Int) visited ts s = Set.union ts' . Set.unions $ dfs' <$> _edges
+      where
+        ts' = 
+          if Set.size ts <= 1 && s `Set.member` accept && d /= 0
+          then Set.empty
+          else ts
+        new_visited = Set.insert s visited
+        _edges = notVisted new_visited $ edges s
+        dfs' trans@((_, s'), _) = dfs (d + 1) new_visited new_ts s'
+          where
+            new_ts =
+              Set.intersection ts
+              . fromMaybe Set.empty
+              $ trans `Map.lookup` terminal_map
 

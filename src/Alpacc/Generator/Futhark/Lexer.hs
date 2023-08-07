@@ -111,7 +111,11 @@ def continue_terminal_states : [number_of_terminals]states_bitset =
 #{lexer_function}
 
 #{transition_function}
+
 }
+
+-- #{overlappingTerminals dfa}
+
 |]
   where
     number_of_terminals = length terminals
