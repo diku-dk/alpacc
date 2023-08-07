@@ -53,6 +53,7 @@ library
     Alpacc.LL
     Alpacc.LLP
     Alpacc.Util
+    Alpacc.Debug
     Alpacc.Generator.Futhark.Lexer
     Alpacc.Generator.Futhark.Parser
     Alpacc.Generator.Futhark.Util

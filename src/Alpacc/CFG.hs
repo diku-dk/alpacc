@@ -23,11 +23,6 @@ import Text.Megaparsec.Char (char, space1)
 import Text.Megaparsec.Char.Lexer qualified as Lexer
 import Data.Foldable
 
--- import Debug.Trace (traceShow)
--- 
--- debug :: Show b => b -> b
--- debug x = traceShow x x
-
 -- | Terminal formation rule.
 data TRule = TRule
   { ruleT :: T,
@@ -89,7 +84,8 @@ cfgToDFA cfg@(CFG {tRules}) = do
   let all_t_rules = implicit_t_rules ++ tRules
   let terminal_map = Map.fromList $ tRuleToTuple <$> all_t_rules
   let regex = mkTokenizerRegEx terminal_map
-  return . addDeadStateDFA $ dfaFromRegEx (0 :: Integer) regex
+  dfa <- dfaFromRegEx (0 :: Integer) regex
+  return $ addDeadStateDFA dfa
 
 type Parser = Parsec Void Text
 

@@ -54,10 +54,6 @@ import Text.ParserCombinators.ReadP
       sepBy,
       string )
 
--- import Debug.Trace (traceShow)
--- debug x = traceShow x x
-
-
 -- | Used in augmenting terminals for the augmented grammar.
 data AugmentedTerminal t
   = AugmentedTerminal t
