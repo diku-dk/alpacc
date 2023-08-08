@@ -25,7 +25,6 @@ import Data.Text qualified as Text
 import Data.Tuple.Extra (both)
 import Alpacc.Lexer.RegularExpression
 import Alpacc.Lexer.NFA
-import Alpacc.Debug (debug)
 
 stateTransitions :: (Show s, Ord s) => Maybe Char -> s -> State (NFA t s) (Set s)
 stateTransitions c s = do
@@ -261,18 +260,20 @@ overlappingTerminals dfa = dfs 0 Set.empty ne start
     notVisted visited = filter ((`Set.notMember` visited) . snd . fst)
     edges s = mapMaybe (edge . (s,)) alpha
 
-    dfs (d :: Int) visited ts s = Set.union ts' . Set.unions $ dfs' <$> _edges
+    dfs (d :: Int) visited ts s
+      | Set.size ts <= 1 = Set.empty
+      | otherwise = Set.union ts' . Set.unions $ dfs' <$> _edges
       where
         ts' = 
-          if Set.size ts <= 1 && s `Set.member` accept && d /= 0
-          then Set.empty
-          else ts
+          if s `Set.member` accept && d /= 0
+          then ts
+          else Set.empty
         new_visited = Set.insert s visited
         _edges = notVisted new_visited $ edges s
         dfs' trans@((_, s'), _) = dfs (d + 1) new_visited new_ts s'
           where
             new_ts =
               Set.intersection ts
-              . fromMaybe Set.empty
+              . fromMaybe Set.empty -- All edges should be associated with a terminal.
               $ trans `Map.lookup` terminal_map
 
