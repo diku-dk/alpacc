@@ -27,7 +27,7 @@ data NFA t s = NFA
     initialTerminalStates' :: Map t (Set s),
     continueTerminalStates' :: Map t (Set s)
   }
-  deriving (Show)
+  deriving (Eq, Show)
 
 initNFA :: (Ord s, Enum s) => s -> NFA t s
 initNFA start_state =
@@ -68,7 +68,7 @@ newTransition s c s' = do
   let new_alph = Set.fromList (maybeToList c) `Set.union` alphabet' nfa
   put $ nfa {transitions' = new_trans, alphabet' = new_alph}
 
-markToken :: (Ord t, Ord s) => (Set ((s, s), Char), Set s) -> t -> s -> s -> State (NFA t s) ()
+markToken :: (Ord t, Ord s, Show s, Show t) => (Set ((s, s), Char), Set s) -> t -> s -> s -> State (NFA t s) ()
 markToken (set, continue_set') t s s' = do
   nfa <- get
 
@@ -103,7 +103,7 @@ epsilon = Nothing
 combineMkNFAReturn :: Ord s => (Set ((s, s), Char), Set s) -> (Set ((s, s), Char), Set s) -> (Set ((s, s), Char), Set s)
 combineMkNFAReturn (a, b) (a', b') = (Set.union a a', Set.union b b')
 
-mkNFA' :: (Ord t, Ord s, Enum s) => s -> s -> RegEx t -> State (NFA t s) (Set ((s, s), Char), Set s)
+mkNFA' :: (Ord t, Ord s, Enum s, Show t, Show s) => s -> s -> RegEx t -> State (NFA t s) (Set ((s, s), Char), Set s)
 mkNFA' s s' Epsilon = do
   newTransition s epsilon s'
   return (Set.empty, Set.empty)
@@ -139,15 +139,17 @@ mkNFA' s s''' (Token t a) = do
   new <- mkNFA' s' s'' a
   markToken new t s' s''
   return new
-mkNFA' s s' (Range range) = do
+mkNFA' s s'' (Range range) = do
+  s' <- newState
   let chars = concatMap toChars range
   mapM_ (\c -> newTransition s (Just c) s') chars
+  newTransition s' epsilon s''
   return (Set.fromList $ ((s, s'),) <$> chars, Set.empty)
   where
     toChars (Right (a, b)) = [a .. b]
     toChars (Left a) = [a]
 
-mkNFA :: (Ord t, Show s, Ord s, Enum s) => RegEx t -> State (NFA t s) ()
+mkNFA :: (Ord t, Show s, Ord s, Enum s, Show t) => RegEx t -> State (NFA t s) ()
 mkNFA regex = do
   nfa <- get
   let (s, s') = (initial' nfa, accepting' nfa)
