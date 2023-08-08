@@ -17,7 +17,7 @@ import Data.Foldable (Foldable (..))
 import Data.List qualified as List
 import Data.Map (Map)
 import Data.Map qualified as Map hiding (Map)
-import Data.Maybe (fromMaybe, fromJust, mapMaybe)
+import Data.Maybe (fromMaybe, fromJust, mapMaybe, catMaybes)
 import Data.Set (Set)
 import Data.Set qualified as Set hiding (Set)
 import Data.Text (Text)
@@ -49,7 +49,7 @@ epsilonClosure set = do
     then return set'
     else epsilonClosure set'
 
-nfaFromRegEx :: (Ord t, Show s, Ord s, Enum s) => s -> RegEx t -> NFA t s
+nfaFromRegEx :: (Ord t, Show s, Ord s, Enum s, Show t) => s -> RegEx t -> NFA t s
 nfaFromRegEx start_state regex = execState (mkNFA regex) init_nfa
   where
     init_nfa = initNFA start_state
@@ -78,8 +78,8 @@ mkDFATransitions ::
   Set (Set s) ->
   Map (Set s, Char) (Set s) ->
   [Set s] ->
-  State (NFA t s) (Either String (Map (Set s, Char) (Set s)))
-mkDFATransitions _ table [] = return $ Right table
+  State (NFA t s) (Map (Set s, Char) (Set s))
+mkDFATransitions _ table [] = return table
 mkDFATransitions visited table (top : queue) = do
   entries <- mkDFATransitionEntries top
   let new_visited = Set.insert top visited
@@ -116,73 +116,84 @@ dfaMap f dfa =
       continueTerminalStates = Set.map f <$> continueTerminalStates dfa
     }
 
-mkDFAFromNFA :: (Show s, Enum s, Ord s, Ord t) => State (NFA t s) (Either String (DFA t (Set s)))
-mkDFAFromNFA = do
-  nfa' <- get
-  new_initial' <- epsilonClosure . Set.singleton $ initial' nfa'
-  either_transitions' <- mkDFATransitions Set.empty Map.empty [new_initial']
-  return $ constructDFA new_initial' nfa' either_transitions'
+solveTerminalMapping ::
+  (Ord s, Ord t) =>
+  Map ((s, s), Char) (Set t) ->
+  ((Set s, Char), Set s) ->
+  (((Set s, Set s), Char), Set t)
+solveTerminalMapping terminal_map ((s, c), s') = (((s, s'), c), new_set)
   where
-    newTokenMap states' = Map.unionsWith Set.union . fmap (newStates states') . Map.toList
-    newStates states' (((s, s'), c), t) =
-      Map.fromList [(((a, b), c), t) | a <- newState' s, b <- newState' s']
-      where
-        newState' _s = toList $ Set.filter (Set.member _s) states'
+    lookup' = (`Map.lookup` terminal_map)
+    new_set =
+      Set.unions
+      $ catMaybes [lookup' ((x, y), c) | x <- toList s, y <- toList s']
 
-    constructDFA new_initial nfa either_transitions = do
-      new_transitions <- either_transitions
-      let accept = accepting' nfa
-      let token_map = terminalMap' nfa
-      let (new_states, new_alphabet) = bimap Set.fromList Set.fromList . unzip $ Map.keys new_transitions
-      let newStates' set = Set.filter (any (`Set.member` set)) new_states
-      let new_accepting = newStates' accept
-      let new_final_terminal_states = newStates' <$> finalTerminalStates' nfa
-      let new_initial_terminal_states = newStates' <$> initialTerminalStates' nfa
-      let new_continue_terminal_states = newStates' <$> continueTerminalStates' nfa
-      return $
-        if null new_transitions
-          then
-            DFA
-              { states = Set.singleton Set.empty,
-                alphabet = Set.empty,
-                transitions = new_transitions,
-                initial = Set.empty,
-                accepting = Set.singleton Set.empty,
-                terminalMap = Map.empty,
-                deadState = Nothing,
-                finalTerminalStates = Map.empty,
-                initialTerminalStates = Map.empty,
-                continueTerminalStates = Map.empty
-              }
-          else
-            DFA
-              { states = new_states,
-                alphabet = new_alphabet,
-                transitions = new_transitions,
-                initial = new_initial,
-                accepting = new_accepting,
-                terminalMap = newTokenMap new_states token_map,
-                deadState = Nothing,
-                finalTerminalStates = new_final_terminal_states,
-                initialTerminalStates = new_initial_terminal_states,
-                continueTerminalStates = new_continue_terminal_states
-              }
+solveTerminalMap ::
+  (Ord s, Ord t) =>
+  Map ((s, s), Char) (Set t) ->
+  Map (Set s, Char) (Set s) ->
+  Map ((Set s, Set s), Char) (Set t)
+solveTerminalMap terminal_map = Map.fromList . fmap (solveTerminalMapping terminal_map) . Map.toList
 
-mkDFAFromRegEx :: (Ord t, Show s, Enum s, Ord s) => RegEx t -> State (NFA t s) (Either String (DFA t (Set s)))
+mkDFAFromNFA :: (Show s, Enum s, Ord s, Ord t, Show t) => State (NFA t s) (DFA t (Set s))
+mkDFAFromNFA = do
+  nfa <- get
+  new_initial <- epsilonClosure . Set.singleton $ initial' nfa
+  new_transitions <- mkDFATransitions Set.empty Map.empty [new_initial]
+  let accept = accepting' nfa
+  let (new_states, new_alphabet) = bimap Set.fromList Set.fromList . unzip $ Map.keys new_transitions
+  let new_accepting = newStates new_states accept
+  let new_final_terminal_states = newStates new_states <$> finalTerminalStates' nfa
+  let new_initial_terminal_states = newStates new_states <$> initialTerminalStates' nfa
+  let new_continue_terminal_states = newStates new_states <$> continueTerminalStates' nfa
+  let terminal_map = terminalMap' nfa
+  let new_terminal_map = solveTerminalMap terminal_map new_transitions
+  return $
+    if null new_transitions
+      then
+        DFA
+          { states = Set.singleton Set.empty,
+            alphabet = Set.empty,
+            transitions = new_transitions,
+            initial = Set.empty,
+            accepting = Set.singleton Set.empty,
+            terminalMap = Map.empty,
+            deadState = Nothing,
+            finalTerminalStates = Map.empty,
+            initialTerminalStates = Map.empty,
+            continueTerminalStates = Map.empty
+          }
+      else
+        DFA
+          { states = new_states,
+            alphabet = new_alphabet,
+            transitions = new_transitions,
+            initial = new_initial,
+            accepting = new_accepting,
+            terminalMap = new_terminal_map,
+            deadState = Nothing,
+            finalTerminalStates = new_final_terminal_states,
+            initialTerminalStates = new_initial_terminal_states,
+            continueTerminalStates = new_continue_terminal_states
+          }
+  where
+    newStates new_states' set = Set.filter (any (`Set.member` set)) new_states'
+
+mkDFAFromRegEx :: (Ord t, Show s, Enum s, Ord s, Show t) => RegEx t -> State (NFA t s) (DFA t (Set s))
 mkDFAFromRegEx regex = do
   mkNFA regex
   mkDFAFromNFA
 
-reenumerateDFA :: (Show s, Show s', Ord s, Enum s, Ord s') => s -> DFA t s' -> DFA t s
+reenumerateDFA :: (Show s, Show s', Ord s, Enum s, Ord s', Show t) => s -> DFA t s' -> DFA t s
 reenumerateDFA start_state dfa = dfaMap alphabetMap dfa
   where
     alphabet' = Map.fromList . flip zip [start_state ..] . toList $ states dfa
     alphabetMap = (alphabet' Map.!)
 
-dfaFromRegEx :: (Ord t, Show s, Ord s, Enum s, Show t) => s -> RegEx t -> Either String (DFA t s)
-dfaFromRegEx start_state regex = reenumerateDFA start_state <$> either_dfa
+dfaFromRegEx :: (Ord t, Show s, Ord s, Enum s, Show t) => s -> RegEx t -> DFA t s
+dfaFromRegEx start_state regex = reenumerateDFA start_state $ dfa
   where
-    either_dfa = evalState (mkDFAFromRegEx regex) init_nfa
+    dfa = evalState (mkDFAFromRegEx regex) init_nfa
     init_nfa = initNFA 0 :: NFA t Integer
 
 isMatch :: Ord s => DFA t s -> Text -> Bool
@@ -245,7 +256,7 @@ isMatchPar dfa' str = last final_state `Set.member` accepting dfa
     paths = map (map snd) $ scanl1 zipper $ map tableLookUp str'
     final_state = scanl (flip (List.!!)) _initial paths
 
-overlappingTerminals :: (Ord s, Ord t) => DFA t s -> Set t
+overlappingTerminals :: (Ord s, Ord t, Show s, Show t) => DFA t s -> Set t
 overlappingTerminals dfa = dfs 0 Set.empty Set.empty ne start
   where
     terminal_map = terminalMap dfa
@@ -265,11 +276,11 @@ overlappingTerminals dfa = dfs 0 Set.empty Set.empty ne start
       | Set.size ts <= 1 = Set.empty -- No overlap will occour on paths which contain this subpath.
       | otherwise = Set.union new_overlaps . Set.unions $ explore <$> _edges -- Explore.
       where
-        new_overlaps = 
+        new_overlaps =
           if s `Set.member` accept && d /= 0 -- If the set of terminals is not empty or a singleton and the state can be accepted then there is a overlap.
           then overlaps `Set.union` ts
           else overlaps
-        
+
         _edges = notVisted visited $ edges s
 
         explore trans@((_, s'), _) = dfs (d + 1) new_overlaps new_visited new_ts s'

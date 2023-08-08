@@ -85,7 +85,7 @@ cfgToDFA cfg@(CFG {tRules}) = do
   let all_t_rules = implicit_t_rules ++ tRules
   let terminal_map = Map.fromList $ tRuleToTuple <$> all_t_rules
   let regex = mkTokenizerRegEx terminal_map
-  dfa <- dfaFromRegEx (0 :: Integer) regex
+  let dfa = dfaFromRegEx (0 :: Integer) regex
   let overlaps = overlappingTerminals dfa
   let overlaps_str =
         List.intercalate ", "
