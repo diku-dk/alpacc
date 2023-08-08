@@ -1,4 +1,4 @@
-atom = [a-z]+;
+atom = [a-z0-9]+;
 ignore = \s|\n|\t|\r;
 
 E = atom | "(" E0 ")";

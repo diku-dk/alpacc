@@ -246,7 +246,7 @@ isMatchPar dfa' str = last final_state `Set.member` accepting dfa
     final_state = scanl (flip (List.!!)) _initial paths
 
 overlappingTerminals :: (Ord s, Ord t, Show t, Show s) => DFA t s -> Set t
-overlappingTerminals dfa = dfs 0 Set.empty ne start
+overlappingTerminals dfa = dfs 0 Set.empty Set.empty ne start
   where
     terminal_map = terminalMap dfa
     ne = Set.unions terminal_map
@@ -257,23 +257,26 @@ overlappingTerminals dfa = dfs 0 Set.empty ne start
     edge (s, c) = do
       s' <- Map.lookup (s, c) graph
       return ((s, s'), c)
-    notVisted visited = filter ((`Set.notMember` visited) . snd . fst)
+    notVisted visited = filter (`Set.notMember` visited)
     edges s = mapMaybe (edge . (s,)) alpha
 
-    dfs (d :: Int) visited ts s
-      | Set.size ts <= 1 = Set.empty
-      | otherwise = Set.union ts' . Set.unions $ dfs' <$> _edges
+    dfs (d :: Int) overlaps visited ts s
+      | ts `Set.isSubsetOf` overlaps = Set.empty -- A overlap has already been found for the terminals ts.
+      | Set.size ts <= 1 = Set.empty -- No overlap will occour on paths which contain this subpath.
+      | otherwise = Set.union new_overlaps . Set.unions $ explore <$> _edges -- Explore.
       where
-        ts' = 
-          if s `Set.member` accept && d /= 0
-          then ts
-          else Set.empty
-        new_visited = Set.insert s visited
-        _edges = notVisted new_visited $ edges s
-        dfs' trans@((_, s'), _) = dfs (d + 1) new_visited new_ts s'
+        new_overlaps = 
+          if s `Set.member` accept && d /= 0 -- If the set of terminals is not empty or a singleton and the state can be accepted then there is a overlap.
+          then overlaps `Set.union` ts
+          else overlaps
+        
+        _edges = notVisted visited $ edges s
+
+        explore trans@((_, s'), _) = dfs (d + 1) new_overlaps new_visited new_ts s'
           where
+            new_visited = Set.insert trans visited -- Do not walk back on an already explored transition.
             new_ts =
-              Set.intersection ts
-              . fromMaybe Set.empty -- All edges should be associated with a terminal.
-              $ trans `Map.lookup` terminal_map
+              case trans `Map.lookup` terminal_map of
+                Just a -> a `Set.intersection` ts
+                Nothing -> error "Some transitions in the DFA is not associated with a terminal"
 
