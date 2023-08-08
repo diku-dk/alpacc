@@ -179,10 +179,10 @@ reenumerateDFA start_state dfa = dfaMap alphabetMap dfa
     alphabet' = Map.fromList . flip zip [start_state ..] . toList $ states dfa
     alphabetMap = (alphabet' Map.!)
 
-dfaFromRegEx :: (Ord t, Show s, Ord s, Enum s) => s -> RegEx t -> Either String (DFA t s)
-dfaFromRegEx start_state regex = reenumerateDFA start_state <$> dfa
+dfaFromRegEx :: (Ord t, Show s, Ord s, Enum s, Show t) => s -> RegEx t -> Either String (DFA t s)
+dfaFromRegEx start_state regex = reenumerateDFA start_state <$> either_dfa
   where
-    dfa = evalState (mkDFAFromRegEx regex) init_nfa
+    either_dfa = evalState (mkDFAFromRegEx regex) init_nfa
     init_nfa = initNFA 0 :: NFA t Integer
 
 isMatch :: Ord s => DFA t s -> Text -> Bool
@@ -245,7 +245,7 @@ isMatchPar dfa' str = last final_state `Set.member` accepting dfa
     paths = map (map snd) $ scanl1 zipper $ map tableLookUp str'
     final_state = scanl (flip (List.!!)) _initial paths
 
-overlappingTerminals :: (Ord s, Ord t, Show t, Show s) => DFA t s -> Set t
+overlappingTerminals :: (Ord s, Ord t) => DFA t s -> Set t
 overlappingTerminals dfa = dfs 0 Set.empty Set.empty ne start
   where
     terminal_map = terminalMap dfa
