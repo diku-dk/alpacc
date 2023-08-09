@@ -114,8 +114,6 @@ def continue_terminal_states : [number_of_terminals]states_bitset =
 
 }
 
--- #{overlappingTerminals dfa}
-
 |]
   where
     number_of_terminals = length terminals

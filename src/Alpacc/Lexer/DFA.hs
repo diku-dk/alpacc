@@ -25,6 +25,7 @@ import Data.Text qualified as Text
 import Data.Tuple.Extra (both)
 import Alpacc.Lexer.RegularExpression
 import Alpacc.Lexer.NFA
+import Alpacc.Debug
 
 stateTransitions :: (Show s, Ord s) => Maybe Char -> s -> State (NFA t s) (Set s)
 stateTransitions c s = do
@@ -274,7 +275,7 @@ overlappingTerminals dfa = dfs 0 Set.empty Set.empty ne start
     dfs (d :: Int) overlaps visited ts s
       | ts `Set.isSubsetOf` overlaps = Set.empty -- A overlap has already been found for the terminals ts.
       | Set.size ts <= 1 = Set.empty -- No overlap will occour on paths which contain this subpath.
-      | otherwise = Set.union new_overlaps . Set.unions $ explore <$> _edges -- Explore.
+      | otherwise = Set.union (debug new_overlaps) . Set.unions $ explore <$> _edges -- Explore.
       where
         new_overlaps =
           if s `Set.member` accept && d /= 0 -- If the set of terminals is not empty or a singleton and the state can be accepted then there is a overlap.
@@ -289,5 +290,5 @@ overlappingTerminals dfa = dfs 0 Set.empty Set.empty ne start
             new_ts =
               case trans `Map.lookup` terminal_map of
                 Just a -> a `Set.intersection` ts
-                Nothing -> error "Some transitions in the DFA is not associated with a terminal"
+                Nothing -> error "Some transitions in the DFA is not associated with a terminal."
 
