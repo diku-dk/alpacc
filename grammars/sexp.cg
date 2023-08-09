@@ -1,5 +1,5 @@
-atom = [a-z]+0;
-atoma = [a-z]+1;
+atom = aa;
+atoma = a+;
 
 E = atom | "(" E0 ")";
 E0 = | E E0;

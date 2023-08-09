@@ -139,11 +139,9 @@ mkNFA' s s''' (Token t a) = do
   new <- mkNFA' s' s'' a
   markToken new t s' s''
   return new
-mkNFA' s s'' (Range range) = do
-  s' <- newState
+mkNFA' s s' (Range range) = do
   let chars = concatMap toChars range
   mapM_ (\c -> newTransition s (Just c) s') chars
-  newTransition s' epsilon s''
   return (Set.fromList $ ((s, s'),) <$> chars, Set.empty)
   where
     toChars (Right (a, b)) = [a .. b]
