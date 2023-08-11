@@ -37,11 +37,6 @@ import Alpacc.Grammar
 import Alpacc.LL hiding (before, follow, llParse)
 import Prelude hiding (last)
 
--- import Debug.Trace (traceShow)
--- debug x = traceShow x x
--- debugBreak = traceShow "BREAK:  "
--- debugPrint a = traceShow (show a)
-
 -- | This Algebraic data structure is used to model the production with a dot in
 -- it descriped in algorithm 8 in the LLP paper.
 data DotProduction nt t

@@ -175,4 +175,4 @@ mkTokenizerRegEx :: Map t (RegEx t) -> RegEx t
 mkTokenizerRegEx regex_map =
   if null regex_map
     then Epsilon
-    else Star $ foldr1 Alter $ uncurry Token <$> Map.toList regex_map
+    else foldr1 Alter $ uncurry Token <$> Map.toList regex_map

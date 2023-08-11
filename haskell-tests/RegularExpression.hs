@@ -19,7 +19,7 @@ regularExpressionMatchCase isMatch' regex valid invalid =
           [i|Invalid RegEx Strings for "#{regex}" test.|]
         $ all (isNotMatch dfa) invalid
     Right regex_tree = regExFromText "" regex
-    Right dfa = dfaFromRegEx 0 regex_tree
+    dfa = dfaFromRegEx 0 regex_tree
     isNotMatch dfa' = not . isMatch' dfa'
 
 regularExpressionMatchCase0 =

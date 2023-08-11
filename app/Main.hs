@@ -8,11 +8,7 @@ import Data.Maybe
 import Options.Applicative
 import System.FilePath.Posix (stripExtension, takeFileName)
 import System.Exit (exitFailure)
-import Debug.Trace (traceShow)
 import Alpacc.CFG
-
-debug :: Show b => b -> b
-debug x = traceShow x x
 
 data Input
   = FileInput FilePath

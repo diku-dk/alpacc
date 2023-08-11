@@ -7,7 +7,8 @@ module Alpacc.Lexer.DFA
     isMatch,
     isMatchPar,
     parallelLexingTable,
-    overlappingTerminals
+    overlappingTerminals,
+    invertSetMap
   )
 where
 
@@ -25,6 +26,7 @@ import Data.Text qualified as Text
 import Data.Tuple.Extra (both)
 import Alpacc.Lexer.RegularExpression
 import Alpacc.Lexer.NFA
+import Alpacc.Util
 import Alpacc.Debug
 
 stateTransitions :: (Show s, Ord s) => Maybe Char -> s -> State (NFA t s) (Set s)
@@ -117,6 +119,31 @@ dfaMap f dfa =
       continueTerminalStates = Set.map f <$> continueTerminalStates dfa
     }
 
+dfaFilter :: Ord s => (s -> Bool) -> DFA t s -> DFA t s
+dfaFilter p dfa =
+  dfa
+    { states = Set.filter p (states dfa),
+      transitions = Map.filterWithKey (\(s,_) s' -> p s && p s') (transitions dfa),
+      initial = _initial,
+      accepting = p `Set.filter` accepting dfa,
+      terminalMap =
+        Map.filterWithKey (\((s, s'), _) _ -> p s && p s')
+        $ terminalMap dfa,
+      deadState = dead_state,
+      finalTerminalStates = Set.filter p <$> finalTerminalStates dfa,
+      initialTerminalStates = Set.filter p <$> initialTerminalStates dfa,
+      continueTerminalStates = Set.filter p <$> continueTerminalStates dfa
+    }
+  where
+    _initial =
+      if p $ initial dfa
+      then initial dfa
+      else error "Can not filter states since the initial state is removed."
+    dead_state =
+      case deadState dfa of
+        Just s -> if p s then Just s else Nothing
+        Nothing -> Nothing
+
 solveTerminalMapping ::
   (Ord s, Ord t) =>
   Map ((s, s), Char) (Set t) ->
@@ -149,8 +176,9 @@ mkDFAFromNFA = do
   let new_continue_terminal_states = newStates new_states <$> continueTerminalStates' nfa
   let terminal_map = terminalMap' nfa
   let new_terminal_map = solveTerminalMap terminal_map new_transitions
-  return $
-    if null new_transitions
+  return
+    . removeUselessStates
+    $ if null new_transitions
       then
         DFA
           { states = Set.singleton Set.empty,
@@ -192,7 +220,7 @@ reenumerateDFA start_state dfa = dfaMap alphabetMap dfa
     alphabetMap = (alphabet' Map.!)
 
 dfaFromRegEx :: (Ord t, Show s, Ord s, Enum s, Show t) => s -> RegEx t -> DFA t s
-dfaFromRegEx start_state regex = reenumerateDFA start_state $ dfa
+dfaFromRegEx start_state regex = reenumerateDFA start_state dfa
   where
     dfa = evalState (mkDFAFromRegEx regex) init_nfa
     init_nfa = initNFA 0 :: NFA t Integer
@@ -275,7 +303,7 @@ overlappingTerminals dfa = dfs 0 Set.empty Set.empty ne start
     dfs (d :: Int) overlaps visited ts s
       | ts `Set.isSubsetOf` overlaps = Set.empty -- A overlap has already been found for the terminals ts.
       | Set.size ts <= 1 = Set.empty -- No overlap will occour on paths which contain this subpath.
-      | otherwise = Set.union (debug new_overlaps) . Set.unions $ explore <$> _edges -- Explore.
+      | otherwise = Set.union new_overlaps . Set.unions $ explore <$> _edges -- Explore.
       where
         new_overlaps =
           if s `Set.member` accept && d /= 0 -- If the set of terminals is not empty or a singleton and the state can be accepted then there is a overlap.
@@ -292,3 +320,28 @@ overlappingTerminals dfa = dfs 0 Set.empty Set.empty ne start
                 Just a -> a `Set.intersection` ts
                 Nothing -> error "Some transitions in the DFA is not associated with a terminal."
 
+invertSetMap :: (Ord t, Ord s) => Map t (Set s) -> Map s (Set t)
+invertSetMap mapping = Map.fromList $ setMap <$> codomain
+  where
+    codomain = toList $ Set.unions mapping
+    domain = Map.keys mapping
+    setMap s =
+      (s,)
+      . Set.fromList
+      $ filter ((s `Set.member`) . (mapping Map.!)) domain
+
+removeUselessStates :: (Ord s, Show s, Show t) => DFA t s -> DFA t s
+removeUselessStates dfa = dfaFilter (`Set.member` useful_states) dfa
+  where
+    initial_useful = accepting dfa
+    _states = states dfa
+    empty_map = Map.fromList $ (,Set.empty) <$> toList _states
+    graph =
+      Map.unionWith Set.union empty_map
+      . Map.unionsWith Set.union
+      $ uncurry Map.singleton
+      . bimap fst Set.singleton
+      <$> Map.toList (transitions dfa)
+    newUsefulState s = Set.filter ((s `Set.member`) . (graph Map.!)) _states
+    usefulStates = Set.unions . Set.map newUsefulState
+    useful_states = fixedPointIterate (/=) usefulStates initial_useful

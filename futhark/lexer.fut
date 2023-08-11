@@ -21,6 +21,8 @@ module type lexer_context = {
   val dead_transitions : [transitions_size](state_module.t, state_module.t)
   val final_terminal_states : [number_of_terminals](bitset_u8.bitset[(number_of_states - 1) / bitset_u8.nbs + 1])
   val continue_terminal_states : [number_of_terminals](bitset_u8.bitset[(number_of_states - 1) / bitset_u8.nbs + 1])
+  val inverted_final_terminal_states : [number_of_states](bitset_u8.bitset[(number_of_terminals - 1) / bitset_u8.nbs + 1])
+  val inverted_continue_terminal_states : [number_of_states](bitset_u8.bitset[(number_of_terminals - 1) / bitset_u8.nbs + 1])
   val char_to_transitions : char_module.t -> maybe ([transitions_size](state_module.t, state_module.t))
   val transition_to_terminal_set : ((state_module.t, state_module.t), char_module.t) -> bitset_u8.bitset[(number_of_terminals - 1) / bitset_u8.nbs + 1]
   val is_ignore : terminal_module.t -> bool
@@ -56,22 +58,22 @@ module mk_lexer(L: lexer_context) = {
         |> reduce_comm (i64.min) L.number_of_terminals
     in terminal_module.i64 m
   
-  def solve_overlap (set : bitset) (set' : bitset) : bitset =
-    let set'' = set `bitset_u8.intersection` set'
-    in if bitset_u8.size set'' == 0
-       then set'
-       else set''
+  def solve_overlap [n] (path: [n]transition) ((j, set) : (i64, bitset)) ((i, set') : (i64, bitset)) : (i64, bitset) =
+    if i == -1 || j == -1 || any (state_module.==path[j].1) L.accepting_states
+    then (i, set')
+    else (i, set `bitset_u8.intersection` set')
 
   def empty = bitset_u8.empty L.number_of_terminals
 
   def full_set = bitset_u8.complement empty
 
-  def solve_overlaps [n] (sets : [n]bitset) =
-    reverse sets
-    |> scan solve_overlap full_set
-    |> map minimum
+  def solve_overlaps [n] (path : [n]transition) (sets : [n]bitset) =
+    zip (iota n) sets
     |> reverse
-  
+    |> scan (solve_overlap path) (-1, full_set)
+    |> reverse
+    |> map (.1)
+
   def compose_transition_vectors (a : transition_vector) (b : transition_vector) : transition_vector =
     map (\a' -> b[state_module.to_i64 a'.1]) a
   
@@ -96,6 +98,11 @@ module mk_lexer(L: lexer_context) = {
          not (bitset_u8.member last_state continue_bitset)
         )
        )
+  
+  def find_terminal_strings path str =
+    zip path str
+    |> map L.transition_to_terminal_set
+    |> solve_overlaps path
 
   def lex [n] (str : [n]char) : maybe ([]terminal, [](i64, i64)) =
     let path_with_init =
@@ -103,10 +110,7 @@ module mk_lexer(L: lexer_context) = {
       |> solve_transitions
       |> find_path
     let path = tail path_with_init |> sized n
-    let terminal_strings =
-      zip path str
-      |> map L.transition_to_terminal_set
-      |> solve_overlaps
+    let terminal_strings = map minimum <| find_terminal_strings path str
     let terminal_starts = filter (is_terminal terminal_strings path) (indices terminal_strings)
     let terminals = map (\i -> terminal_strings[i]) terminal_starts
     let len = length terminal_starts - 1
