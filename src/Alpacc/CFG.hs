@@ -86,15 +86,7 @@ cfgToDFA cfg@(CFG {tRules}) = do
   let terminal_map = Map.fromList $ tRuleToTuple <$> all_t_rules
   let regex = mkTokenizerRegEx terminal_map
   let dfa = dfaFromRegEx (0 :: Integer) regex
-  let overlaps = overlappingTerminals dfa
-  let overlaps_str =
-        List.intercalate ", "
-        . map show
-        . toList
-        $ overlaps
-  if null overlaps
-  then Right $ addDeadStateDFA dfa
-  else Left $ "The lexer cannot be constructed since the following terminals has overlapping patterns " ++ overlaps_str ++ "."
+  Right $ addDeadStateDFA dfa
 
 type Parser = Parsec Void Text
 

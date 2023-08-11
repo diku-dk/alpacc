@@ -94,6 +94,7 @@ type transition_vector = [transitions_size]transition
 def number_of_states : i64 = #{number_of_states}
 def number_of_terminals : i64 = #{number_of_terminals}
 def initial_state : state = #{initial_state}
+def dead_state : state = #{dead_state}
 def dead_transitions : [transitions_size]transition = sized transitions_size #{default_transitions}
 def accepting_size : i64 = #{accepting_size}
 def accepting_states : [accepting_size]state = #{accepting_states_str}
@@ -105,6 +106,11 @@ def final_terminal_states : [number_of_terminals]states_bitset =
   sized number_of_terminals #{final_terminal_states}
 def continue_terminal_states : [number_of_terminals]states_bitset =
   sized number_of_terminals #{continue_terminal_states}
+
+def inverted_final_terminal_states : [number_of_states]terminal_bitset =
+  sized number_of_states #{inverted_final_terminal_states}
+def inverted_continue_terminal_states : [number_of_states]terminal_bitset =
+  sized number_of_states #{inverted_continue_terminal_states}
 
 #{ignore_function}
 
@@ -123,14 +129,23 @@ def continue_terminal_states : [number_of_terminals]states_bitset =
     initial_state = initial dfa
     number_of_states = Set.size $ states dfa
     empty_states = Map.fromList $ (,Set.empty) <$> terminals
+    inverted_empty_states = Map.fromList $ (,Set.empty) <$> toList (states dfa)
     toSetArray = 
       toArray
       . map (("bitset_u8.from_array number_of_states " ++) . show . toList . snd)
       . Map.toAscList
       . Map.mapKeys (terminal_index_map Map.!)
       . Map.unionWith Set.union empty_states
+    toInvertedSetArray = 
+      toArray
+      . map (("bitset_u8.from_array number_of_terminals " ++) . show . toList . snd)
+      . Map.toAscList
+      . Map.map (Set.map (terminal_index_map Map.!))
+      . Map.unionWith Set.union inverted_empty_states
     final_terminal_states = toSetArray $ finalTerminalStates dfa
     continue_terminal_states = toSetArray $ continueTerminalStates dfa
+    inverted_final_terminal_states = toInvertedSetArray . invertSetMap $ finalTerminalStates dfa
+    inverted_continue_terminal_states = toInvertedSetArray . invertSetMap $ continueTerminalStates dfa
     transition_function = transitionTable terminal_map
     ignore_function = 
       case T "ignore" `Map.lookup` terminal_index_map of
@@ -140,3 +155,4 @@ def continue_terminal_states : [number_of_terminals]states_bitset =
     accepting_states = accepting dfa
     accepting_size = show $ Set.size accepting_states
     accepting_states_str = ("sized accepting_size " ++) . toArray $ show <$> Set.toList accepting_states
+    dead_state = fromJust $ deadState dfa

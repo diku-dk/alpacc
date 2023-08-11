@@ -51,9 +51,6 @@ import GHC.Generics
 import Data.String.Interpolate (i)
 import Alpacc.Util
 
--- import Debug.Trace (traceShow)
--- debug x = traceShow x x
-
 listProducts :: Int -> [a] -> [[a]]
 listProducts = snd .: auxiliary
   where
