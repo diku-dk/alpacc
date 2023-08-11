@@ -17,6 +17,7 @@ module type lexer_context = {
   val number_of_states : i64
   val number_of_terminals : i64
   val initial_state : state_module.t
+  val dead_state : state_module.t
   val accepting_states : [accepting_size]state_module.t
   val dead_transitions : [transitions_size](state_module.t, state_module.t)
   val final_terminal_states : [number_of_terminals](bitset_u8.bitset[(number_of_states - 1) / bitset_u8.nbs + 1])
@@ -75,7 +76,12 @@ module mk_lexer(L: lexer_context) = {
     |> map (.1)
 
   def compose_transition_vectors (a : transition_vector) (b : transition_vector) : transition_vector =
-    map (\a' -> b[state_module.to_i64 a'.1]) a
+    map (\a' ->
+      let b_new = b[state_module.to_i64 a'.1]
+      in if a'.1 state_module.== L.dead_state || b_new.1 state_module.== L.dead_state
+      then b[state_module.to_i64 L.initial_state]
+      else b[state_module.to_i64 a'.1]
+    ) a
   
   def compose_transition_vectors_identity =
     add_identity compose_transition_vectors

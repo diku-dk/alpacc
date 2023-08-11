@@ -343,5 +343,5 @@ removeUselessStates dfa = dfaFilter (`Set.member` useful_states) dfa
       . bimap fst Set.singleton
       <$> Map.toList (transitions dfa)
     newUsefulState s = Set.filter ((s `Set.member`) . (graph Map.!)) _states
-    usefulStates = Set.unions . Set.map newUsefulState
+    usefulStates s = Set.union s . Set.unions $ Set.map newUsefulState s
     useful_states = fixedPointIterate (/=) usefulStates initial_useful
