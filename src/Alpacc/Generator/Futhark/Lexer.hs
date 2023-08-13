@@ -155,4 +155,4 @@ def inverted_continue_terminal_states : [number_of_states]terminal_bitset =
     accepting_states = accepting dfa
     accepting_size = show $ Set.size accepting_states
     accepting_states_str = ("sized accepting_size " ++) . toArray $ show <$> Set.toList accepting_states
-    dead_state = fromJust $ deadState dfa
+    dead_state = fromJust $ unreachableState dfa
