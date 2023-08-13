@@ -56,11 +56,16 @@ module mk_lexer(L: lexer_context) = {
 
   def minimum (set : bitset) : terminal =
     let m = bitset_u8.to_array set
-        |> reduce_comm (i64.min) L.number_of_terminals
+        |> reduce_comm (i64.min) (L.number_of_terminals - 1)
     in terminal_module.i64 m
   
-  def solve_overlap [n] (path: [n]transition) ((j, set) : (i64, bitset)) ((i, set') : (i64, bitset)) : (i64, bitset) =
-    if i == -1 || j == -1 || any (state_module.==path[j].1) L.accepting_states
+  def solve_overlap_backwards [n] (path: [n]transition) ((j, set) : (i64, bitset)) ((i, set') : (i64, bitset)) : (i64, bitset) =
+    if i == -1 || j == -1 || L.initial_state state_module.== path[j].0
+    then (i, set')
+    else (i, set `bitset_u8.intersection` set')
+  
+  def solve_overlap_forwards [n] (path: [n]transition) ((j, set) : (i64, bitset)) ((i, set') : (i64, bitset)) : (i64, bitset) =
+    if i == -1 || j == -1 || L.initial_state state_module.== path[i].0
     then (i, set')
     else (i, set `bitset_u8.intersection` set')
 
@@ -71,8 +76,9 @@ module mk_lexer(L: lexer_context) = {
   def solve_overlaps [n] (path : [n]transition) (sets : [n]bitset) =
     zip (iota n) sets
     |> reverse
-    |> scan (solve_overlap path) (-1, full_set)
+    |> scan (solve_overlap_backwards path) (-1, full_set)
     |> reverse
+    |> scan (solve_overlap_forwards path) (-1, full_set)
     |> map (.1)
 
   -- | I am quite sure this function is associative but If it is not then there is a work around.

@@ -27,7 +27,7 @@ import Data.Tuple.Extra (both)
 import Alpacc.Lexer.RegularExpression
 import Alpacc.Lexer.NFA
 import Alpacc.Util
-import Alpacc.Debug
+import Data.Function
 
 stateTransitions :: (Show s, Ord s) => Maybe Char -> s -> State (NFA t s) (Set s)
 stateTransitions c s = do
@@ -97,7 +97,7 @@ data DFA t s = DFA
     transitions :: Map (s, Char) s,
     initial :: s,
     accepting :: Set s,
-    deadState :: Maybe s,
+    unreachableState :: Maybe s,
     terminalMap :: Map ((s, s), Char) (Set t),
     finalTerminalStates :: Map t (Set s),
     initialTerminalStates :: Map t (Set s),
@@ -113,7 +113,7 @@ dfaMap f dfa =
       initial = f $ initial dfa,
       accepting = f `Set.map` accepting dfa,
       terminalMap = Map.mapKeys (first (both f)) $ terminalMap dfa,
-      deadState = f <$> deadState dfa,
+      unreachableState = f <$> unreachableState dfa,
       finalTerminalStates = Set.map f <$> finalTerminalStates dfa,
       initialTerminalStates = Set.map f <$> initialTerminalStates dfa,
       continueTerminalStates = Set.map f <$> continueTerminalStates dfa
@@ -129,7 +129,7 @@ dfaFilter p dfa =
       terminalMap =
         Map.filterWithKey (\((s, s'), _) _ -> p s && p s')
         $ terminalMap dfa,
-      deadState = dead_state,
+      unreachableState = unreachable_state,
       finalTerminalStates = Set.filter p <$> finalTerminalStates dfa,
       initialTerminalStates = Set.filter p <$> initialTerminalStates dfa,
       continueTerminalStates = Set.filter p <$> continueTerminalStates dfa
@@ -139,8 +139,8 @@ dfaFilter p dfa =
       if p $ initial dfa
       then initial dfa
       else error "Can not filter states since the initial state is removed."
-    dead_state =
-      case deadState dfa of
+    unreachable_state =
+      case unreachableState dfa of
         Just s -> if p s then Just s else Nothing
         Nothing -> Nothing
 
@@ -161,7 +161,11 @@ solveTerminalMap ::
   Map ((s, s), Char) (Set t) ->
   Map (Set s, Char) (Set s) ->
   Map ((Set s, Set s), Char) (Set t)
-solveTerminalMap terminal_map = Map.fromList . fmap (solveTerminalMapping terminal_map) . Map.toList
+solveTerminalMap terminal_map =
+  Map.filter (not . null)
+  . Map.fromList
+  . fmap (solveTerminalMapping terminal_map)
+  . Map.toList
 
 mkDFAFromNFA :: (Show s, Enum s, Ord s, Ord t, Show t) => State (NFA t s) (DFA t (Set s))
 mkDFAFromNFA = do
@@ -177,7 +181,6 @@ mkDFAFromNFA = do
   let terminal_map = terminalMap' nfa
   let new_terminal_map = solveTerminalMap terminal_map new_transitions
   return
-    . removeUselessStates
     $ if null new_transitions
       then
         DFA
@@ -187,7 +190,7 @@ mkDFAFromNFA = do
             initial = Set.empty,
             accepting = Set.singleton Set.empty,
             terminalMap = Map.empty,
-            deadState = Nothing,
+            unreachableState = Nothing,
             finalTerminalStates = Map.empty,
             initialTerminalStates = Map.empty,
             continueTerminalStates = Map.empty
@@ -200,7 +203,7 @@ mkDFAFromNFA = do
             initial = new_initial,
             accepting = new_accepting,
             terminalMap = new_terminal_map,
-            deadState = Nothing,
+            unreachableState = Nothing,
             finalTerminalStates = new_final_terminal_states,
             initialTerminalStates = new_initial_terminal_states,
             continueTerminalStates = new_continue_terminal_states
@@ -220,7 +223,10 @@ reenumerateDFA start_state dfa = dfaMap alphabetMap dfa
     alphabetMap = (alphabet' Map.!)
 
 dfaFromRegEx :: (Ord t, Show s, Ord s, Enum s, Show t) => s -> RegEx t -> DFA t s
-dfaFromRegEx start_state regex = reenumerateDFA start_state dfa
+dfaFromRegEx start_state regex =
+  reenumerateDFA start_state
+  $ minimize
+  $ reenumerateDFA start_state dfa
   where
     dfa = evalState (mkDFAFromRegEx regex) init_nfa
     init_nfa = initNFA 0 :: NFA t Integer
@@ -242,18 +248,18 @@ isMatch dfa = runDFA' start_state
         maybe_state = Map.lookup (s, x) trans
 
 defaultTransitions :: DFA t s -> Maybe [(s, s)]
-defaultTransitions DFA {deadState = Nothing} = Nothing
-defaultTransitions DFA {states = _states, deadState = Just s} =
+defaultTransitions DFA {unreachableState = Nothing} = Nothing
+defaultTransitions DFA {states = _states, unreachableState = Just s} =
   Just $ map (,s) $ toList _states
 
 parallelLexingTable :: (Ord s, Show s) => DFA t s -> Maybe (Map Char [(s, s)])
-parallelLexingTable DFA {deadState = Nothing} = Nothing
+parallelLexingTable DFA {unreachableState = Nothing} = Nothing
 parallelLexingTable
   DFA
     { transitions = _transitions,
       alphabet = _alphabet,
       states = _states,
-      deadState = Just s
+      unreachableState = Just s
     } = Just table
     where
       tableLookUp key = fromMaybe s (Map.lookup key _transitions)
@@ -264,12 +270,12 @@ addDeadStateDFA :: (Enum s, Ord s) => DFA t s -> DFA t s
 addDeadStateDFA dfa =
   dfa
     { states = new_states,
-      deadState = Just dead_state
+      unreachableState = Just unreachable_state
     }
   where
     _states = states dfa
-    dead_state = succ $ maximum _states
-    new_states = Set.insert dead_state _states
+    unreachable_state = succ $ maximum _states
+    new_states = Set.insert unreachable_state _states
 
 isMatchPar :: DFA t Int -> Text -> Bool
 isMatchPar dfa' str = last final_state `Set.member` accepting dfa
@@ -285,6 +291,8 @@ isMatchPar dfa' str = last final_state `Set.member` accepting dfa
     paths = map (map snd) $ scanl1 zipper $ map tableLookUp str'
     final_state = scanl (flip (List.!!)) _initial paths
 
+-- | Not sure if this is need but if so this can be done faster with.
+-- http://www.cs.um.edu.mt/gordon.pace/Research/Software/Relic/Transformations/FSA/intersection.html
 overlappingTerminals :: (Ord s, Ord t, Show s, Show t) => DFA t s -> Set t
 overlappingTerminals dfa = dfs 0 Set.empty Set.empty ne start
   where
@@ -327,9 +335,10 @@ invertSetMap mapping = Map.fromList $ setMap <$> codomain
     domain = Map.keys mapping
     setMap s =
       (s,)
-      . Set.fromList
+      $ Set.fromList
       $ filter ((s `Set.member`) . (mapping Map.!)) domain
 
+-- | http://www.cs.um.edu.mt/gordon.pace/Research/Software/Relic/Transformations/FSA/remove-useless.html
 removeUselessStates :: (Ord s, Show s, Show t) => DFA t s -> DFA t s
 removeUselessStates dfa = dfaFilter (`Set.member` useful_states) dfa
   where
@@ -338,10 +347,77 @@ removeUselessStates dfa = dfaFilter (`Set.member` useful_states) dfa
     empty_map = Map.fromList $ (,Set.empty) <$> toList _states
     graph =
       Map.unionWith Set.union empty_map
-      . Map.unionsWith Set.union
+      $ Map.unionsWith Set.union
       $ uncurry Map.singleton
       . bimap fst Set.singleton
       <$> Map.toList (transitions dfa)
     newUsefulState s = Set.filter ((s `Set.member`) . (graph Map.!)) _states
     usefulStates s = Set.union s . Set.unions $ Set.map newUsefulState s
     useful_states = fixedPointIterate (/=) usefulStates initial_useful
+
+-- | http://www.cs.um.edu.mt/gordon.pace/Research/Software/Relic/Transformations/FSA/to-total.html
+mkDFATotal :: (Ord s, Show s, Show t, Enum s) => DFA t s -> DFA t s
+mkDFATotal dfa'
+  | null $ states dfa' = dfa'
+  | otherwise = new_dfa
+  where
+    _states' = states dfa'
+    dfa = dfa' {states = Set.insert dead_state _states' }
+    new_dfa = dfa {transitions = Map.union _transitions missing_transitions }
+    _states = states dfa
+    _alphabet = alphabet dfa
+    _transitions = transitions dfa
+    dead_state = succ $ Set.findMax _states'
+    missing_transitions =
+      Map.fromList
+      $ fmap (,dead_state)
+      $ concatMap missingStateTransitions
+      $ toList _states
+    missingStateTransitions s =
+      filter (`Map.notMember` _transitions)
+      ((s,) <$> toList _alphabet)
+
+-- | http://www.cs.um.edu.mt/gordon.pace/Research/Software/Relic/Transformations/FSA/minimise.html
+minimize :: (Ord s, Show s, Show t, Enum s, Ord t) => DFA t s -> DFA t (Set s)
+minimize dfa' = removeUselessStates $ new_dfa {terminalMap = new_terminal_map}
+  where
+    new_dfa = dfaMap (state_map Map.!) dfa
+    terminal_map = terminalMap dfa
+    new_terminal_map = solveTerminalMap terminal_map $ transitions new_dfa
+    
+    dfa = mkDFATotal dfa'
+    states_list = toList $ states dfa
+    alphabet_list = toList $ alphabet dfa
+    _transitions = transitions dfa
+    _accepting = accepting dfa
+    isAccepting = flip Set.member _accepting
+    initMatrixValue s s' = ((s, s'), ((/=) `on` isAccepting) s s')
+    initial_matrix =
+      Map.fromList [initMatrixValue s s' | s <- states_list, s' <- states_list]
+
+    paths s = filter (\c -> (s, c) `Map.member` _transitions)
+    commonPath s s' = paths s' $ paths s alphabet_list
+    isDistinguishable matrix s s' =
+      any (matrix Map.!)
+      $ zip (toStates s) (toStates s')
+      where
+        common_path = commonPath s s'
+        toStates s'' = (_transitions Map.!) . (s'',) <$> common_path
+
+    current_state_map =
+      Map.fromList
+      $ (\s -> (s, Set.singleton s))
+      <$> toList (states dfa)
+    
+    joinStates _states _ True = _states
+    joinStates _states (s, s') False =
+      Map.insert s' new_state
+      $ Map.insert s new_state _states
+      where
+        new_state = (_states Map.! s) `Set.union` (_states Map.! s')
+    
+    state_map = Map.foldlWithKey joinStates current_state_map final_matrix
+
+    final_matrix = fixedPointIterate (/=) newMatrix initial_matrix
+    newMatrix matrix = Map.mapWithKey (\k _ -> newMatrixValue matrix k) matrix
+    newMatrixValue matrix st@(s, s') = matrix Map.! st || isDistinguishable matrix s s'
