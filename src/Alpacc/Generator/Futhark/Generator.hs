@@ -30,20 +30,20 @@ entry lex s =
 
 parserFunction :: String
 parserFunction = [i|
-entry parse s = parser.parse
+entry parse = parser.parse
 |]
 
-toTerminalIndexMap :: Ord t => Grammar nt t -> Map t Integer
-toTerminalIndexMap = Map.fromList . flip zip [0..] . terminals
+toTerminalIndexMap :: Ord t => [t] -> Map t Integer
+toTerminalIndexMap = Map.fromList . flip zip [0..]
 
 toSymbolIndexMap ::
   (Ord t, Ord nt) =>
-  Grammar nt t ->
+  [t] ->
+  [nt] ->
   Map (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)) Integer
-toSymbolIndexMap grammar = Map.union aug_terminal_map nts_map
+toSymbolIndexMap ts nts = Map.union aug_terminal_map nts_map
   where
-    nts = nonterminals grammar
-    terminal_map = Map.mapKeys AugmentedTerminal $ toTerminalIndexMap grammar
+    terminal_map = Map.mapKeys AugmentedTerminal $ toTerminalIndexMap ts
     max_index = maximum terminal_map
     new_terminals =
       Map.union terminal_map
@@ -71,8 +71,8 @@ findTerminalIntegral index_map = findSize _max
 generate :: Int -> Int -> CFG -> Either String String
 generate q k cfg = do
   grammar <- cfgToGrammar cfg
-  let terminal_index_map = toTerminalIndexMap grammar
-  let symbol_index_map = toSymbolIndexMap grammar
+  let terminal_index_map = toTerminalIndexMap $ terminals grammar
+  let symbol_index_map = toSymbolIndexMap (terminals grammar) (nonterminals grammar)
   terminal_type <- findTerminalIntegral symbol_index_map
   dfa <- cfgToDFA cfg
   parser <- Parser.generateParser q k grammar symbol_index_map terminal_type
@@ -85,10 +85,9 @@ generate q k cfg = do
       ]
 
 generateLexer :: CFG -> Either String String
-generateLexer cfg = do
-  grammar <- cfgToGrammar cfg
-  let terminal_index_map = toTerminalIndexMap grammar
-  let symbol_index_map = toSymbolIndexMap grammar
+generateLexer cfg@(CFG {tRules, ntRules}) = do
+  let terminal_index_map = toTerminalIndexMap (ruleT <$> tRules)
+  let symbol_index_map = toSymbolIndexMap (ruleT <$> tRules) (ruleNT <$> ntRules)
   terminal_type <- findTerminalIntegral symbol_index_map
   dfa <- cfgToDFA cfg
   lexer <- Lexer.generateLexer dfa terminal_index_map terminal_type
@@ -101,7 +100,7 @@ generateLexer cfg = do
 generateParser :: Int -> Int -> CFG -> Either String String
 generateParser q k cfg = do
   grammar <- cfgToGrammar cfg
-  let symbol_index_map = toSymbolIndexMap grammar
+  let symbol_index_map = toSymbolIndexMap (terminals grammar) (nonterminals grammar)
   terminal_type <- findTerminalIntegral symbol_index_map
   parser <- Parser.generateParser q k grammar symbol_index_map terminal_type
   return $
