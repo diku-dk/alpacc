@@ -94,6 +94,8 @@ executable alpacc
     , parallel
     , text
     , base
+    , extra
+    , composition
 
   hs-source-dirs:     app
 

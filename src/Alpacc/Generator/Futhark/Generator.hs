@@ -1,22 +1,36 @@
 module Alpacc.Generator.Futhark.Generator
-  ( generate )
+  ( generate , generateParser , generateLexer)
 where
 
 import Data.String.Interpolate (i)
-import Alpacc.Generator.Futhark.Lexer
-import Alpacc.Generator.Futhark.Parser
+import Alpacc.Generator.Futhark.Lexer qualified as Lexer
+import Alpacc.Generator.Futhark.Parser qualified as Parser
 import Alpacc.CFG
 import Alpacc.Grammar
 import Data.Map qualified as Map
 import Data.Map ( Map )
 import Alpacc.Generator.Futhark.Util
 
-parseFunction :: String
-parseFunction = [i|
+bothFunction :: String
+bothFunction = [i|
 entry parse s =
   match lexer.lex s
   case #just (r, _) -> parser.parse r
   case #nothing -> []
+|]
+
+lexerFunction :: FutUInt -> String
+lexerFunction t = [i|
+entry lex s =
+  match lexer.lex s
+  case #just (r, s) ->
+    map2 (\\a (b, c) -> [u64.#{t} a, u64.i64 b, u64.i64 c]) r s
+  case #nothing -> []
+|]
+
+parserFunction :: String
+parserFunction = [i|
+entry parse s = parser.parse
 |]
 
 toTerminalIndexMap :: Ord t => Grammar nt t -> Map t Integer
@@ -61,12 +75,37 @@ generate q k cfg = do
   let symbol_index_map = toSymbolIndexMap grammar
   terminal_type <- findTerminalIntegral symbol_index_map
   dfa <- cfgToDFA cfg
-  parser <- generateParser q k grammar symbol_index_map terminal_type
-  lexer <- generateLexer dfa terminal_index_map terminal_type
+  parser <- Parser.generateParser q k grammar symbol_index_map terminal_type
+  lexer <- Lexer.generateLexer dfa terminal_index_map terminal_type
   return $
     unlines
       [ parser
       , lexer
-      , parseFunction
+      , bothFunction
       ]
-    
+
+generateLexer :: CFG -> Either String String
+generateLexer cfg = do
+  grammar <- cfgToGrammar cfg
+  let terminal_index_map = toTerminalIndexMap grammar
+  let symbol_index_map = toSymbolIndexMap grammar
+  terminal_type <- findTerminalIntegral symbol_index_map
+  dfa <- cfgToDFA cfg
+  lexer <- Lexer.generateLexer dfa terminal_index_map terminal_type
+  return $
+    unlines
+      [ lexer
+      , lexerFunction terminal_type
+      ]
+
+generateParser :: Int -> Int -> CFG -> Either String String
+generateParser q k cfg = do
+  grammar <- cfgToGrammar cfg
+  let symbol_index_map = toSymbolIndexMap grammar
+  terminal_type <- findTerminalIntegral symbol_index_map
+  parser <- Parser.generateParser q k grammar symbol_index_map terminal_type
+  return $
+    unlines
+      [ parser
+      , parserFunction
+      ]
