@@ -55,11 +55,11 @@ toSymbolIndexMap ts nts = Map.union aug_terminal_map nts_map
     nts_map = Map.fromList $ zip nts' [max_index+3..]
 
 findTerminalIntegral ::
-  Map (Symbol (AugmentedNonterminal NT) (AugmentedTerminal T)) Integer ->
+  Map a Integer ->
   Either String FutUInt
 findTerminalIntegral index_map = findSize _max
   where
-    _max = maximum $ Map.filterWithKey (\k _ -> isTerminal k) index_map
+    _max = maximum index_map
     findSize max_size
       | max_size < 0 = Left "Max size may not be negative."
       | max_size < maxFutUInt U8 = Right U8
@@ -72,8 +72,11 @@ generate :: Int -> Int -> CFG -> Either String String
 generate q k cfg = do
   grammar <- cfgToGrammar cfg
   let terminal_index_map = toTerminalIndexMap $ terminals grammar
-  let symbol_index_map = toSymbolIndexMap (terminals grammar) (nonterminals grammar)
-  terminal_type <- findTerminalIntegral symbol_index_map
+  let ts = terminals grammar
+  let nts = nonterminals grammar
+  let symbol_index_map = toSymbolIndexMap ts nts
+  let terminal_map = Map.filterWithKey (\k' _ -> isTerminal k') symbol_index_map
+  terminal_type <- findTerminalIntegral terminal_map
   dfa <- cfgToDFA cfg
   parser <- Parser.generateParser q k grammar symbol_index_map terminal_type
   lexer <- Lexer.generateLexer dfa terminal_index_map terminal_type
@@ -85,10 +88,9 @@ generate q k cfg = do
       ]
 
 generateLexer :: CFG -> Either String String
-generateLexer cfg@(CFG {tRules, ntRules}) = do
+generateLexer cfg@(CFG {tRules}) = do
   let terminal_index_map = toTerminalIndexMap (ruleT <$> tRules)
-  let symbol_index_map = toSymbolIndexMap (ruleT <$> tRules) (ruleNT <$> ntRules)
-  terminal_type <- findTerminalIntegral symbol_index_map
+  terminal_type <- findTerminalIntegral terminal_index_map
   dfa <- cfgToDFA cfg
   lexer <- Lexer.generateLexer dfa terminal_index_map terminal_type
   return $
@@ -101,7 +103,8 @@ generateParser :: Int -> Int -> CFG -> Either String String
 generateParser q k cfg = do
   grammar <- cfgToGrammar cfg
   let symbol_index_map = toSymbolIndexMap (terminals grammar) (nonterminals grammar)
-  terminal_type <- findTerminalIntegral symbol_index_map
+  let terminal_map = Map.filterWithKey (\k' _ -> isTerminal k') symbol_index_map
+  terminal_type <- findTerminalIntegral terminal_map
   parser <- Parser.generateParser q k grammar symbol_index_map terminal_type
   return $
     unlines

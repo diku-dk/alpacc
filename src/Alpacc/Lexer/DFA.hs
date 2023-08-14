@@ -291,7 +291,7 @@ isMatchPar dfa' str = last final_state `Set.member` accepting dfa
     paths = map (map snd) $ scanl1 zipper $ map tableLookUp str'
     final_state = scanl (flip (List.!!)) _initial paths
 
--- | Not sure if this is need but if so this can be done faster with.
+-- | Not sure if this is needed, but if so this can be done faster with.
 -- http://www.cs.um.edu.mt/gordon.pace/Research/Software/Relic/Transformations/FSA/intersection.html
 overlappingTerminals :: (Ord s, Ord t, Show s, Show t) => DFA t s -> Set t
 overlappingTerminals dfa = dfs 0 Set.empty Set.empty ne start
