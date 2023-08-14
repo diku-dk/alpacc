@@ -80,6 +80,7 @@ tRuleToTuple :: TRule -> (T, RegEx T)
 tRuleToTuple (TRule {ruleT=t, ruleRegex=regex}) = (t, regex)
 
 cfgToDFA :: CFG -> Either String (DFA T Integer)
+cfgToDFA (CFG {tRules = []}) = Left "CFG has no lexical rules."
 cfgToDFA cfg@(CFG {tRules}) = do
   implicit_t_rules <- implicitTRules cfg
   let all_t_rules = implicit_t_rules ++ tRules
