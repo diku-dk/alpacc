@@ -6,6 +6,10 @@
         "ignore": "\\s|\\n|\\t|\\r"
     },
     "tests": [
-        "a(aaa)a"
+        "a(aa)a",
+        "a(aaa)a",
+        "a(a a a)a",
+        "aa(a",
+        "a(aa"
     ]
 }

@@ -6,6 +6,8 @@
         "ignore": "\\s|\\n|\\t|\\r"
     },
     "tests": [
-        "(test)"
+        "(test)",
+        "(test ())",
+        "      (     ()(test)  )   ()"
     ]
 }

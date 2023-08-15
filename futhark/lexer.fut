@@ -113,48 +113,43 @@ module mk_lexer(L: lexer_context) = {
                  in (head v, b)
       ) (indices arr)
     arr)
-
-  def is_terminal [n] (terminal_strings : [n]terminal) (path : [n]transition) (i : i64) : bool =
-    let current_terminal = terminal_strings[i]
-    let last_state = state_module.to_i64 path[i64.max (i - 1) 0].1
-    let final_bitset = L.final_terminal_states[terminal_module.to_i64 current_terminal]
-    let continue_bitset = L.continue_terminal_states[terminal_module.to_i64 current_terminal]
-    in not (L.is_ignore current_terminal) &&
-       (i == 0 ||
-        current_terminal terminal_module.!= terminal_strings[i - 1] ||
-        (bitset_u8.member last_state final_bitset &&
-         not (bitset_u8.member last_state continue_bitset)
-        )
-       )
   
-  def find_terminal_strings path str starts =
+  def find_terminal_strings [n] (path : [n]transition) (str : [n]char) (starts : [n]bool) : [n]bitset =
     zip path str
     |> map L.transition_to_terminal_set
-    |> map3 (\is_start transition set ->
-      if is_start 
-      then copy L.inverted_final_terminal_states[state_module.to_i64 transition.1]
-      else set
+    |> map3 (\is_start transition (set : bitset) ->
+      let final_set = copy L.inverted_final_terminal_states[state_module.to_i64 transition.1]
+      let s = bitset_u8.size set
+      let s' = bitset_u8.size final_set
+      in if is_start && s' <= s
+         then final_set
+         else set
     ) starts path
     |> solve_overlaps path
 
   def lex [n] (str : [n]char) : maybe ([]terminal, [](i64, i64)) =
-    let (path_with_init, starts_with_init) =
+    let (path_with_init, ends_with_init) =
       transitions str
       |> solve_transitions
       |> find_path
       |> unzip
     let path = tail path_with_init |> sized n
-    let starts = tail starts_with_init |> sized n
-    let terminal_strings = map minimum <| find_terminal_strings path str starts
-    let terminal_starts = filter (is_terminal terminal_strings path) (indices terminal_strings)
-    let terminals = map (\i -> terminal_strings[i]) terminal_starts
-    let len = length terminal_starts - 1
-    let spans =
+    let ends = tail ends_with_init |> sized n
+    let terminal_strings = map minimum <| find_terminal_strings path str ends
+    let terminal_starts =
+      zip (iota n) ends
+      |> filter (\(_, b) -> b)
+      |> map (.0)
+    let terminal_indices = 
+      filter (\i -> not (L.is_ignore terminal_strings[terminal_starts[i]])) (indices terminal_starts)
+    let terminals = map(\i -> terminal_strings[terminal_starts[i]]) terminal_indices
+    let unfiltered_spans =
       map (\i ->
-        if i == len
-        then (terminal_starts[i], n - 1)
-        else (terminal_starts[i], terminal_starts[i + 1] - 1)
+        if i == 0
+        then (0, terminal_starts[i])
+        else (terminal_starts[i - 1] + 1, terminal_starts[i])
       ) (indices terminal_starts)
+    let spans = map (\i -> unfiltered_spans[i]) terminal_indices
     in if (any (state_module.==path_with_init[n].1) L.accepting_states &&
           all ((state_module.!=L.dead_state) <-< (.1)) path_with_init) ||
           n == 0

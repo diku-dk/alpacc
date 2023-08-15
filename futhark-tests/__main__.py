@@ -1,7 +1,8 @@
 import os
 import subprocess
 import argparse
-from . import generate_parser_test, stuck_test_timed
+from parse import generate_parser_test, stuck_test_timed
+from lex import generate_tests_from_jsons
 
 
 def main():
@@ -47,6 +48,9 @@ def main():
             q=args.lookback,
             k=args.lookahead
         )
+        print('The tests have been generated.')
+    elif args.test_type == 'lexer':
+        generate_tests_from_jsons('lexer-tests')
         print('The tests have been generated.')
     else:
         raise Exception(f'"{args.test_type}" is not a test type.')
