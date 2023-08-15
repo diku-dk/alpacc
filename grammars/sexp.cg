@@ -1,7 +1,7 @@
-ignore = \s|\n|\t|\r;
 lparen = a\(a;
 rparen = a\)a;
 atom = a+;
+ignore = \s|\n|\t|\r;
 
 E = atom | lparen E0 rparen;
 E0 = | E E0;

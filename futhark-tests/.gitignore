@@ -1,2 +1,9 @@
+*
+!*/
+!*.*
 *.fut
 *.c
+*.actual
+*.expected
+lib
+__pycache__
