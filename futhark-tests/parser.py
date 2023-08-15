@@ -5,6 +5,7 @@ import time
 import itertools
 import subprocess
 from typing import Optional
+from util import DeleteNew
 
 
 class Production:
@@ -304,14 +305,13 @@ FUTHARK_TEST_HEADER = """-- ==
 -- entry: parse
 """
 
-
-def to_futhark_test(inp, out):
+def to_futhark_test(inp, out, futhark_type):
     def to_u8(s):
-        return str(s) + 'u8'
+        return str(s) + futhark_type
 
     def to_array(arr):
         if len(arr) == 0:
-            return 'empty([0]u8)'
+            return f'empty([0]{futhark_type})'
         return f'[{", ".join(map(to_u8, arr))}]'
 
     def to_str(arr):
@@ -320,7 +320,6 @@ def to_futhark_test(inp, out):
     return f"""-- input {{ {to_str(inp)} }}
 -- output {{ {to_array(out)} }}
 """
-
 
 def generate_parser_test(
     valid_string_length: int,
