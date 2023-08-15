@@ -115,6 +115,12 @@ jobs:
           --lookahead=3 \
           --valid-size=20 \
           --invalid-size=6
+    
+    - name: Lexing
+      shell: bash
+      run: |
+        cabal exec -- python3 futhark-tests \
+          --test-type=lexer
 
     - name: futhark-tests
       shell: bash
