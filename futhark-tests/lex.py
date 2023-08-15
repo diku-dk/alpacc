@@ -39,12 +39,12 @@ def lexer(string, regex, pattern, mapping):
         
         groups = match.groupdict()
         
-        if groups['ignore'] is not None:
+        if groups.get('ignore') is not None:
             start = match.end()
             continue
 
         for key in regex.keys():
-            if groups[key] is not None:
+            if groups.get(key) is not None:
                 result.append([mapping[key], start, match.end() - 1])
                 break
         
