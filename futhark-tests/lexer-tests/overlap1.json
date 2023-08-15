@@ -1,0 +1,14 @@
+{
+    "regex": {
+        "ax": "a+x",
+        "ay": "a+y",
+        "a": "a+"
+    },
+    "tests": [
+        "a#a",
+        "aaaaaaaxaaaaa",
+        "aaayaaaaxaaaaaa",
+        "aaaaaaaaaaaa",
+        "aaaaaaaaxaaayax"
+    ]
+}
