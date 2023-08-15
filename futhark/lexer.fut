@@ -82,22 +82,37 @@ module mk_lexer(L: lexer_context) = {
     |> map (.1)
 
   -- | I am quite sure this function is associative but If it is not then there is a work around.
-  def compose_transition_vectors (a : transition_vector) (b : transition_vector) : transition_vector =
+  def compose_transition_vectors (a : (transition_vector, bool)) (b : (transition_vector, bool)) : (transition_vector, bool) =
     map (\a' ->
-      let b_new = b[state_module.to_i64 a'.1]
+      let b_new = b.0[state_module.to_i64 a'.1]
       in if b_new.1 state_module.== L.dead_state
-      then b[state_module.to_i64 L.initial_state]
-      else b[state_module.to_i64 a'.1]
-    ) a
+      then (b.0[state_module.to_i64 L.initial_state], true)
+      else (b.0[state_module.to_i64 a'.1], false)
+    ) a.0
+    |> (\n -> 
+      let (arr, bools) = unzip n
+      in if any id bools || b.1
+      then (arr, true)
+      else (arr, false)
+    )
   
   def compose_transition_vectors_identity =
     add_identity compose_transition_vectors
 
-  def find_path [n] (transition_vectors: [n](maybe transition_vector)) : [1 + n]transition =
+  def find_path [n] (transition_vectors: [n](maybe transition_vector)) : [1 + n](transition, bool) =
     [#just (replicate L.transitions_size (L.initial_state, L.initial_state))]
     |> (++transition_vectors)
+    |> map (map_maybe (\v -> (v, false)))
     |> scan compose_transition_vectors_identity #nothing
-    |> map (head <-< from_maybe (copy L.dead_transitions))
+    |> (\arr ->
+      map2 (\i m ->
+        let (v, _) = from_maybe (copy L.dead_transitions, false) m
+        in  if i == n
+            then (head v, true)
+            else let (_, b) = from_maybe (copy L.dead_transitions, false) arr[i+1]
+                 in (head v, b)
+      ) (indices arr)
+    arr)
 
   def is_terminal [n] (terminal_strings : [n]terminal) (path : [n]transition) (i : i64) : bool =
     let current_terminal = terminal_strings[i]
@@ -112,18 +127,25 @@ module mk_lexer(L: lexer_context) = {
         )
        )
   
-  def find_terminal_strings path str =
+  def find_terminal_strings path str starts =
     zip path str
     |> map L.transition_to_terminal_set
+    |> map3 (\is_start transition set ->
+      if is_start 
+      then copy L.inverted_final_terminal_states[state_module.to_i64 transition.1]
+      else set
+    ) starts path
     |> solve_overlaps path
 
   def lex [n] (str : [n]char) : maybe ([]terminal, [](i64, i64)) =
-    let path_with_init =
+    let (path_with_init, starts_with_init) =
       transitions str
       |> solve_transitions
       |> find_path
+      |> unzip
     let path = tail path_with_init |> sized n
-    let terminal_strings = map minimum <| find_terminal_strings path str
+    let starts = tail starts_with_init |> sized n
+    let terminal_strings = map minimum <| find_terminal_strings path str starts
     let terminal_starts = filter (is_terminal terminal_strings path) (indices terminal_strings)
     let terminals = map (\i -> terminal_strings[i]) terminal_starts
     let len = length terminal_starts - 1
