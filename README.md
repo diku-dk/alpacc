@@ -1,14 +1,18 @@
 # Alpacc
 Alpacc is a LLP parser generator [1] which creates parsers written in [Futhark](https://futhark-lang.org/). The parser will be able to compute the sequence of production rules used to construct the input string.
-## Defining parsers
 
+## Defining parsers
 Either a terminal or a nonterminal can be defined on each line which ends in a semicolon.
 
 ## Terminals
-Terminals must be named with `lowercase` letters and are defined by a regular expression. The valid 
+Terminals must be named with `lowercase` letters and are defined by a regular expression. The valid regex operations are concatenation `RS`, alternation `R|S`, kleene star `R*`, ranges `[a-zA-Z\s]` and one or more matches `R+`.
 
+Terminals can also be defined in the nonterminal definitions as a string literal `"("`.
+
+A special terminal is `ignore` which is a terminal that will always be removed before the terminals are given to the parser or the terminals are returned.
 
 ## Nonterminals
+Nonterminals must be named with `UPPERCASE` letters by the possible right-hand productions. A production can result in different right-hand side separated by `|`. These right-hand sides are sequences of nonterminals and terminals separated by whitespace.
 
 ## Example
 The following grammar is found in [grammars/paper_grammar.cg](grammars/paper_grammar.cg).
