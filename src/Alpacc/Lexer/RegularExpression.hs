@@ -2,21 +2,21 @@ module Alpacc.Lexer.RegularExpression
   ( regExFromText,
     pRegEx,
     RegEx (..),
-    mkTokenizerRegEx
+    mkTokenizerRegEx,
   )
 where
 
 import Control.Monad.State
+import Data.Char (chr, isDigit, isPrint)
 import Data.Composition
+import Data.Map (Map)
+import Data.Map qualified as Map hiding (Map)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Void
 import Text.Megaparsec hiding (State)
 import Text.Megaparsec.Char (char, space1, string)
 import Text.Megaparsec.Char.Lexer qualified as Lexer
-import Data.Map (Map)
-import Data.Map qualified as Map hiding (Map)
-import Data.Char (isDigit, chr, isPrint)
 
 type Parser = Parsec Void Text
 
@@ -94,27 +94,31 @@ pUnicode = fmap (chr . read . Text.unpack) . lexeme $ do
 isPrint' :: Char -> Bool
 isPrint' c = c `notElem` [';', '\\', '[', ']', '(', ')', '*', '|', '+', '-'] && isPrint c
 
+pIsPrint :: Parser Char
+pIsPrint = lexeme $ satisfy isPrint'
+
 pChar :: Parser Char
 pChar =
-  choice [
-    pBackslash,
-    pSemicolon,
-    pLeftSquareBracket,
-    pRightSquareBracket,
-    pLeftParentheses,
-    pRightParentheses,
-    pSpace,
-    pTab,
-    pNewline,
-    pCarriageReturn,
-    pStar,
-    pAdd,
-    pPipe,
-    pDash,
-    pUnicode,
-    satisfy isPrint'
-  ]
-  -- satisfy isPrint
+  choice
+    [ try pBackslash,
+      try pSemicolon,
+      try pLeftSquareBracket,
+      try pRightSquareBracket,
+      try pLeftParentheses,
+      try pRightParentheses,
+      try pSpace,
+      try pTab,
+      try pNewline,
+      try pCarriageReturn,
+      try pStar,
+      try pAdd,
+      try pPipe,
+      try pDash,
+      try pUnicode,
+      pIsPrint
+    ]
+
+-- satisfy isPrint
 
 pLiteral :: Parser (RegEx t)
 pLiteral = Literal <$> lexeme pChar
@@ -146,13 +150,16 @@ pRange =
   between (lexeme "[") (lexeme "]") $
     Range
       <$> many1
-        ( Right
-            .: (,)
-            <$> pChar
-            <* lexeme "-"
-            <*> pChar
-            <|> Left
-            <$> pChar
+        ( choice
+            [ try
+                ( Right
+                    .: (,)
+                    <$> pChar
+                    <* lexeme "-"
+                    <*> pChar
+                ),
+              Left <$> pChar
+            ]
         )
 
 pTerm :: Parser (RegEx t)
