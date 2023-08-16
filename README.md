@@ -1,9 +1,20 @@
 # Alpacc
-Alpacc is a LLP(q, k) parser generator [1] which creates parsers written in [Futhark](https://futhark-lang.org/). The parser will be able to compute a sequence of production rules used to construct the input string.
-### Example
+Alpacc is a LLP parser generator [1] which creates parsers written in [Futhark](https://futhark-lang.org/). The parser will be able to compute the sequence of production rules used to construct the input string.
+## Defining parsers
+
+Either a terminal or a nonterminal can be defined on each line which ends in a semicolon.
+
+## Terminals
+Terminals must be named with `lowercase` letters and are defined by a regular expression. The valid 
+
+
+## Nonterminals
+
+## Example
 The following grammar is found in [grammars/paper_grammar.cg](grammars/paper_grammar.cg).
 ```
 a = [0-9]+;
+ignore = \s|\n|\t|\r;
 
 E = T E';
 E' = "+" T E' | ;
@@ -19,11 +30,6 @@ A leftmost derivable string from this grammar is `1+[2+3]`. When parsing this th
 
 If an input is given that cannot be parsed then the empty array is returned.
 
-### Ideas for future work:
- - [ ] Concrete syntax tree construction.
- - [ ] A lexer.
- - [ ] NumPy backend.
-
-### Sources:
+## Sources:
 - [1] Ladislav Vagner and Bořivoj Melichar. 2007. Parallel LL parsing. Acta informatica 44, 1 (2007), 1–21.
 - [2] Mogensen, T. Æ. (2017). Introduction to Compiler Design. Undergraduate Topics in Computer Science. https://doi.org/10.1007/978-3-319-66966-3

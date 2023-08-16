@@ -16,8 +16,7 @@ import Text.Megaparsec.Char (char, space1, string)
 import Text.Megaparsec.Char.Lexer qualified as Lexer
 import Data.Map (Map)
 import Data.Map qualified as Map hiding (Map)
-import Data.Set (Set)
-import Data.Set qualified as Set hiding (Set)
+import Data.Char (isDigit, chr, isPrint)
 
 type Parser = Parsec Void Text
 
@@ -37,76 +36,85 @@ space = Lexer.space space1 empty empty
 lexeme :: Parser a -> Parser a
 lexeme = Lexer.lexeme space
 
-validLiterials :: Set Char -- missing chars ";\[]()*|+-"
-validLiterials = Set.fromList $ ['!'..'\''] ++ [','] ++ ['.'..':'] ++ ['<'..'Z'] ++ ['^'..'{'] ++ ['}'..'~']
-
 pBackslash :: Parser Char
-pBackslash = Text.last <$> string "\\\\"
+pBackslash = Text.last <$> lexeme (string "\\\\")
 
 pSemicolon :: Parser Char
-pSemicolon = Text.last <$> string "\\;"
+pSemicolon = Text.last <$> lexeme (string "\\;")
 
 pLeftSquareBracket :: Parser Char
-pLeftSquareBracket = Text.last <$> string "\\["
+pLeftSquareBracket = Text.last <$> lexeme (string "\\[")
 
 pRightSquareBracket :: Parser Char
-pRightSquareBracket = Text.last <$> string "\\]"
+pRightSquareBracket = Text.last <$> lexeme (string "\\]")
 
 pLeftParentheses :: Parser Char
-pLeftParentheses = Text.last <$> string "\\("
+pLeftParentheses = Text.last <$> lexeme (string "\\(")
 
 pRightParentheses :: Parser Char
-pRightParentheses = Text.last <$> string "\\)"
+pRightParentheses = Text.last <$> lexeme (string "\\)")
 
 pStar :: Parser Char
-pStar = Text.last <$> string "\\*"
+pStar = Text.last <$> lexeme (string "\\*")
 
 pAdd :: Parser Char
-pAdd = Text.last <$> string "\\+"
+pAdd = Text.last <$> lexeme (string "\\+")
 
 pDash :: Parser Char
-pDash = Text.last <$> string "\\-"
+pDash = Text.last <$> lexeme (string "\\-")
 
 pPipe :: Parser Char
-pPipe = Text.last <$> string "\\|"
+pPipe = Text.last <$> lexeme (string "\\|")
 
 pSpace :: Parser Char
 pSpace = do
-  _ <- string "\\s"
+  _ <- lexeme $ string "\\s"
   return ' '
 
 pTab :: Parser Char
 pTab = do
-  _ <- string "\\t"
+  _ <- lexeme $ string "\\t"
   return '\t'
 
 pNewline :: Parser Char
 pNewline = do
-  _ <- string "\\n"
+  _ <- lexeme $ string "\\n"
   return '\n'
 
 pCarriageReturn :: Parser Char
 pCarriageReturn = do
-  _ <- string "\\r"
+  _ <- lexeme $ string "\\r"
   return '\r'
+
+pUnicode :: Parser Char
+pUnicode = fmap (chr . read . Text.unpack) . lexeme $ do
+  _ <- string "\\"
+  takeWhile1P Nothing isDigit
+
+isPrint' :: Char -> Bool
+isPrint' c = c `notElem` [';', '\\', '[', ']', '(', ')', '*', '|', '+', '-'] && isPrint c
 
 pChar :: Parser Char
 pChar =
-  pBackslash <|>
-  pSemicolon <|>
-  pLeftSquareBracket <|>
-  pRightSquareBracket <|>
-  pLeftParentheses <|>
-  pRightParentheses <|>
-  pSpace <|>
-  pTab <|>
-  pNewline <|>
-  pCarriageReturn <|>
-  pStar <|>
-  pAdd <|>
-  pPipe <|>
-  pDash <|>
-  satisfy (`elem` validLiterials)
+  choice [
+    pBackslash,
+    pSemicolon,
+    pLeftSquareBracket,
+    pRightSquareBracket,
+    pLeftParentheses,
+    pRightParentheses,
+    pSpace,
+    pTab,
+    pNewline,
+    pCarriageReturn,
+    pStar,
+    pAdd,
+    pPipe,
+    pDash,
+    pUnicode,
+    satisfy isPrint'
+  ]
+  -- satisfy isPrint
 
 pLiteral :: Parser (RegEx t)
 pLiteral = Literal <$> lexeme pChar
