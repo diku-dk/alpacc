@@ -59,13 +59,12 @@ module mk_lexer(L: lexer_context) = {
         |> reduce_comm (i64.min) (L.number_of_terminals - 1)
     in terminal_module.i64 m
   
-  def solve_overlap_backwards [n] (path: [n]transition) ((j, set) : (i64, bitset)) ((i, set') : (i64, bitset)) : (i64, bitset) =
-    if i == -1 || j == -1 || L.initial_state state_module.== path[j].0
+  def solve_overlap [n] (path: [n]transition) ((j, set) : (i64, bitset)) ((i, set') : (i64, bitset)) : (i64, bitset) =
+    if i == -1
+    then (j, set)
+    else if j == -1
     then (i, set')
-    else (i, set `bitset_u8.intersection` set')
-  
-  def solve_overlap_forwards [n] (path: [n]transition) ((j, set) : (i64, bitset)) ((i, set') : (i64, bitset)) : (i64, bitset) =
-    if i == -1 || j == -1 || L.initial_state state_module.== path[i].0
+    else if L.initial_state state_module.== path[i].0
     then (i, set')
     else (i, set `bitset_u8.intersection` set')
 
@@ -73,59 +72,56 @@ module mk_lexer(L: lexer_context) = {
 
   def full_set = bitset_u8.complement empty
 
+  def solve_overlap_identity p = add_identity (solve_overlap p)
+
   def solve_overlaps [n] (path : [n]transition) (sets : [n]bitset) =
     zip (iota n) sets
-    |> reverse
-    |> scan (solve_overlap_backwards path) (-1, full_set)
-    |> reverse
-    |> scan (solve_overlap_forwards path) (-1, full_set)
+    |> map to_just
+    |> scan (solve_overlap_identity path) #nothing
+    |> map (from_maybe (-1, empty))
     |> map (.1)
 
-  -- | I am quite sure this function is associative but If it is not then there is a work around.
-  def compose_transition_vectors (a : (transition_vector, bool)) (b : (transition_vector, bool)) : (transition_vector, bool) =
-    map (\a' ->
-      let b_new = b.0[state_module.to_i64 a'.1]
-      in if b_new.1 state_module.== L.dead_state
-      then (b.0[state_module.to_i64 L.initial_state], true)
-      else (b.0[state_module.to_i64 a'.1], false)
-    ) a.0
-    |> (\n -> 
-      let (arr, bools) = unzip n
-      in if any id bools || b.1
-      then (arr, true)
-      else (arr, false)
-    )
+  def compose_transition_vectors [n] (a : [n](transition, bool)) (b : [n](transition, bool)) : [n](transition, bool) =
+    map (\(a', is_end) ->
+      if is_end
+      then b[state_module.to_i64 L.initial_state]
+      else b[state_module.to_i64 a'.1]
+    ) a
   
   def compose_transition_vectors_identity =
     add_identity compose_transition_vectors
+  
+  def find_ends [n] (transition_vectors: [n](maybe transition_vector)) =
+    map2 (\i v' ->
+      map_maybe (sized L.transitions_size) <|
+      let w = if i == n - 1 then #nothing else transition_vectors[i + 1]
+      in match (v', w)
+         case (#nothing, _) -> #nothing
+         case (#just v, #nothing) -> map (\t -> (t, true)) v |> to_just
+         case (#just v, #just w) ->
+           map (\t ->
+             (t, w[state_module.to_i64 t.1].1 state_module.== L.dead_state)
+           ) v
+           |> to_just
+    ) (iota n) transition_vectors
+  
+  def find_terminal_strings [n] (path : [n]transition) (str : [n]char) (ends : [n]bool) : [n]bitset =
+    zip path str
+    |> map L.transition_to_terminal_set
+    |> map3 (\is_end transition (set : bitset) ->
+      let final_set = copy L.inverted_final_terminal_states[state_module.to_i64 transition.1]
+      in if is_end
+         then final_set `bitset_u8.intersection` set
+         else set
+    ) ends path
+    |> solve_overlaps path
 
   def find_path [n] (transition_vectors: [n](maybe transition_vector)) : [1 + n](transition, bool) =
     [#just (replicate L.transitions_size (L.initial_state, L.initial_state))]
     |> (++transition_vectors)
-    |> map (map_maybe (\v -> (v, false)))
+    |> find_ends
     |> scan compose_transition_vectors_identity #nothing
-    |> (\arr ->
-      map2 (\i m ->
-        let (v, _) = from_maybe (copy L.dead_transitions, false) m
-        in  if i == n
-            then (head v, true)
-            else let (_, b) = from_maybe (copy L.dead_transitions, false) arr[i+1]
-                 in (head v, b)
-      ) (indices arr)
-    arr)
-  
-  def find_terminal_strings [n] (path : [n]transition) (str : [n]char) (starts : [n]bool) : [n]bitset =
-    zip path str
-    |> map L.transition_to_terminal_set
-    |> map3 (\is_start transition (set : bitset) ->
-      let final_set = copy L.inverted_final_terminal_states[state_module.to_i64 transition.1]
-      let s = bitset_u8.size set
-      let s' = bitset_u8.size final_set
-      in if is_start && s' <= s
-         then final_set
-         else set
-    ) starts path
-    |> solve_overlaps path
+    |> map (head <-< from_maybe (map (\t -> (t, true)) (copy L.dead_transitions)))
 
   def lex [n] (str : [n]char) : maybe ([]terminal, [](i64, i64)) =
     let (path_with_init, ends_with_init) =
@@ -136,19 +132,19 @@ module mk_lexer(L: lexer_context) = {
     let path = tail path_with_init |> sized n
     let ends = tail ends_with_init |> sized n
     let terminal_strings = map minimum <| find_terminal_strings path str ends
-    let terminal_starts =
+    let terminal_ends =
       zip (iota n) ends
       |> filter (\(_, b) -> b)
       |> map (.0)
     let terminal_indices = 
-      filter (\i -> not (L.is_ignore terminal_strings[terminal_starts[i]])) (indices terminal_starts)
-    let terminals = map(\i -> terminal_strings[terminal_starts[i]]) terminal_indices
+      filter (\i -> not (L.is_ignore terminal_strings[terminal_ends[i]])) (indices terminal_ends)
+    let terminals = map(\i -> terminal_strings[terminal_ends[i]]) terminal_indices
     let unfiltered_spans =
       map (\i ->
         if i == 0
-        then (0, terminal_starts[i])
-        else (terminal_starts[i - 1] + 1, terminal_starts[i])
-      ) (indices terminal_starts)
+        then (0, terminal_ends[i])
+        else (terminal_ends[i - 1] + 1, terminal_ends[i])
+      ) (indices terminal_ends)
     let spans = map (\i -> unfiltered_spans[i]) terminal_indices
     in if (any (state_module.==path_with_init[n].1) L.accepting_states &&
           all ((state_module.!=L.dead_state) <-< (.1)) path_with_init) ||
