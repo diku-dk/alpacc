@@ -371,10 +371,10 @@ def generate_parser_test(
             fp.write(f'\n{FUTHARK_TEST_HEADER}')
             for indices, expected in valid_strings.items():
                 string = indices_to_terminals(indices)
-                fp.write(f'{to_futhark_test(string, expected)}')
+                fp.write(f'{to_futhark_test(string, expected, "u8")}')
 
             for indices in string_combinations[len(grammar.terminals)]:
                 if indices in valid_strings:
                     continue
                 string = indices_to_terminals(indices)
-                fp.write(to_futhark_test(string, []))
+                fp.write(to_futhark_test(string, [], 'u8'))
