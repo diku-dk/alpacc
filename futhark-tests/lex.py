@@ -45,7 +45,7 @@ def lexer(string, regex, pattern, mapping):
 
         for key in regex.keys():
             if groups.get(key) is not None:
-                result.append([mapping[key], start, match.end() - 1])
+                result.append([mapping[key], start, match.end()])
                 break
         
         start = match.end()
