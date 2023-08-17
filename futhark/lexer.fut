@@ -58,22 +58,10 @@ module mk_lexer(L: lexer_context) = {
     let m = bitset_u8.to_array set
         |> reduce_comm (i64.min) (L.number_of_terminals - 1)
     in terminal_module.i64 m
-  
-  def solve_overlap ((set, b) : (bitset, bool)) ((set', b') : (bitset, bool)) : (bitset, bool) =
-    if b
-    then (set', b')
-    else (set `bitset_u8.intersection` set', b')
-
-  def solve_overlap_identity = add_identity solve_overlap
 
   def empty = bitset_u8.empty L.number_of_terminals
 
-  def solve_overlaps [n] (ends : [n]bool) (sets : [n]bitset) =
-    zip sets ends
-    |> map to_just
-    |> scan solve_overlap_identity #nothing
-    |> map (from_maybe (empty, true))
-    |> map (.0)
+  def full_set = bitset_u8.complement empty
 
   def compose_transition_vectors [n] (a : [n](transition, bool)) (b : [n](transition, bool)) : [n](transition, bool) =
     map (\(a', is_end) ->
@@ -108,7 +96,6 @@ module mk_lexer(L: lexer_context) = {
          then final_set `bitset_u8.intersection` set
          else set
     ) ends path
-    |> solve_overlaps ends
 
   def find_path [n] (transition_vectors: [n](maybe transition_vector)) : [1 + n](transition, bool) =
     [#just (replicate L.transitions_size (L.initial_state, L.initial_state))]
@@ -125,21 +112,25 @@ module mk_lexer(L: lexer_context) = {
       |> unzip
     let path = tail path_with_init |> sized n
     let ends = tail ends_with_init |> sized n
-    let terminal_strings = map minimum <| find_terminal_strings path str ends
+    let terminal_strings = find_terminal_strings path str ends
     let terminal_ends =
       zip (iota n) ends
       |> filter (\(_, b) -> b)
       |> map (.0)
-    let terminal_indices = 
-      filter (\i -> not (L.is_ignore terminal_strings[terminal_ends[i]])) (indices terminal_ends)
-    let terminals = map(\i -> terminal_strings[terminal_ends[i]]) terminal_indices
     let unfiltered_spans =
       map (\i ->
         if i == 0
-        then (0, terminal_ends[i])
-        else (terminal_ends[i - 1] + 1, terminal_ends[i])
+        then (0, terminal_ends[i] + 1)
+        else (terminal_ends[i - 1] + 1, terminal_ends[i] + 1)
       ) (indices terminal_ends)
+    let unfiltered_terminals = map (\(i, j) ->
+      reduce_comm bitset_u8.intersection full_set terminal_strings[i:j]
+    ) unfiltered_spans
+    |> map minimum
+    let terminal_indices = 
+      filter (\i -> not (L.is_ignore unfiltered_terminals[i])) (indices unfiltered_spans)
     let spans = map (\i -> unfiltered_spans[i]) terminal_indices
+    let terminals = map (\i -> unfiltered_terminals[i]) terminal_indices
     in if (any (state_module.==path_with_init[n].1) L.accepting_states &&
           all ((state_module.!=L.dead_state) <-< (.1)) path_with_init) ||
           n == 0
