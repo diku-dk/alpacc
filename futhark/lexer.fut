@@ -59,27 +59,21 @@ module mk_lexer(L: lexer_context) = {
         |> reduce_comm (i64.min) (L.number_of_terminals - 1)
     in terminal_module.i64 m
   
-  def solve_overlap [n] (path: [n]transition) ((j, set) : (i64, bitset)) ((i, set') : (i64, bitset)) : (i64, bitset) =
-    if i == -1
-    then (j, set)
-    else if j == -1
-    then (i, set')
-    else if L.initial_state state_module.== path[i].0
-    then (i, set')
-    else (i, set `bitset_u8.intersection` set')
+  def solve_overlap ((set, b) : (bitset, bool)) ((set', b') : (bitset, bool)) : (bitset, bool) =
+    if b
+    then (set', b')
+    else (set `bitset_u8.intersection` set', b')
+
+  def solve_overlap_identity = add_identity solve_overlap
 
   def empty = bitset_u8.empty L.number_of_terminals
 
-  def full_set = bitset_u8.complement empty
-
-  def solve_overlap_identity p = add_identity (solve_overlap p)
-
-  def solve_overlaps [n] (path : [n]transition) (sets : [n]bitset) =
-    zip (iota n) sets
+  def solve_overlaps [n] (ends : [n]bool) (sets : [n]bitset) =
+    zip sets ends
     |> map to_just
-    |> scan (solve_overlap_identity path) #nothing
-    |> map (from_maybe (-1, empty))
-    |> map (.1)
+    |> scan solve_overlap_identity #nothing
+    |> map (from_maybe (empty, true))
+    |> map (.0)
 
   def compose_transition_vectors [n] (a : [n](transition, bool)) (b : [n](transition, bool)) : [n](transition, bool) =
     map (\(a', is_end) ->
@@ -114,7 +108,7 @@ module mk_lexer(L: lexer_context) = {
          then final_set `bitset_u8.intersection` set
          else set
     ) ends path
-    |> solve_overlaps path
+    |> solve_overlaps ends
 
   def find_path [n] (transition_vectors: [n](maybe transition_vector)) : [1 + n](transition, bool) =
     [#just (replicate L.transitions_size (L.initial_state, L.initial_state))]
