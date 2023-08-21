@@ -6,7 +6,7 @@
 import "lib/github.com/diku-dk/containers/bitset"
 import "lib/github.com/diku-dk/containers/maybe"
 
-module bitset_u64 = mk_bitset u64
+module bitset_u32 = mk_bitset u32
 
 module type lexer_context = {
   module state_module : integral
@@ -20,12 +20,12 @@ module type lexer_context = {
   val dead_state : state_module.t
   val accepting_states : [accepting_size]state_module.t
   val dead_transitions : [transitions_size](state_module.t, state_module.t)
-  val final_terminal_states : [number_of_terminals](bitset_u64.bitset[(number_of_states - 1) / bitset_u64.nbs + 1])
-  val continue_terminal_states : [number_of_terminals](bitset_u64.bitset[(number_of_states - 1) / bitset_u64.nbs + 1])
-  val inverted_final_terminal_states : [number_of_states](bitset_u64.bitset[(number_of_terminals - 1) / bitset_u64.nbs + 1])
-  val inverted_continue_terminal_states : [number_of_states](bitset_u64.bitset[(number_of_terminals - 1) / bitset_u64.nbs + 1])
+  val final_terminal_states : [number_of_terminals](bitset_u32.bitset[(number_of_states - 1) / bitset_u32.nbs + 1])
+  val continue_terminal_states : [number_of_terminals](bitset_u32.bitset[(number_of_states - 1) / bitset_u32.nbs + 1])
+  val inverted_final_terminal_states : [number_of_states](bitset_u32.bitset[(number_of_terminals - 1) / bitset_u32.nbs + 1])
+  val inverted_continue_terminal_states : [number_of_states](bitset_u32.bitset[(number_of_terminals - 1) / bitset_u32.nbs + 1])
   val char_to_transitions : char_module.t -> maybe ([transitions_size](state_module.t, state_module.t))
-  val transition_to_terminal_set : ((state_module.t, state_module.t), char_module.t) -> bitset_u64.bitset[(number_of_terminals - 1) / bitset_u64.nbs + 1]
+  val transition_to_terminal_set : ((state_module.t, state_module.t), char_module.t) -> bitset_u32.bitset[(number_of_terminals - 1) / bitset_u32.nbs + 1]
   val is_ignore : terminal_module.t -> bool
 }
 
@@ -38,7 +38,7 @@ module mk_lexer(L: lexer_context) = {
   type state = state_module.t
   type char = char_module.t
 
-  type bitset = bitset_u64.bitset[(L.number_of_terminals - 1) / bitset_u64.nbs + 1] 
+  type bitset = bitset_u32.bitset[(L.number_of_terminals - 1) / bitset_u32.nbs + 1] 
   type transition = (state, state)
   type transition_vector = [L.transitions_size]transition
   
@@ -55,13 +55,13 @@ module mk_lexer(L: lexer_context) = {
     map L.char_to_transitions str
 
   def minimum (set : bitset) : terminal =
-    let m = bitset_u64.to_array set
+    let m = bitset_u32.to_array set
         |> reduce_comm (i64.min) (L.number_of_terminals - 1)
     in terminal_module.i64 m
 
-  def empty = bitset_u64.empty L.number_of_terminals
+  def empty = bitset_u32.empty L.number_of_terminals
 
-  def full_set = bitset_u64.complement empty
+  def full_set = bitset_u32.complement empty
 
   def compose_transition_vectors [n] (a : [n](transition, bool)) (b : [n](transition, bool)) : [n](transition, bool) =
     map (\(a', is_end) ->
@@ -93,7 +93,7 @@ module mk_lexer(L: lexer_context) = {
     |> map3 (\is_end transition (set : bitset) ->
       let final_set = copy L.inverted_final_terminal_states[state_module.to_i64 transition.1]
       in if is_end
-         then final_set `bitset_u64.intersection` set
+         then final_set `bitset_u32.intersection` set
          else set
     ) ends path
 
@@ -124,7 +124,7 @@ module mk_lexer(L: lexer_context) = {
         else (terminal_ends[i - 1] + 1, terminal_ends[i] + 1)
       ) (indices terminal_ends)
     let unfiltered_terminals = map (\(i, j) ->
-      reduce_comm bitset_u64.intersection full_set terminal_strings[i:j]
+      reduce_comm bitset_u32.intersection full_set terminal_strings[i:j]
     ) unfiltered_spans
     |> map minimum
     let terminal_indices = 

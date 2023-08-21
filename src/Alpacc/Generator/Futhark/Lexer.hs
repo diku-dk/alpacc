@@ -59,14 +59,14 @@ transitionTable num_of_terminals table =
 def transition_to_terminal_set (n : (transition, char)) : terminal_bitset =
   match n
   #{cases}
-  case _ -> bitset_u64.from_bit_array number_of_terminals #{empty_set}
+  case _ -> bitset_u32.from_bit_array number_of_terminals #{empty_set}
 |]
   where
     empty_set = toBoolSet num_of_terminals []
     cases = futharkTableCases . Map.toList $ _table
     toStr ((x, y), z) = [i|((#{x}, #{y}), #{z})|]
     _table =
-      ([i|bitset_u64.from_bit_array number_of_terminals |]++)
+      ([i|bitset_u32.from_bit_array number_of_terminals |]++)
       . toBoolSet num_of_terminals
       . fmap fromInteger <$> Map.mapKeys toStr table
       
@@ -115,8 +115,8 @@ def dead_transitions : [transitions_size]transition = sized transitions_size #{d
 def accepting_size : i64 = #{accepting_size}
 def accepting_states : [accepting_size]state = #{accepting_states_str}
 
-type terminal_bitset = bitset_u64.bitset[(number_of_terminals - 1) / bitset_u64.nbs + 1] 
-type states_bitset = bitset_u64.bitset[(number_of_states - 1) / bitset_u64.nbs + 1] 
+type terminal_bitset = bitset_u32.bitset[(number_of_terminals - 1) / bitset_u32.nbs + 1] 
+type states_bitset = bitset_u32.bitset[(number_of_states - 1) / bitset_u32.nbs + 1] 
 
 def final_terminal_states : [number_of_terminals]states_bitset =
   sized number_of_terminals #{final_terminal_states}
@@ -148,13 +148,13 @@ def inverted_continue_terminal_states : [number_of_states]terminal_bitset =
     inverted_empty_states = Map.fromList $ (,Set.empty) <$> toList (states dfa)
     toSetArray = 
       toArray
-      . map (("bitset_u64.from_array number_of_states " ++) . show . toList . snd)
+      . map (("bitset_u32.from_array number_of_states " ++) . show . toList . snd)
       . Map.toAscList
       . Map.mapKeys (terminal_index_map Map.!)
       . Map.unionWith Set.union empty_states
     toInvertedSetArray = 
       toArray
-      . map (("bitset_u64.from_array number_of_terminals " ++) . show . toList . snd)
+      . map (("bitset_u32.from_array number_of_terminals " ++) . show . toList . snd)
       . Map.toAscList
       . Map.map (Set.map (terminal_index_map Map.!))
       . Map.unionWith Set.union inverted_empty_states
