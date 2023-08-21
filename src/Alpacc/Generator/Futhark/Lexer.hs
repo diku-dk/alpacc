@@ -15,6 +15,7 @@ import Data.Maybe (fromJust)
 import Data.Foldable
 import Data.FileEmbed
 import Alpacc.Generator.Futhark.Util
+import Data.List.Split (chunksOf)
 
 futharkLexer :: String
 futharkLexer = $(embedStringFile "futhark/lexer.fut")
@@ -41,18 +42,33 @@ def char_to_transitions (c : char) : maybe transition_vector =
         . Map.toList
         $ toJust . toArray . fmap tupleToStr <$> Map.mapKeys (show . ord) table
 
-transitionTable :: Map ((Integer, Integer), Int) [Integer] -> String
-transitionTable table =
+toBoolsLists :: Int -> [Int] -> [Bool]
+toBoolsLists m ls = map (`elem` ls) [0..m]
+
+toBoolSet :: Int -> [Int] -> String
+toBoolSet m ls = toArray . map toInt $ chunksOf 8 lists 
+  where
+    lists = toBoolsLists m ls
+    toChar True = '1'
+    toChar False = '0'
+    toInt = ("0b"++) . map toChar
+
+transitionTable :: Int -> Map ((Integer, Integer), Int) [Integer] -> String
+transitionTable num_of_terminals table =
   [i|
 def transition_to_terminal_set (n : (transition, char)) : terminal_bitset =
   match n
   #{cases}
-  case _ -> bitset_u8.from_array number_of_terminals []
+  case _ -> bitset_u8.from_bit_array number_of_terminals #{empty_set}
 |]
   where
+    empty_set = toBoolSet num_of_terminals []
     cases = futharkTableCases . Map.toList $ _table
     toStr ((x, y), z) = [i|((#{x}, #{y}), #{z})|]
-    _table = ([i|bitset_u8.from_array number_of_terminals |]++) . show <$> Map.mapKeys toStr table
+    _table =
+      ([i|bitset_u8.from_bit_array number_of_terminals |]++)
+      . toBoolSet num_of_terminals
+      . fmap fromInteger <$> Map.mapKeys toStr table
       
 findStateIntegral ::
   DFA T Integer ->
@@ -146,7 +162,7 @@ def inverted_continue_terminal_states : [number_of_states]terminal_bitset =
     continue_terminal_states = toSetArray $ continueTerminalStates dfa
     inverted_final_terminal_states = toInvertedSetArray . invertSetMap $ finalTerminalStates dfa
     inverted_continue_terminal_states = toInvertedSetArray . invertSetMap $ continueTerminalStates dfa
-    transition_function = transitionTable terminal_map
+    transition_function = transitionTable number_of_terminals terminal_map
     ignore_function = 
       case T "ignore" `Map.lookup` terminal_index_map of
         Just j -> [i|def is_ignore (t : terminal) : bool = #{j} == t|]

@@ -1,5 +1,5 @@
 ignore = \s|\n|\t|\r;
-atom = [a-zA-Z0-9_]+;
+atom = [\0-\255]+;
 
 E = atom | "(" E0 ")";
 E0 = | E E0;

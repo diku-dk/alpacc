@@ -46,6 +46,7 @@ library
     , deepseq
     , megaparsec
     , file-embed
+    , split
 
   exposed-modules:
     Alpacc.CFG
