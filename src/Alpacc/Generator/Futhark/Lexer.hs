@@ -43,7 +43,7 @@ def char_to_transitions (c : char) : maybe transition_vector =
         $ toJust . toArray . fmap tupleToStr <$> Map.mapKeys (show . ord) table
 
 toBoolsLists :: Int -> [Int] -> [Bool]
-toBoolsLists m ls = map (`elem` ls) [0..m]
+toBoolsLists m ls = reverse $ map (`elem` ls) [0..m]
 
 toBoolSet :: Int -> [Int] -> String
 toBoolSet m ls = toArray . map toInt $ chunksOf 8 lists 
