@@ -114,7 +114,6 @@ pChar =
       try pAdd,
       try pPipe,
       try pDash,
-      try pUnicode,
       pIsPrint
     ]
 
