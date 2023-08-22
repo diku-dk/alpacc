@@ -68,24 +68,30 @@ module mk_lexer(L: lexer_context) = {
         |> reduce_comm (i64.min) (L.number_of_terminals - 1)
     in terminal_module.i64 m
 
-  def empty = bitset_u32.empty L.number_of_terminals
+  def terminal_empty_set = bitset_u32.empty L.number_of_terminals
 
-  def full_set = bitset_u32.complement empty
+  def terminal_full_set = bitset_u32.complement terminal_empty_set
+
+  type state_set = bitset_u32.bitset[(L.number_of_states - 1) / bitset_u32.nbs + 1]
+
+  def state_empty_set = bitset_u32.empty L.number_of_states
+
+  def state_full_set = bitset_u32.complement state_empty_set
 
   def compose_transition_vectors (a : state_vector) (b : state_vector) : state_vector =
     map (\s ->
       b[state_module.to_i64 s]
     ) a
   
-  def find_ends [n] (state_vectors: [n]state_vector) : [n][L.number_of_states]bool =
+  def find_ends [n] (state_vectors: [n]state_vector) : [n]state_set =
     map2 (\i v ->
       if i == n - 1
-      then replicate L.number_of_states true
+      then state_full_set
       else let w = state_vectors[i + 1]
-           in map (\s ->
-                w[state_module.to_i64 s] state_module.== L.dead_state
-              ) v
-              |> sized L.number_of_states
+           in map2 (\i s ->
+                if w[state_module.to_i64 s] state_module.== L.dead_state then i else -1
+              ) (indices v) v
+              |> bitset_u32.from_array L.number_of_states
     ) (iota n) state_vectors
 
   def find_terminal_strings [n] (path : [n]transition) (str : [n]char) (ends : [n]bool) : [n]bitset =
@@ -98,10 +104,7 @@ module mk_lexer(L: lexer_context) = {
          else set
     ) ends path
 
-  def f [n] (state_vectors : [n]state_vector) (a : (i64, state)) (b : (i64, state)) =
-    (b.0, state_vectors[a.0][state_module.to_i64 b.1])
-
-  def find_path [n] (state_vectors: [n]state_vector) = --: [1 + n](transition, bool) =
+  def find_path [n] (state_vectors: [n]state_vector) : [1 + n](transition, bool) =
     let vectors_with_start =
       [replicate L.number_of_states L.initial_state]
       |> (++state_vectors)
@@ -109,7 +112,7 @@ module mk_lexer(L: lexer_context) = {
     let composed_states =
       tabulate_2d (1 + n) L.number_of_states (\i j ->
         let curr_state = vectors_with_start[i][j]
-        in if ends[i][j]
+        in if j `bitset_u32.member` ends[i]
            then L.initial_state
            else curr_state
       )
@@ -119,7 +122,7 @@ module mk_lexer(L: lexer_context) = {
       map (\i ->
         let curr_index = state_module.to_i64 composed_states[i]
         let next_state = vectors_with_start[i + 1][curr_index]
-        let is_end = ends[i + 1][curr_index]
+        let is_end = curr_index `bitset_u32.member` ends[i + 1]
         in (next_state, is_end)
       ) (iota n)
       |> ([(L.initial_state, false)]++)
@@ -150,7 +153,7 @@ module mk_lexer(L: lexer_context) = {
         else (terminal_ends[i - 1] + 1, terminal_ends[i] + 1)
       ) (indices terminal_ends)
     let unfiltered_terminals = map (\(i, j) ->
-      reduce_comm bitset_u32.intersection full_set terminal_strings[i:j]
+      reduce_comm bitset_u32.intersection terminal_full_set terminal_strings[i:j]
     ) unfiltered_spans
     |> map minimum
     let terminal_indices = 
