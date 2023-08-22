@@ -37,7 +37,7 @@ module mk_lexer(L: lexer_context) = {
   type state = state_module.t
   type char = char_module.t
 
-  type bitset = bitset_u32.bitset[(L.number_of_terminals - 1) / bitset_u32.nbs + 1]
+  type terminal_set = bitset_u32.bitset[(L.number_of_terminals - 1) / bitset_u32.nbs + 1]
   type state_vector = [L.number_of_states]state
   type maybe_state_vector = [L.number_of_states](maybe state)
 
@@ -63,7 +63,7 @@ module mk_lexer(L: lexer_context) = {
   def transitions [n] (str : [n]char) : [n]maybe_state_vector =
     map L.char_to_transitions str
 
-  def minimum (set : bitset) : terminal =
+  def minimum (set : terminal_set) : terminal =
     let m = bitset_u32.to_array set
         |> reduce_comm (i64.min) (L.number_of_terminals - 1)
     in terminal_module.i64 m
@@ -94,10 +94,10 @@ module mk_lexer(L: lexer_context) = {
               |> bitset_u32.from_array L.number_of_states
     ) (iota n) state_vectors
 
-  def find_terminal_strings [n] (path : [n]transition) (str : [n]char) (ends : [n]bool) : [n]bitset =
+  def find_terminal_strings [n] (path : [n]transition) (str : [n]char) (ends : [n]bool) : [n]terminal_set =
     zip path str
     |> map L.transition_to_terminal_set
-    |> map3 (\is_end transition (set : bitset) ->
+    |> map3 (\is_end transition (set : terminal_set) ->
       let final_set = copy L.inverted_final_terminal_states[state_module.to_i64 transition.1]
       in if is_end
          then final_set `bitset_u32.intersection` set
