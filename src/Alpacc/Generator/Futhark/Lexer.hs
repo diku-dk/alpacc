@@ -26,8 +26,8 @@ tupleToStr (a, b) = [i|(#{a}, #{b})|]
 futharkLexerFunction :: DFA t Integer -> String
 futharkLexerFunction dfa =
     [i|
-def char_to_transitions (c : char) : maybe transition_vector =
-  map_maybe (sized transitions_size) <| 
+def char_to_transitions (c : char) : maybe_state_vector =
+  sized number_of_states <| 
   match c
   #{str_lexer_table}
   case _ -> #{str_default_case}
@@ -36,11 +36,11 @@ def char_to_transitions (c : char) : maybe transition_vector =
     default_case = fromJust $ defaultTransitions dfa
     table = fromJust $ parallelLexingTable dfa
     toJust = ("#just " ++)
-    str_default_case = toJust . toArray $ tupleToStr <$> default_case
+    str_default_case = toArray $ toJust . show . snd <$> default_case
     str_lexer_table =
       futharkTableCases
         . Map.toList
-        $ toJust . toArray . fmap tupleToStr <$> Map.mapKeys (show . ord) table
+        $ toArray . fmap (toJust . show . snd) <$> Map.mapKeys (show . ord) table
 
 toBoolsLists :: Int -> [Int] -> [Bool]
 toBoolsLists m ls = reverse $ map (`elem` ls) [0..m]
@@ -103,15 +103,13 @@ type terminal = terminal_module.t
 type state = state_module.t
 type char = char_module.t
 
-def transitions_size : i64 = #{transition_size}
 type transition = (state, state)
-type transition_vector = [transitions_size]transition
 
 def number_of_states : i64 = #{number_of_states}
 def number_of_terminals : i64 = #{number_of_terminals}
 def initial_state : state = #{initial_state}
 def dead_state : state = #{dead_state}
-def dead_transitions : [transitions_size]transition = sized transitions_size #{default_transitions}
+def dead_transitions : [number_of_states]transition = sized number_of_states #{default_transitions}
 def accepting_size : i64 = #{accepting_size}
 def accepting_states : [accepting_size]state = #{accepting_states_str}
 
@@ -128,6 +126,9 @@ def inverted_final_terminal_states : [number_of_states]terminal_bitset =
 def inverted_continue_terminal_states : [number_of_states]terminal_bitset =
   sized number_of_states #{inverted_continue_terminal_states}
 
+type state_vector = [number_of_states]state
+  type maybe_state_vector = [number_of_states](maybe state)
+
 #{ignore_function}
 
 #{lexer_function}
@@ -141,7 +142,6 @@ def inverted_continue_terminal_states : [number_of_states]terminal_bitset =
     number_of_terminals = length terminals
     terminals = Map.keys terminal_index_map
     lexer_function = futharkLexerFunction dfa
-    transition_size = Set.size $ states dfa
     initial_state = initial dfa
     number_of_states = Set.size $ states dfa
     empty_states = Map.fromList $ (,Set.empty) <$> terminals
