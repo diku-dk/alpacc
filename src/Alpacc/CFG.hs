@@ -5,6 +5,7 @@ module Alpacc.CFG
     CFG (..),
     TRule (..),
     NTRule (..),
+    everyTRule,
   )
 where
 
@@ -65,6 +66,12 @@ cfgToGrammar (CFG {tRules, ntRules}) =
   where
     ruleProds NTRule {ruleNT, ruleProductions} =
       map (Production ruleNT) ruleProductions
+
+everyTRule :: CFG -> Either String [TRule]
+everyTRule cfg@(CFG {tRules}) = do
+  implicit_t_rules <- implicitTRules cfg
+  return $ tRules ++ implicit_t_rules
+   
 
 implicitTRules :: CFG -> Either String [TRule]
 implicitTRules (CFG {tRules, ntRules}) = mapM implicitLitToRegEx implicit
