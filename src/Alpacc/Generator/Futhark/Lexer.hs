@@ -16,6 +16,7 @@ import Data.Foldable
 import Data.FileEmbed
 import Alpacc.Generator.Futhark.Util
 import Data.List.Split (chunksOf)
+import Alpacc.Debug
 
 futharkLexer :: String
 futharkLexer = $(embedStringFile "futhark/lexer.fut")
@@ -118,13 +119,9 @@ type states_bitset = bitset_u32.bitset[(number_of_states - 1) / bitset_u32.nbs +
 
 def final_terminal_states : [number_of_terminals]states_bitset =
   sized number_of_terminals #{final_terminal_states}
-def continue_terminal_states : [number_of_terminals]states_bitset =
-  sized number_of_terminals #{continue_terminal_states}
 
 def inverted_final_terminal_states : [number_of_states]terminal_bitset =
   sized number_of_states #{inverted_final_terminal_states}
-def inverted_continue_terminal_states : [number_of_states]terminal_bitset =
-  sized number_of_states #{inverted_continue_terminal_states}
 
 type state_vector = [number_of_states]state
   type maybe_state_vector = [number_of_states](maybe state)
@@ -150,7 +147,7 @@ type state_vector = [number_of_states]state
       toArray
       . map (("bitset_u32.from_array number_of_states " ++) . show . toList . snd)
       . Map.toAscList
-      . Map.mapKeys (terminal_index_map Map.!)
+      . Map.mapKeys (debug terminal_index_map Map.!)
       . Map.unionWith Set.union empty_states
     toInvertedSetArray = 
       toArray
@@ -159,9 +156,7 @@ type state_vector = [number_of_states]state
       . Map.map (Set.map (terminal_index_map Map.!))
       . Map.unionWith Set.union inverted_empty_states
     final_terminal_states = toSetArray $ finalTerminalStates dfa
-    continue_terminal_states = toSetArray $ continueTerminalStates dfa
     inverted_final_terminal_states = toInvertedSetArray . invertSetMap $ finalTerminalStates dfa
-    inverted_continue_terminal_states = toInvertedSetArray . invertSetMap $ continueTerminalStates dfa
     transition_function = transitionTable number_of_terminals terminal_map
     ignore_function = 
       case T "ignore" `Map.lookup` terminal_index_map of

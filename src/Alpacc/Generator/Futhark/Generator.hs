@@ -88,8 +88,9 @@ generate q k cfg = do
       ]
 
 generateLexer :: CFG -> Either String String
-generateLexer cfg@(CFG {tRules}) = do
-  let terminal_index_map = toTerminalIndexMap (ruleT <$> tRules)
+generateLexer cfg = do
+  t_rules <- everyTRule cfg
+  let terminal_index_map = toTerminalIndexMap (ruleT <$> t_rules)
   terminal_type <- findTerminalIntegral terminal_index_map
   dfa <- cfgToDFA cfg
   lexer <- Lexer.generateLexer dfa terminal_index_map terminal_type
