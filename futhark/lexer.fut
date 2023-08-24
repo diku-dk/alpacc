@@ -93,75 +93,68 @@ module mk_lexer(L: lexer_context) = {
     ) (iota n) state_vectors
 
   def find_terminal_strings [n] (path : [n]transition) (str : [n]char) (ends : [n]bool) : [n]terminal_set =
-    zip path str
-    |> map L.transition_to_terminal_set
-    |> map3 (\is_end transition (set : terminal_set) ->
+    map3 (\is_end transition char ->
+      let set = L.transition_to_terminal_set (transition, char)
       let final_set = copy L.inverted_final_terminal_states[state_module.to_i64 transition.1]
       in if is_end
          then final_set `bitset_u32.intersection` set
          else set
-    ) ends path
+    ) ends path str
 
-  def find_path [n] (state_vectors: [n]state_vector) : [1 + n](transition, bool) =
+  def find_transition [n] (vectors : [n]state_vector) (composed_vectors : [n]state_vector) (ends : [n]state_set) (i : i64) : (transition, bool) =
+    let next_index =
+      composed_vectors[i]
+      |> head
+      |> state_module.to_i64
+    let next_is_end = next_index `bitset_u32.member` ends[i + 1]
+    let next_state = if next_is_end then L.initial_state else vectors[i + 1][next_index]
+    let next_next_index = state_module.to_i64 next_state
+    let next_next_state = vectors[i + 2][next_next_index]
+    let next_next_is_end = next_next_index `bitset_u32.member` ends[i + 2]
+    in ((next_state, next_next_state), next_next_is_end)
+
+  def find_path [n] (state_vectors: [n]state_vector) : [n](transition, bool) =
     let vectors_with_start =
-      [replicate L.number_of_states L.initial_state]
+      replicate L.number_of_states L.initial_state
+      |> replicate 2
       |> (++state_vectors)
     let ends = find_ends vectors_with_start
-    let composed_states =
-      tabulate_2d (1 + n) L.number_of_states (\i j ->
+    let composed_vectors =
+      tabulate_2d (2 + n) L.number_of_states (\i j ->
         let curr_state = vectors_with_start[i][j]
         in if j `bitset_u32.member` ends[i]
            then L.initial_state
            else curr_state
       )
       |> scan compose_transition_vectors identity_state_vector
-      |> map head
-    let states =
-      map (\i ->
-        let curr_index = state_module.to_i64 composed_states[i]
-        let next_state = vectors_with_start[i + 1][curr_index]
-        let is_end = curr_index `bitset_u32.member` ends[i + 1]
-        in (next_state, is_end)
-      ) (iota n)
-      |> ([(L.initial_state, false)]++)
-    in tabulate (1 + n) (\i ->
-      let (prev', b') = states[i64.max 0 (i - 1)]
-      let prev = if b' then L.initial_state else prev'
-      let (next, b) = states[i]
-      in ((prev, next), b)
-    )
+    in tabulate n (find_transition vectors_with_start composed_vectors ends)
 
-  def lex [n] (str : [n]char) : maybe ([]terminal, [](i64, i64)) =
-    let (path_with_init, ends_with_init) =
+  def lex [n] (str : [n]char) : maybe ([](terminal, (i64, i64))) =
+    let (path, ends) =
       transitions str
       |> solve_transitions
       |> find_path
       |> unzip
-    let path = tail path_with_init |> sized n
-    let ends = tail ends_with_init |> sized n
     let terminal_strings = find_terminal_strings path str ends
     let terminal_ends =
       zip (iota n) ends
       |> filter (\(_, b) -> b)
       |> map (.0)
-    let unfiltered_spans =
+    let unfiltered_terminals_and_spans =
       map (\i ->
-        if i == 0
-        then (0, terminal_ends[i] + 1)
-        else (terminal_ends[i - 1] + 1, terminal_ends[i] + 1)
+        let (a, b) =
+          if i == 0
+          then (0, terminal_ends[i] + 1)
+          else (terminal_ends[i - 1] + 1, terminal_ends[i] + 1)
+        let t = reduce_comm bitset_u32.intersection terminal_full_set terminal_strings[a:b]
+                |> minimum
+        in (t, (a, b))
       ) (indices terminal_ends)
-    let unfiltered_terminals = map (\(i, j) ->
-      reduce_comm bitset_u32.intersection terminal_full_set terminal_strings[i:j]
-    ) unfiltered_spans
-    |> map minimum
-    let terminal_indices = 
-      filter (\i -> not (L.is_ignore unfiltered_terminals[i])) (indices unfiltered_spans)
-    let spans = map (\i -> unfiltered_spans[i]) terminal_indices
-    let terminals = map (\i -> unfiltered_terminals[i]) terminal_indices
-    in if (any (state_module.==path_with_init[n].1) L.accepting_states &&
-          all ((state_module.!=L.dead_state) <-< (.1)) path_with_init) ||
-          n == 0
-       then #just (terminals, spans)
+    let terminals_and_spans = filter (not <-< L.is_ignore <-< (.0)) unfiltered_terminals_and_spans
+    in if n == 0 ||
+          (any (state_module.==path[n - 1].1) L.accepting_states &&
+          all ((state_module.!=L.dead_state) <-< (.1)) path)
+       then #just terminals_and_spans
        else #nothing
 }
 

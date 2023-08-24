@@ -16,7 +16,6 @@ import Data.Foldable
 import Data.FileEmbed
 import Alpacc.Generator.Futhark.Util
 import Data.List.Split (chunksOf)
-import Alpacc.Debug
 
 futharkLexer :: String
 futharkLexer = $(embedStringFile "futhark/lexer.fut")
@@ -147,7 +146,7 @@ type state_vector = [number_of_states]state
       toArray
       . map (("bitset_u32.from_array number_of_states " ++) . show . toList . snd)
       . Map.toAscList
-      . Map.mapKeys (debug terminal_index_map Map.!)
+      . Map.mapKeys (terminal_index_map Map.!)
       . Map.unionWith Set.union empty_states
     toInvertedSetArray = 
       toArray
