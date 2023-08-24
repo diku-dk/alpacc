@@ -23,8 +23,8 @@ lexerFunction :: FutUInt -> String
 lexerFunction t = [i|
 entry lex s =
   match lexer.lex s
-  case #just (r, s) ->
-    map2 (\\a (b, c) -> [u64.#{t} a, u64.i64 b, u64.i64 c]) r s
+  case #just r ->
+    map (\\(a, (b, c)) -> [u64.#{t} a, u64.i64 b, u64.i64 c]) r
   case #nothing -> []
 |]
 
