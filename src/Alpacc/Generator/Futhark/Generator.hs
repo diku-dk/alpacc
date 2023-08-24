@@ -15,7 +15,7 @@ bothFunction :: String
 bothFunction = [i|
 entry parse s =
   match lexer.lex s
-  case #just (r, _) -> parser.parse r
+  case #just r -> map (.0) r |> parser.parse 
   case #nothing -> []
 |]
 
