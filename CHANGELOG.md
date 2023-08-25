@@ -1,5 +1,11 @@
 # Revision history for alpacc
 
-## 0.1.0.0 -- 2023-06-09
+## 0.1.1
 
-* This is the initial version of the parser generator.
+* Parallel lexer generator using a deterministic finite automaton.
+
+## 0.1.0
+
+* Better file format by Troels Henriksen.
+* Small lexer by Troels Henriksen.
+* Initial version of the parser generator.
