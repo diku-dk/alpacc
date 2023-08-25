@@ -34,6 +34,8 @@ A leftmost derivable string from this grammar is `1+[2+3]`. When parsing this th
 
 If an input is given that cannot be parsed then the empty array is returned.
 
+It is also possible to only generate a lexer or parser using the flags `--lexer` or `--parser`. 
+
 ## Sources:
 - [1] Ladislav Vagner and Bořivoj Melichar. 2007. Parallel LL parsing. Acta informatica 44, 1 (2007), 1–21.
 - [2] Mogensen, T. Æ. (2017). Introduction to Compiler Design. Undergraduate Topics in Computer Science. https://doi.org/10.1007/978-3-319-66966-3

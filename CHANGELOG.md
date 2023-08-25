@@ -6,6 +6,6 @@
 
 ## 0.1.0
 
-* Better file format by Troels Henriksen.
-* Small lexer by Troels Henriksen.
+* Better file format for grammars by Troels Henriksen.
+* Small parallel lexer generator by Troels Henriksen.
 * Initial version of the parser generator.
