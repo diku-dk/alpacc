@@ -136,10 +136,7 @@ module mk_lexer(L: lexer_context) = {
       |> find_path
       |> unzip
     let terminal_strings = find_terminal_strings path str ends
-    let terminal_ends =
-      zip (iota n) ends
-      |> filter (\(_, b) -> b)
-      |> map (.0)
+    let terminal_ends = filter (\i -> ends[i]) (iota n)
     let unfiltered_terminals_and_spans =
       map (\i ->
         let (a, b) =
