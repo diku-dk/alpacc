@@ -26,7 +26,7 @@ tupleToStr (a, b) = [i|(#{a}, #{b})|]
 futharkLexerFunction :: DFA t Integer -> String
 futharkLexerFunction dfa =
     [i|
-def char_to_transitions (c : char) : maybe_state_vector =
+def char_to_transitions (c : char) : state_vector =
   sized number_of_states <| 
   match c
   #{str_lexer_table}
@@ -35,12 +35,11 @@ def char_to_transitions (c : char) : maybe_state_vector =
   where
     default_case = fromJust $ defaultTransitions dfa
     table = fromJust $ parallelLexingTable dfa
-    toJust = ("#just " ++)
-    str_default_case = toArray $ toJust . show . snd <$> default_case
+    str_default_case = toArray $ show . snd <$> default_case
     str_lexer_table =
       futharkTableCases
         . Map.toList
-        $ toArray . fmap (toJust . show . snd) <$> Map.mapKeys (show . ord) table
+        $ toArray . fmap (show . snd) <$> Map.mapKeys (show . ord) table
 
 toBoolsLists :: Int -> [Int] -> [Bool]
 toBoolsLists m ls = reverse $ map (`elem` ls) [0..m]
