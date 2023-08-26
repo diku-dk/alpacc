@@ -116,11 +116,17 @@ module mk_lexer(L: lexer_context) = {
       |> scan compose_transition_vectors identity_state_vector
     in tabulate n (find_transition vectors_with_start composed_vectors ends)
 
+  def is_valid_transition (((a, b), is_end) : (transition, bool)) : bool =
+    b state_module.!= L.dead_state &&
+    a state_module.!= L.dead_state &&
+    (not is_end || any (state_module.==b) L.accepting_states) 
+
   def lex [n] (str : [n]char) : maybe ([](terminal, (i64, i64))) =
-    let (path, ends) =
+    let path_and_ends =
       transitions str
       |> find_path
-      |> unzip
+    let (path, ends) = unzip path_and_ends
+    let is_valid = all is_valid_transition path_and_ends
     let terminal_strings = find_terminal_strings path str ends
     let terminal_ends = filter (\i -> ends[i]) (iota n)
     let unfiltered_terminals_and_spans =
@@ -134,9 +140,7 @@ module mk_lexer(L: lexer_context) = {
         in (t, (a, b))
       ) (indices terminal_ends)
     let terminals_and_spans = filter (not <-< L.is_ignore <-< (.0)) unfiltered_terminals_and_spans
-    in if n == 0 ||
-          (any (state_module.==path[n - 1].1) L.accepting_states &&
-           all ((state_module.!=L.dead_state) <-< (.1)) path)
+    in if is_valid
        then #just terminals_and_spans
        else #nothing
 }
