@@ -21,7 +21,7 @@ module type lexer_context = {
   val dead_transitions : [number_of_states](state_module.t, state_module.t)
   val final_terminal_states : [number_of_terminals](bitset_u32.bitset[(number_of_states - 1) / bitset_u32.nbs + 1])
   val inverted_final_terminal_states : [number_of_states](bitset_u32.bitset[(number_of_terminals - 1) / bitset_u32.nbs + 1])
-  val char_to_transitions : char_module.t -> [number_of_states](maybe state_module.t)
+  val char_to_transitions : char_module.t -> [number_of_states]state_module.t
   val transition_to_terminal_set : ((state_module.t, state_module.t), char_module.t) -> bitset_u32.bitset[(number_of_terminals - 1) / bitset_u32.nbs + 1]
   val is_ignore : terminal_module.t -> bool
 }
@@ -44,21 +44,8 @@ module mk_lexer(L: lexer_context) = {
   def identity_state_vector : state_vector =
     map state_module.i64 (iota L.number_of_states)
     |> sized L.number_of_states
-  
-  def identity_maybe_state_vector : maybe_state_vector =
-    replicate L.number_of_states #nothing
 
-  def combine (_ : state) (a : state) : state =
-    a
-
-  def combine_transitions (a : maybe_state_vector) (b : maybe_state_vector) : maybe_state_vector =
-    map2 (add_identity combine) a b
-
-  def solve_transitions [n] (arr : [n]maybe_state_vector) : [n]state_vector =
-    scan combine_transitions identity_maybe_state_vector arr
-    |> map (map (from_maybe L.dead_state))
-
-  def transitions [n] (str : [n]char) : [n]maybe_state_vector =
+  def transitions [n] (str : [n]char) : [n]state_vector =
     map L.char_to_transitions str
 
   def minimum (set : terminal_set) : terminal =
@@ -132,7 +119,6 @@ module mk_lexer(L: lexer_context) = {
   def lex [n] (str : [n]char) : maybe ([](terminal, (i64, i64))) =
     let (path, ends) =
       transitions str
-      |> solve_transitions
       |> find_path
       |> unzip
     let terminal_strings = find_terminal_strings path str ends
@@ -150,7 +136,7 @@ module mk_lexer(L: lexer_context) = {
     let terminals_and_spans = filter (not <-< L.is_ignore <-< (.0)) unfiltered_terminals_and_spans
     in if n == 0 ||
           (any (state_module.==path[n - 1].1) L.accepting_states &&
-          all ((state_module.!=L.dead_state) <-< (.1)) path)
+           all ((state_module.!=L.dead_state) <-< (.1)) path)
        then #just terminals_and_spans
        else #nothing
 }
