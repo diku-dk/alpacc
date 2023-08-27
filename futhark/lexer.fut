@@ -88,33 +88,37 @@ module mk_lexer(L: lexer_context) = {
          else set
     ) ends path str
 
-  def find_transition [n] (vectors : [n]state_vector) (composed_vectors : [n]state_vector) (ends : [n]state_set) (i : i64) : (transition, bool) =
-    let next_index =
-      composed_vectors[i]
-      |> head
-      |> state_module.to_i64
-    let next_is_end = next_index `bitset_u32.member` ends[i + 1]
-    let next_state = if next_is_end then L.initial_state else vectors[i + 1][next_index]
-    let next_next_index = state_module.to_i64 next_state
-    let next_next_state = vectors[i + 2][next_next_index]
-    let next_next_is_end = next_next_index `bitset_u32.member` ends[i + 2]
-    in ((next_state, next_next_state), next_next_is_end)
+  def find_transition [n] (str : [n]char) (composed_vectors : [n]state_vector) (ends : [n]state_set) (i : i64) : (transition, bool) =
+    let prev_index =
+      if i >= 2
+      then
+        composed_vectors[i - 2]
+        |> (.[state_module.to_i64 L.initial_state])
+        |> state_module.to_i64
+      else state_module.to_i64 L.initial_state
+    let prev_state =
+      if i >= 1 && not (prev_index `bitset_u32.member` ends[i - 1])
+      then
+        composed_vectors[i - 1]
+        |> (.[state_module.to_i64 L.initial_state])
+      else L.initial_state
+    let curr_index = state_module.to_i64 prev_state
+    let curr_state_vector = L.char_to_transitions str[i]
+    let curr_state = curr_state_vector[curr_index]
+    let curr_is_end = curr_index `bitset_u32.member` ends[i]
+    in ((prev_state, curr_state), curr_is_end)
 
-  def find_path [n] (state_vectors: [n]state_vector) : [n](transition, bool) =
-    let vectors_with_start =
-      replicate L.number_of_states L.initial_state
-      |> replicate 2
-      |> (++state_vectors)
-    let ends = find_ends vectors_with_start
+  def find_path [n] (str : [n]char) (state_vectors: [n]state_vector) : [n](transition, bool) =
+    let ends = find_ends state_vectors
     let composed_vectors =
-      tabulate_2d (2 + n) L.number_of_states (\i j ->
-        let curr_state = vectors_with_start[i][j]
+      tabulate_2d n L.number_of_states (\i j ->
+        let curr_state = state_vectors[i][j]
         in if j `bitset_u32.member` ends[i]
            then L.initial_state
            else curr_state
       )
       |> scan compose_transition_vectors identity_state_vector
-    in tabulate n (find_transition vectors_with_start composed_vectors ends)
+    in tabulate n (find_transition str composed_vectors ends)
 
   def is_valid_transition (((a, b), is_end) : (transition, bool)) : bool =
     b state_module.!= L.dead_state &&
@@ -124,9 +128,9 @@ module mk_lexer(L: lexer_context) = {
   def lex [n] (str : [n]char) : maybe ([](terminal, (i64, i64))) =
     let path_and_ends =
       transitions str
-      |> find_path
-    let (path, ends) = unzip path_and_ends
+      |> find_path str
     let is_valid = all is_valid_transition path_and_ends
+    let (path, ends) = unzip path_and_ends
     let terminal_strings = find_terminal_strings path str ends
     let terminal_ends = filter (\i -> ends[i]) (iota n)
     let unfiltered_terminals_and_spans =
