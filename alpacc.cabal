@@ -47,6 +47,7 @@ library
     , megaparsec
     , file-embed
     , split
+    , utf8-string
 
   exposed-modules:
     Alpacc.CFG
@@ -62,6 +63,7 @@ library
     Alpacc.Lexer.RegularExpression
     Alpacc.Lexer.NFA
     Alpacc.Lexer.DFA
+    Alpacc.Lexer.FSA
 
   hs-source-dirs:     src
 

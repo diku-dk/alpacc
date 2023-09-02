@@ -18,7 +18,6 @@ module type lexer_context = {
   val initial_state : state_module.t
   val dead_state : state_module.t
   val accepting_states : [accepting_size]state_module.t
-  val dead_transitions : [number_of_states](state_module.t, state_module.t)
   val final_terminal_states : [number_of_terminals](bitset_u32.bitset[(number_of_states - 1) / bitset_u32.nbs + 1])
   val inverted_final_terminal_states : [number_of_states](bitset_u32.bitset[(number_of_terminals - 1) / bitset_u32.nbs + 1])
   val char_to_transitions : char_module.t -> [number_of_states]state_module.t

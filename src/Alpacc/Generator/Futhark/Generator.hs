@@ -77,13 +77,13 @@ generate q k cfg = do
   let symbol_index_map = toSymbolIndexMap ts nts
   let terminal_map = Map.filterWithKey (\k' _ -> isTerminal k') symbol_index_map
   terminal_type <- findTerminalIntegral terminal_map
-  dfa <- cfgToDFA cfg
+  lexer <- cfgToDFALexer cfg
   parser <- Parser.generateParser q k grammar symbol_index_map terminal_type
-  lexer <- Lexer.generateLexer dfa terminal_index_map terminal_type
+  lexer_str <- Lexer.generateLexer lexer terminal_index_map terminal_type
   return $
     unlines
       [ parser
-      , lexer
+      , lexer_str
       , bothFunction
       ]
 
@@ -92,11 +92,11 @@ generateLexer cfg = do
   t_rules <- everyTRule cfg
   let terminal_index_map = toTerminalIndexMap (ruleT <$> t_rules)
   terminal_type <- findTerminalIntegral terminal_index_map
-  dfa <- cfgToDFA cfg
-  lexer <- Lexer.generateLexer dfa terminal_index_map terminal_type
+  lexer <- cfgToDFALexer cfg
+  lexer_str <- Lexer.generateLexer lexer terminal_index_map terminal_type
   return $
     unlines
-      [ lexer
+      [ lexer_str
       , lexerFunction terminal_type
       ]
 
