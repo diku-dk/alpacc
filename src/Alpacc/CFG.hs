@@ -1,7 +1,7 @@
 module Alpacc.CFG
   ( cfgFromText,
     cfgToGrammar,
-    cfgToDFA,
+    cfgToDFALexer,
     CFG (..),
     TRule (..),
     NTRule (..),
@@ -24,11 +24,14 @@ import Text.Megaparsec
 import Text.Megaparsec.Char (char, space1)
 import Text.Megaparsec.Char.Lexer qualified as Lexer
 import Data.Foldable
+import Data.Word (Word8)
+import Data.List.NonEmpty (NonEmpty)
+import Data.List.NonEmpty qualified as NonEmpty hiding (NonEmpty)
 
 -- | Terminal formation rule.
 data TRule = TRule
   { ruleT :: T,
-    ruleRegex :: RegEx T
+    ruleRegex :: RegEx Char
   }
   deriving (Show)
 
@@ -71,7 +74,6 @@ everyTRule :: CFG -> Either String [TRule]
 everyTRule cfg@(CFG {tRules}) = do
   implicit_t_rules <- implicitTRules cfg
   return $ tRules ++ implicit_t_rules
-   
 
 implicitTRules :: CFG -> Either String [TRule]
 implicitTRules (CFG {tRules, ntRules}) = mapM implicitLitToRegEx implicit
@@ -83,18 +85,16 @@ implicitTRules (CFG {tRules, ntRules}) = mapM implicitLitToRegEx implicit
         regex = foldl1 Concat $ fmap Literal (Text.unpack s)
     implicitLitToRegEx (T s) = Left $ "Can not create literal from: " <> Text.unpack s
 
-tRuleToTuple :: TRule -> (T, RegEx T)
-tRuleToTuple (TRule {ruleT=t, ruleRegex=regex}) = (t, regex)
+tRuleToTuple :: TRule -> (T, RegEx (NonEmpty Word8))
+tRuleToTuple (TRule {ruleT=t, ruleRegex=regex}) = (t, NonEmpty.fromList <$> toWord8 regex)
 
-cfgToDFA :: CFG -> Either String (DFA T Integer)
-cfgToDFA (CFG {tRules = []}) = Left "CFG has no lexical rules."
-cfgToDFA cfg@(CFG {tRules}) = do
+cfgToDFALexer :: CFG -> Either String (DFALexer Word8 Integer T)
+cfgToDFALexer (CFG {tRules = []}) = Left "CFG has no lexical rules."
+cfgToDFALexer cfg@(CFG {tRules}) = do
   implicit_t_rules <- implicitTRules cfg
   let all_t_rules = implicit_t_rules ++ tRules
   let terminal_map = Map.fromList $ tRuleToTuple <$> all_t_rules
-  let regex = mkTokenizerRegEx terminal_map
-  let dfa = dfaFromRegEx (0 :: Integer) regex
-  Right $ addDeadStateDFA dfa
+  Right $ lexerDFA (0 :: Integer) terminal_map
 
 type Parser = Parsec Void Text
 

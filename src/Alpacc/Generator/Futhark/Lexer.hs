@@ -4,42 +4,38 @@ where
 
 import Alpacc.Grammar
 import Alpacc.Lexer.DFA
-import Data.Char (ord)
-import Data.Either.Extra (maybeToEither)
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Set qualified as Set
 import Data.String.Interpolate (i)
 import Data.Tuple.Extra
-import Data.Maybe (fromJust)
 import Data.Foldable
 import Data.FileEmbed
 import Alpacc.Generator.Futhark.Util
 import Data.List.Split (chunksOf)
+import Data.Word (Word8)
+import Alpacc.Lexer.FSA
+import Control.Monad.Identity (Identity(runIdentity))
+import Data.Maybe (fromJust)
 
 futharkLexer :: String
 futharkLexer = $(embedStringFile "futhark/lexer.fut")
 
-tupleToStr :: (Show a, Show b) => (a, b) -> String
-tupleToStr (a, b) = [i|(#{a}, #{b})|]
-
-futharkLexerFunction :: DFA t Integer -> String
-futharkLexerFunction dfa =
+futharkLexerFunction :: Map Word8 [Integer] -> String
+futharkLexerFunction table =
     [i|
 def char_to_transitions (c : char) : state_vector =
-  sized number_of_states <| 
+  let vector =
   match c
   #{str_lexer_table}
-  case _ -> #{str_default_case}
+  case _ -> replicate number_of_states dead_state
+  in sized number_of_states vector
 |]
   where
-    default_case = fromJust $ defaultTransitions dfa
-    table = fromJust $ parallelLexingTable dfa
-    str_default_case = toArray $ show . snd <$> default_case
     str_lexer_table =
       futharkTableCases
-        . Map.toList
-        $ toArray . fmap (show . snd) <$> Map.mapKeys (show . ord) table
+        . Map.toAscList
+        $ toArray . fmap show <$> Map.mapKeys show table
 
 toBoolsLists :: Int -> [Int] -> [Bool]
 toBoolsLists m ls = reverse $ map (`elem` ls) [0..m]
@@ -52,7 +48,7 @@ toBoolSet m ls = toArray . map toInt $ chunksOf 64 lists
     toChar False = '0'
     toInt = ("0b"++) . map toChar
 
-transitionTable :: Int -> Map ((Integer, Integer), Int) [Integer] -> String
+transitionTable :: Int -> Map ((Integer, Integer), Word8) [Integer] -> String
 transitionTable num_of_terminals table =
   [i|
 def transition_to_terminal_set (n : (transition, char)) : terminal_bitset =
@@ -62,7 +58,7 @@ def transition_to_terminal_set (n : (transition, char)) : terminal_bitset =
 |]
   where
     empty_set = toBoolSet num_of_terminals []
-    cases = futharkTableCases . Map.toList $ _table
+    cases = futharkTableCases . Map.toAscList $ _table
     toStr ((x, y), z) = [i|((#{x}, #{y}), #{z})|]
     _table =
       ([i|bitset_u32.from_bit_array number_of_terminals |]++)
@@ -70,25 +66,23 @@ def transition_to_terminal_set (n : (transition, char)) : terminal_bitset =
       . fmap fromInteger <$> Map.mapKeys toStr table
       
 findStateIntegral ::
-  DFA T Integer ->
+  DFA Word8 Integer ->
   Either String FutUInt
 findStateIntegral = selectFutUInt . maximum . states
 
 findCharIntegral ::
-  DFA T Integer ->
+  DFA Word8 Integer ->
   Either String FutUInt
-findCharIntegral = selectFutUInt . toInteger . maximum . Set.map ord . alphabet
+findCharIntegral = selectFutUInt . toInteger . maximum . alphabet
 
 generateLexer ::
-  DFA T Integer ->
+  DFALexer Word8 Integer T ->
   Map T Integer ->
   FutUInt ->
   Either String String
-generateLexer dfa terminal_index_map terminal_type = do
-  default_transitions' <- maybeToEither "The neutral transition could not be constructed." $ defaultTransitions dfa
+generateLexer lexer terminal_index_map terminal_type = do
   state_type <- findStateIntegral dfa
   char_type <- findCharIntegral dfa
-  let default_transitions = toArray $ tupleToStr <$> default_transitions'
   return $
     futharkLexer
       <> [i|
@@ -108,7 +102,6 @@ def number_of_states : i64 = #{number_of_states}
 def number_of_terminals : i64 = #{number_of_terminals}
 def initial_state : state = #{initial_state}
 def dead_state : state = #{dead_state}
-def dead_transitions : [number_of_states]transition = sized number_of_states #{default_transitions}
 def accepting_size : i64 = #{accepting_size}
 def accepting_states : [accepting_size]state = #{accepting_states_str}
 
@@ -134,9 +127,12 @@ type state_vector = [number_of_states]state
 
 |]
   where
+    table = parallelLexingTable lexer
+    dead_state = fromJust $ deadState lexer
+    dfa = fsa lexer
     number_of_terminals = length terminals
     terminals = Map.keys terminal_index_map
-    lexer_function = futharkLexerFunction dfa
+    lexer_function = futharkLexerFunction table
     initial_state = initial dfa
     number_of_states = Set.size $ states dfa
     empty_states = Map.fromList $ (,Set.empty) <$> terminals
@@ -153,15 +149,14 @@ type state_vector = [number_of_states]state
       . Map.toAscList
       . Map.map (Set.map (terminal_index_map Map.!))
       . Map.unionWith Set.union inverted_empty_states
-    final_terminal_states = toSetArray $ finalTerminalStates dfa
-    inverted_final_terminal_states = toInvertedSetArray . invertSetMap $ finalTerminalStates dfa
+    final_terminal_states = toSetArray $ finalMap lexer
+    inverted_final_terminal_states = toInvertedSetArray . invertSetMap $ finalMap lexer
     transition_function = transitionTable number_of_terminals terminal_map
     ignore_function = 
       case T "ignore" `Map.lookup` terminal_index_map of
         Just j -> [i|def is_ignore (t : terminal) : bool = #{j} == t|]
         Nothing -> [i|def is_ignore (_ : terminal) : bool = false|]
-    terminal_map = fmap (terminal_index_map Map.!) . toList <$> Map.mapKeys (second ord) (terminalMap dfa)
+    terminal_map = fmap (terminal_index_map Map.!) . toList <$> Map.mapKeys (second runIdentity) (terminalMap lexer)
     accepting_states = accepting dfa
     accepting_size = show $ Set.size accepting_states
     accepting_states_str = ("sized accepting_size " ++) . toArray $ show <$> Set.toList accepting_states
-    dead_state = fromJust $ unreachableState dfa

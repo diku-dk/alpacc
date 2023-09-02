@@ -2,33 +2,39 @@ module Alpacc.Lexer.RegularExpression
   ( regExFromText,
     pRegEx,
     RegEx (..),
-    mkTokenizerRegEx,
+    toWord8
   )
 where
 
 import Control.Monad.State
 import Data.Char (chr, isDigit, isPrint)
-import Data.Composition
-import Data.Map (Map)
-import Data.Map qualified as Map hiding (Map)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Void
 import Text.Megaparsec hiding (State)
 import Text.Megaparsec.Char (char, space1, string)
 import Text.Megaparsec.Char.Lexer qualified as Lexer
+import Codec.Binary.UTF8.String (encodeChar)
+import Data.Word (Word8)
 
 type Parser = Parsec Void Text
 
-data RegEx t
+data RegEx c
   = Epsilon
-  | Literal Char
-  | Range [Either Char (Char, Char)]
-  | Star (RegEx t)
-  | Alter (RegEx t) (RegEx t)
-  | Concat (RegEx t) (RegEx t)
-  | Token t (RegEx t)
+  | Literal c
+  | Range [c]
+  | Star (RegEx c)
+  | Alter (RegEx c) (RegEx c)
+  | Concat (RegEx c) (RegEx c)
   deriving (Eq, Show)
+
+instance Functor RegEx where
+  fmap _ Epsilon = Epsilon
+  fmap f (Literal c) = Literal (f c)
+  fmap f (Range cs) = Range (fmap f cs)
+  fmap f (Star r) = Star (fmap f r)
+  fmap f (Alter r r') = Alter (fmap f r) (fmap f r')
+  fmap f (Concat r r') = Concat (fmap f r) (fmap f r')
 
 space :: Parser ()
 space = Lexer.space space1 empty empty
@@ -114,12 +120,13 @@ pChar =
       try pAdd,
       try pPipe,
       try pDash,
+      try pUnicode,
       pIsPrint
     ]
 
 -- satisfy isPrint
 
-pLiteral :: Parser (RegEx t)
+pLiteral :: Parser (RegEx Char)
 pLiteral = Literal <$> lexeme pChar
 
 many1 :: Parser a -> Parser [a]
@@ -135,33 +142,31 @@ chainl1 p op = p >>= rest
         rest (f x y)
         <|> return x
 
-pConcat :: Parser (RegEx t)
+pConcat :: Parser (RegEx Char)
 pConcat = foldl Concat Epsilon <$> many pTerm
 
-pAlter :: Parser (RegEx t)
+pAlter :: Parser (RegEx Char)
 pAlter = pConcat `chainl1` (lexeme (string "|") >> return Alter)
 
-pRegEx :: Parser (RegEx t)
+pRegEx :: Parser (RegEx Char)
 pRegEx = pAlter
 
-pRange :: Parser (RegEx t)
+pRange :: Parser (RegEx Char)
 pRange =
   between (lexeme "[") (lexeme "]") $
-    Range
+    Range . concat
       <$> many1
         ( choice
-            [ try
-                ( Right
-                    .: (,)
+            [ try $ (\a b -> [a..b])
                     <$> pChar
                     <* lexeme "-"
                     <*> pChar
-                ),
-              Left <$> pChar
+                ,
+              (:[]) <$> pChar
             ]
         )
 
-pTerm :: Parser (RegEx t)
+pTerm :: Parser (RegEx Char)
 pTerm = do
   term <-
     choice
@@ -181,12 +186,9 @@ pTerm = do
         else Concat term (Star term)
     Nothing -> term
 
-regExFromText :: FilePath -> Text -> Either String (RegEx t)
+regExFromText :: FilePath -> Text -> Either String (RegEx Char)
 regExFromText fname s =
   either (Left . errorBundlePretty) Right $ parse (pRegEx <* eof) fname s
 
-mkTokenizerRegEx :: Map t (RegEx t) -> RegEx t
-mkTokenizerRegEx regex_map =
-  if null regex_map
-    then Epsilon
-    else foldr1 Alter $ uncurry Token <$> Map.toList regex_map
+toWord8 :: RegEx Char -> RegEx [Word8]
+toWord8 = fmap encodeChar

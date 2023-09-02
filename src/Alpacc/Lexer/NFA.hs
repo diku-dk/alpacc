@@ -1,155 +1,173 @@
 module Alpacc.Lexer.NFA
-  ( NFA (..),
+  ( NFA,
     RegEx (..),
     mkNFA,
-    initNFA
+    initNFA,
+    Transition (..),
+    lexerNFA,
+    isTransition,
+    fromTransition,
+    fromRegExToNFA
   )
 where
 
 import Control.Monad.State
-import Data.Bifunctor (Bifunctor (..))
 import Data.Foldable (Foldable (..))
-import Data.Map (Map)
 import Data.Map qualified as Map hiding (Map)
-import Data.Maybe (fromMaybe, maybeToList)
 import Data.Set (Set)
 import Data.Set qualified as Set hiding (Set)
 import Alpacc.Lexer.RegularExpression
+import Alpacc.Lexer.FSA
+import Data.List.NonEmpty (NonEmpty (..))
+import Data.Map (Map)
 
-data NFA t s = NFA
-  { states' :: Set s,
-    transitions' :: Map (s, Maybe Char) (Set s),
-    initial' :: s,
-    alphabet' :: Set Char,
-    accepting' :: Set s,
-    terminalMap' :: Map ((s, s), Char) (Set t),
-    finalTerminalStates' :: Map t (Set s),
-    initialTerminalStates' :: Map t (Set s),
-    continueTerminalStates' :: Map t (Set s)
-  }
-  deriving (Eq, Show)
+data Transition t = Trans t | Eps deriving (Show, Eq, Ord)
 
-initNFA :: (Ord s, Enum s) => s -> NFA t s
+isTransition :: Transition t -> Bool
+isTransition (Trans _) = True 
+isTransition Eps = False
+
+fromTransition :: Transition t -> t
+fromTransition (Trans t) = t 
+fromTransition Eps = error "Can not unpack Eps."
+
+instance Functor Transition where
+  fmap f (Trans t) = Trans (f t)
+  fmap _ Eps = Eps
+
+instance OrdMap Transition where
+  omap f (Trans t) = Trans (f t)
+  omap _ Eps = Eps
+
+toSet :: Transition a -> Set a
+toSet (Trans t) = Set.singleton t
+toSet Eps = Set.empty
+
+type NFA t s = FSA Set Transition t s
+type NFALexer t s k = Lexer Set Transition t s k
+
+initNFA :: (IsState s, Enum s) => s -> NFA t s
 initNFA start_state =
-  NFA
-    { states' = Set.fromList [start_state, succ start_state],
-      alphabet' = Set.empty,
-      transitions' = Map.empty,
-      initial' = start_state,
-      accepting' = Set.singleton $ succ start_state,
-      terminalMap' = Map.empty,
-      finalTerminalStates' = Map.empty,
-      initialTerminalStates' = Map.empty,
-      continueTerminalStates' = Map.empty
+  FSA
+    { states = Set.fromList [start_state, succ start_state],
+      alphabet = Set.empty,
+      transitions = Map.empty,
+      initial = start_state,
+      accepting = Set.singleton $ succ start_state
     }
 
-newState :: (Ord s, Enum s) => State (NFA t s) s
+newState :: (IsState s, IsTransition t, Enum s) => State (NFA t s) s
 newState = do
   nfa <- get
-  let max_state = Set.findMax $ states' nfa
+  let max_state = Set.findMax $ states nfa
   let new_max_state = succ max_state
-  let new_states' = Set.insert new_max_state $ states' nfa
+  let new_states' = Set.insert new_max_state $ states nfa
   put
     ( nfa
-        { states' = new_states'
+        { states = new_states'
         }
     )
   return new_max_state
 
-newTransition :: (Ord s) => s -> Maybe Char -> s -> State (NFA t s) ()
+newTransition :: (IsState s, IsTransition t) => s -> Transition t -> s -> State (NFA t s) ()
 newTransition s c s' = do
   nfa <- get
-  let trans = transitions' nfa
+  let trans = transitions nfa
   let key = (s, c)
   let new_trans =
         if key `Map.member` trans
           then Map.adjust (Set.insert s') key trans
           else Map.insert key (Set.singleton s') trans
-  let new_alph = Set.fromList (maybeToList c) `Set.union` alphabet' nfa
-  put $ nfa {transitions' = new_trans, alphabet' = new_alph}
+  let new_alph = toSet c `Set.union` alphabet nfa
+  put $ nfa {transitions = new_trans, alphabet = new_alph}
 
-markToken :: (Ord t, Ord s, Show s, Show t) => (Set ((s, s), Char), Set s) -> t -> s -> s -> State (NFA t s) ()
-markToken (set, continue_set') t s s' = do
-  nfa <- get
+newTransitions :: (IsState s, IsTransition t, Foldable f, Enum s) => s -> f t -> s -> State (NFA t s) ()
+newTransitions z ts' = auxiliary z (toList ts')
+  where
+    auxiliary s [] s' = newTransition s Eps s'
+    auxiliary s [t] s' = newTransition s (Trans t) s'
+    auxiliary s (t:ts) s'' = do
+      s' <- newState
+      newTransition s (Trans t) s'
+      auxiliary s' ts s''
 
-  let continue_sets = continueTerminalStates' nfa
-  let continue_set = fromMaybe Set.empty $ Map.lookup t continue_sets
-  let new_continue_set = continue_set' `Set.union` continue_set
-  let new_continue_sets = Map.insert t new_continue_set continue_sets
 
-  let initial_sets = initialTerminalStates' nfa
-  let initial_set = fromMaybe Set.empty $ Map.lookup t initial_sets
-  let new_initial_set = Set.insert s initial_set
-  let new_initial_sets = Map.insert t new_initial_set initial_sets
-
-  let final_sets = finalTerminalStates' nfa
-  let final_set = fromMaybe Set.empty $ Map.lookup t final_sets
-  let new_final_set = Set.insert s' final_set
-  let new_final_sets = Map.insert t new_final_set final_sets
-
-  let new_map = Map.fromList $ (,Set.singleton t) <$> Set.toList set
-  let _map = terminalMap' nfa
-
-  put (nfa {
-    terminalMap' = Map.unionWith Set.union new_map _map,
-    finalTerminalStates' = new_final_sets,
-    initialTerminalStates' = new_initial_sets,
-    continueTerminalStates' = new_continue_sets
-    })
-
-epsilon :: Maybe a
-epsilon = Nothing
-
-combineMkNFAReturn :: Ord s => (Set ((s, s), Char), Set s) -> (Set ((s, s), Char), Set s) -> (Set ((s, s), Char), Set s)
-combineMkNFAReturn (a, b) (a', b') = (Set.union a a', Set.union b b')
-
-mkNFA' :: (Ord t, Ord s, Enum s, Show t, Show s) => s -> s -> RegEx t -> State (NFA t s) (Set ((s, s), Char), Set s)
+mkNFA' :: (IsState s, IsTransition t, Foldable f, Enum s) => s -> s -> RegEx (f t) -> State (NFA t s) ()
 mkNFA' s s' Epsilon = do
-  newTransition s epsilon s'
-  return (Set.empty, Set.empty)
-mkNFA' s s' (Literal c) = do
-  newTransition s (Just c) s'
-  return (Set.singleton ((s, s'), c), Set.empty)
+  newTransition s Eps s'
+mkNFA' s s' (Literal cs) = do
+  newTransitions s cs s'
 mkNFA' s s'' (Concat a b) = do
   s' <- newState
-  new <- mkNFA' s s' a
-  new' <- mkNFA' s' s'' b
-  return $ combineMkNFAReturn new new'
+  mkNFA' s s' a
+  mkNFA' s' s'' b
 mkNFA' s s'''' (Alter a b) = do
   s' <- newState
   s'' <- newState
   s''' <- newState
-  newTransition s epsilon s'
-  newTransition s epsilon s''
-  newTransition s''' epsilon s''''
-  new <- mkNFA' s' s''' a
-  new' <- mkNFA' s'' s''' b
-  return $ combineMkNFAReturn new new'
+  newTransition s Eps s'
+  newTransition s Eps s''
+  newTransition s''' Eps s''''
+  mkNFA' s' s''' a
+  mkNFA' s'' s''' b
 mkNFA' s s'' (Star a) = do
   s' <- newState
-  newTransition s epsilon s'
-  newTransition s epsilon s''
-  new <- mkNFA' s' s a
-  return $ second (Set.insert s') new
-mkNFA' s s''' (Token t a) = do
-  s' <- newState
-  s'' <- newState
-  newTransition s epsilon s'
-  newTransition s'' epsilon s'''
-  new <- mkNFA' s' s'' a
-  markToken new t s' s''
-  return new
+  newTransition s Eps s'
+  newTransition s Eps s''
+  mkNFA' s' s a
 mkNFA' s s' (Range range) = do
-  let chars = concatMap toChars range
-  mapM_ (\c -> newTransition s (Just c) s') chars
-  return (Set.fromList $ ((s, s'),) <$> chars, Set.empty)
-  where
-    toChars (Right (a, b)) = [a .. b]
-    toChars (Left a) = [a]
+  mapM_ (\cs -> newTransitions s cs s') range
 
-mkNFA :: (Ord t, Show s, Ord s, Enum s, Show t) => RegEx t -> State (NFA t s) ()
+mkNFA :: (IsState s, IsTransition t, Enum s) => RegEx (NonEmpty t) -> State (NFA t s) ()
 mkNFA regex = do
   nfa <- get
-  let (s, s') = (initial' nfa, accepting' nfa)
+  let (s, s') = (initial nfa, accepting nfa)
   let accept_list = toList s'
   mapM_ (\_s -> mkNFA' s _s regex) accept_list
+
+
+fromRegExToNFA :: (IsState s, IsTransition t, Enum s) => s -> RegEx (NonEmpty t) -> NFA t s
+fromRegExToNFA start_state regex = execState (mkNFA regex) init_nfa
+  where
+    init_nfa = initNFA start_state
+
+lexerNFA :: (IsTransition t, IsState s, Enum s, Ord k) => s -> Map k (NFA t s) -> NFALexer t s k
+lexerNFA start_state nfa_map' = 
+  Lexer {
+    fsa = nfa,
+    finalMap = final_map,
+    terminalMap = terminal_map,
+    deadState = Nothing
+  }
+  where
+    nfa_map = reenumerateFSAsMap start_state nfa_map'
+    final_map = accepting <$> nfa_map
+    toMap k ((s, t), set) =
+      Map.unionsWith Set.union
+      $ (\s' -> Map.singleton ((s, s'), t) (Set.singleton k)) <$> toList set
+    toMaps k = 
+      Map.unionsWith Set.union
+      . fmap (toMap k)
+    terminal_map =
+      Map.unionsWith Set.union
+      $ Map.mapWithKey toMaps
+      $ Map.toList . transitions <$> nfa_map
+    nfas = Map.elems nfa_map
+    initials = Set.fromList $ initial <$> nfas
+
+    new_states = Set.unions $ states <$> nfas
+    new_alphabet = Set.unions $ alphabet <$> nfas
+    new_transitions =
+      Map.insert (new_initial, Eps) initials
+      $ Map.unionsWith Set.union
+      $ transitions <$> nfas
+    new_accepting = Set.unions $ accepting <$> nfas
+    new_initial = succ $ maximum new_states
+
+    nfa = FSA {
+      states = new_states,
+      alphabet = new_alphabet,
+      transitions = new_transitions,
+      accepting = new_accepting,
+      initial = new_initial
+    }
