@@ -91,7 +91,6 @@ newTransitions z ts' = auxiliary z (toList ts')
       newTransition s (Trans t) s'
       auxiliary s' ts s''
 
-
 mkNFA' :: (IsState s, IsTransition t, Foldable f, Enum s) => s -> s -> RegEx (f t) -> State (NFA t s) ()
 mkNFA' s s' Epsilon = do
   newTransition s Eps s'
@@ -101,15 +100,6 @@ mkNFA' s s'' (Concat a b) = do
   s' <- newState
   mkNFA' s s' a
   mkNFA' s' s'' b
-mkNFA' s s'''' (Alter a b) = do
-  s' <- newState
-  s'' <- newState
-  s''' <- newState
-  newTransition s Eps s'
-  newTransition s Eps s''
-  newTransition s''' Eps s''''
-  mkNFA' s' s''' a
-  mkNFA' s'' s''' b
 mkNFA' s s'' (Star a) = do
   s' <- newState
   newTransition s Eps s'
@@ -117,6 +107,14 @@ mkNFA' s s'' (Star a) = do
   mkNFA' s' s a
 mkNFA' s s' (Range range) = do
   mapM_ (\cs -> newTransitions s cs s') range
+mkNFA' s s' alter@(Alter _ _) = do
+  -- This works since the Star operation has to pass over a epsilon transition
+  -- before the loop is exited.
+  mapM_ (mkNFA' s s') $ findAlters alter
+  where
+    findAlters (Alter a b) = findAlters a ++ findAlters b
+    findAlters regex = [regex]
+      
 
 mkNFA :: (IsState s, IsTransition t, Enum s) => RegEx (NonEmpty t) -> State (NFA t s) ()
 mkNFA regex = do
