@@ -103,18 +103,15 @@ mkNFA' s s'' (Concat a b) = do
 mkNFA' s s'' (Star a) = do
   s' <- newState
   newTransition s Eps s'
-  newTransition s Eps s''
-  mkNFA' s' s a
+  newTransition s' Eps s''
+  mkNFA' s' s' a
 mkNFA' s s' (Range range) = do
   mapM_ (\cs -> newTransitions s cs s') range
 mkNFA' s s' alter@(Alter _ _) = do
-  -- This works since the Star operation has to pass over a epsilon transition
-  -- before the loop is exited.
   mapM_ (mkNFA' s s') $ findAlters alter
   where
     findAlters (Alter a b) = findAlters a ++ findAlters b
     findAlters regex = [regex]
-      
 
 mkNFA :: (IsState s, IsTransition t, Enum s) => RegEx (NonEmpty t) -> State (NFA t s) ()
 mkNFA regex = do
