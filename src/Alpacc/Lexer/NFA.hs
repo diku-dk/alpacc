@@ -150,14 +150,14 @@ lexerNFA start_state nfa_map' =
     nfas = Map.elems nfa_map
     initials = Set.fromList $ initial <$> nfas
 
-    new_states = Set.unions $ states <$> nfas
+    new_initial = succ $ maximum new_states
+    new_states = Set.insert new_initial $ Set.unions $ states <$> nfas
     new_alphabet = Set.unions $ alphabet <$> nfas
     new_transitions =
       Map.insert (new_initial, Eps) initials
       $ Map.unionsWith Set.union
       $ transitions <$> nfas
     new_accepting = Set.unions $ accepting <$> nfas
-    new_initial = succ $ maximum new_states
 
     nfa = FSA {
       states = new_states,
