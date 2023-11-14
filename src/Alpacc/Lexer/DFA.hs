@@ -354,3 +354,4 @@ lexerDFA start_state regex_map =
     dfa_terminal_map =
       Map.mapKeys (second Identity) $
         solveTerminalMap terminal_map _transitions
+
