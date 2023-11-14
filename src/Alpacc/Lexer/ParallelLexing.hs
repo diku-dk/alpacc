@@ -6,8 +6,8 @@ import Control.Monad.State
 import Data.Map (Map)
 import Data.Map qualified as Map hiding (Map)
 import Data.Set (Set)
--- import Data.Set qualified as Set hiding (Set)
--- import Data.Maybe
+import Data.Set qualified as Set hiding (Set)
+import Data.Maybe
 import Data.Functor.Identity
 import Data.Bifunctor
 -- import Data.List qualified as List
@@ -15,7 +15,7 @@ import Data.Bifunctor
 data Comp s = Comp
   { maxEdge :: Integer,
     compositionMap :: Map (Integer, Integer) Integer,
-    graph :: Map s (Set s),
+    connectionMap :: Map s (Set s),
     edgeMap :: Map (s, s) (Set Integer)
   }
   deriving (Eq, Show)
@@ -34,26 +34,50 @@ complete dfa = trans
     -- alpha = alphabet dfa
     trans = transitions' dfa
 
-initGraph :: (IsState s) => DFA Integer s -> Map s (Set s)
-initGraph dfa = Map.empty
+initConnectionMap :: (IsState s) => DFA Integer s -> Map s (Set s)
+initConnectionMap dfa =
+  Map.unions
+  $ auxiliary <$> _states
   where
-    _alphabet = alphabet dfa
-    _states = states dfa
-    _transitions = transitions dfa
+    _alphabet = Set.toList $ alphabet dfa
+    _states = Set.toList $ states dfa
+    _transitions = transitions' dfa
 
-    -- temp = Set.map id _states
+    auxiliary s =
+      Map.singleton s
+      $ Set.fromList
+      $ mapMaybe ((`Map.lookup` _transitions) . (s, )) _alphabet
+
+initEdgeMap :: (IsState s) => DFA Integer s -> Map (s, s) (Set Integer)
+initEdgeMap dfa =
+  Map.unions
+  $ auxiliary <$> _states
+  where
+    _alphabet = Set.toList $ alphabet dfa
+    _states = Set.toList $ states dfa
+    _transitions = transitions' dfa
+
+    auxiliary s =
+      Map.unionsWith Set.union
+      $ mapMaybe (edgeLookup s) _alphabet
+
+    edgeLookup s t = do
+      s' <- Map.lookup (s, t) _transitions
+      return $ Map.singleton (s, s') $ Set.singleton t
 
 initComp :: (IsState s) => DFA Integer s -> Comp s
 initComp dfa =
   Comp
   { maxEdge = max_edge
   , compositionMap = composition_map
-  , graph = Map.empty
-  , edgeMap = Map.empty
+  , connectionMap = connection_map
+  , edgeMap = edge_map
   }
   where
     max_edge = maximum $ alphabet dfa
     composition_map = Map.empty
+    connection_map = initConnectionMap dfa
+    edge_map = initEdgeMap dfa
 
 -- newEdges :: (IsState s) => s -> CompState s
 -- newEdges s = 
