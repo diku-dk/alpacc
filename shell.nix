@@ -10,5 +10,6 @@ compiler.developPackage {
       [ cabal-install
         ghcid
         haskell-language-server
+        pkgs.python3
       ]);
 }

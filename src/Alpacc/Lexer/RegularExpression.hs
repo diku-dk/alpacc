@@ -42,59 +42,39 @@ space = Lexer.space space1 empty empty
 lexeme :: Parser a -> Parser a
 lexeme = Lexer.lexeme space
 
-pBackslash :: Parser Char
-pBackslash = Text.last <$> lexeme (string "\\\\")
+escapeChars :: [(Text, Char)]
+escapeChars =
+  [("\\",'\\')
+  ,(";", ';')
+  ,("[", '[')
+  ,("]", ']')
+  ,("(", '(')
+  ,(")", ')')
+  ,("*", '*')
+  ,("+", '+')
+  ,("-", '-')
+  ,("|", '|')
+  ,("s", ' ')
+  ,("t", '\t')
+  ,("n", '\n')
+  ,("r", '\r')]
 
-pSemicolon :: Parser Char
-pSemicolon = Text.last <$> lexeme (string "\\;")
+pEscapeChar :: Text -> Char -> Parser Char
+pEscapeChar a b = do
+  _ <- string a
+  return b
 
-pLeftSquareBracket :: Parser Char
-pLeftSquareBracket = Text.last <$> lexeme (string "\\[")
+pEscapeCharList :: [Parser Char]
+pEscapeCharList = map (uncurry pEscapeChar) escapeChars
 
-pRightSquareBracket :: Parser Char
-pRightSquareBracket = Text.last <$> lexeme (string "\\]")
-
-pLeftParentheses :: Parser Char
-pLeftParentheses = Text.last <$> lexeme (string "\\(")
-
-pRightParentheses :: Parser Char
-pRightParentheses = Text.last <$> lexeme (string "\\)")
-
-pStar :: Parser Char
-pStar = Text.last <$> lexeme (string "\\*")
-
-pAdd :: Parser Char
-pAdd = Text.last <$> lexeme (string "\\+")
-
-pDash :: Parser Char
-pDash = Text.last <$> lexeme (string "\\-")
-
-pPipe :: Parser Char
-pPipe = Text.last <$> lexeme (string "\\|")
-
-pSpace :: Parser Char
-pSpace = do
-  _ <- lexeme $ string "\\s"
-  return ' '
-
-pTab :: Parser Char
-pTab = do
-  _ <- lexeme $ string "\\t"
-  return '\t'
-
-pNewline :: Parser Char
-pNewline = do
-  _ <- lexeme $ string "\\n"
-  return '\n'
-
-pCarriageReturn :: Parser Char
-pCarriageReturn = do
-  _ <- lexeme $ string "\\r"
-  return '\r'
+pEscapeChars :: Parser Char
+pEscapeChars = lexeme $ do
+  _ <- char '\\'
+  choice pEscapeCharList
 
 pUnicode :: Parser Char
 pUnicode = fmap (chr . read . Text.unpack) . lexeme $ do
-  _ <- string "\\"
+  _ <- char '\\'
   takeWhile1P Nothing isDigit
 
 isPrint' :: Char -> Bool
@@ -106,25 +86,10 @@ pIsPrint = lexeme $ satisfy isPrint'
 pChar :: Parser Char
 pChar =
   choice
-    [ try pBackslash,
-      try pSemicolon,
-      try pLeftSquareBracket,
-      try pRightSquareBracket,
-      try pLeftParentheses,
-      try pRightParentheses,
-      try pSpace,
-      try pTab,
-      try pNewline,
-      try pCarriageReturn,
-      try pStar,
-      try pAdd,
-      try pPipe,
-      try pDash,
+    [ try pEscapeChars,
       try pUnicode,
       pIsPrint
     ]
-
--- satisfy isPrint
 
 pLiteral :: Parser (RegEx Char)
 pLiteral = Literal <$> lexeme pChar
@@ -181,7 +146,7 @@ pTerm = do
     -- If only + occurs in the postfix sequence then then due to (s+)+ = s+ it
     -- will simply correspond to ss*.
     Just postfixes ->
-      if any (`elem` ['*']) postfixes
+      if '*' `elem` postfixes
         then Star term
         else Concat term (Star term)
     Nothing -> term
