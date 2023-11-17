@@ -55,6 +55,8 @@ instance IsTransition Word8 where
 
 instance IsTransition Integer where
 
+instance IsTransition Int where
+
 class (IsTransition t, Ord (f' t), OrdMap f, OrdMap f', IsState s) => FSAMappable p f f' t s where
 
 instance (IsTransition t, Ord (f' t), OrdMap f, OrdMap f', IsState s) => FSAMappable FSA f f' t s where

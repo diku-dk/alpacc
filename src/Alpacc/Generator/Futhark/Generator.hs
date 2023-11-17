@@ -11,6 +11,8 @@ import Alpacc.Grammar
 import Data.Map qualified as Map
 import Data.Map ( Map )
 import Alpacc.Generator.Futhark.Util
+import Data.Word (Word8)
+import Alpacc.Lexer.FSA
 
 bothFunction :: String
 bothFunction = [i|
@@ -88,13 +90,16 @@ generate q k cfg = do
       , bothFunction
       ]
 
+convert :: Word8 -> Int
+convert = fromIntegral . toInteger
+
 generateLexer :: CFG -> Either String String
 generateLexer cfg = do
   t_rules <- everyTRule cfg
   let terminal_index_map = toTerminalIndexMap (ruleT <$> t_rules)
   terminal_type <- findTerminalIntegral terminal_index_map
   lexer <- cfgToDFALexer cfg
-  let result = show $ complete lexer
+  let result = show $ complete $ fsaLexerFirst convert lexer
   lexer_str <- Lexer.generateLexer lexer terminal_index_map terminal_type
   return $
     unlines
