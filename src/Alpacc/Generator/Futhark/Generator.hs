@@ -3,6 +3,7 @@ module Alpacc.Generator.Futhark.Generator
 where
 
 import Data.String.Interpolate (i)
+import Alpacc.Lexer.ParallelLexing
 import Alpacc.Generator.Futhark.Lexer qualified as Lexer
 import Alpacc.Generator.Futhark.Parser qualified as Parser
 import Alpacc.CFG
@@ -93,11 +94,13 @@ generateLexer cfg = do
   let terminal_index_map = toTerminalIndexMap (ruleT <$> t_rules)
   terminal_type <- findTerminalIntegral terminal_index_map
   lexer <- cfgToDFALexer cfg
+  let result = show $ complete lexer
   lexer_str <- Lexer.generateLexer lexer terminal_index_map terminal_type
   return $
     unlines
       [ lexer_str
       , lexerFunction terminal_type
+      , "-- " ++ result
       ]
 
 generateParser :: Int -> Int -> CFG -> Either String String

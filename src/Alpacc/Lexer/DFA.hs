@@ -6,6 +6,7 @@ module Alpacc.Lexer.DFA
     lexerDFA,
     DFALexer,
     fromRegExToDFA,
+    transitions'
   )
 where
 

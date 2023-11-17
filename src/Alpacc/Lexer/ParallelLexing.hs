@@ -1,135 +1,78 @@
-module Alpacc.Lexer.ParallelLexing where
+module Alpacc.Lexer.ParallelLexing
+  ( complete
+  , Comp (..)
+  )
+where
 
 import Alpacc.Lexer.FSA
 import Alpacc.Lexer.DFA
 import Control.Monad.State
+import Control.Monad
 import Data.Map (Map)
 import Data.Map qualified as Map hiding (Map)
 import Data.Set (Set)
 import Data.Set qualified as Set hiding (Set)
 import Data.Maybe
-import Data.Functor.Identity
-import Data.Bifunctor
--- import Data.List qualified as List
+import Data.Array (Array, Ix)
+import Data.Array qualified as Array hiding (Array)
 
-data Comp t s k = Comp
-  { maxTrans :: t,
-    compositionMap :: Map (t, t) t,
-    endsMap :: Map t (Set s),
-    connectedMap :: Map t (Set t),
-    tokenMap :: Map t (Set k)
-  }
-  deriving (Eq, Show)
+type Endomorphism = Array Int Int
 
-type CompState t s k a = State (Comp t s k) a
+data Comp =
+  Comp
+  { compositions :: Map (Endomorphism, Endomorphism) Endomorphism
+  , connected :: Map Endomorphism (Set Endomorphism)
+  } deriving (Show, Eq)
 
-addComposition :: (IsState s, IsTransition t, Enum t, Ord k) => t -> t -> CompState t s k ()
-addComposition t t' = do
+type CompState t = State Comp t
+
+compose :: Endomorphism -> Endomorphism -> Endomorphism
+compose a b =
+  Array.array (0, length a - 1)
+  $ map (\i -> (i, b Array.! (a Array.! i))) [0..(length a - 1)]
+
+composeMemo :: Endomorphism -> Endomorphism -> CompState ()
+composeMemo a b = do
   comp <- get
-  token_map <- gets tokenMap
-  max_trans <- gets maxTrans
-  composition_map <- gets compositionMap
-  ends_map <- gets endsMap
-  connected_map <- gets connectedMap
+  _compositions <- gets compositions
+  _connected <- gets connected
 
-  let new_max_trans = succ max_trans
+  let c = fromMaybe (a `compose` b) $ Map.lookup (a, b) _compositions
+  let new_compositions = Map.insert (a, b) c _compositions
+  let connections = fromMaybe Set.empty $ Map.lookup b _connected
+  let new_connected =
+        if c `Map.member` _connected then
+          Map.adjust (Set.union connections) c _connected
+        else
+          Map.insert c connections _connected
 
-  new_connected <- connectedLookup t'
-  let new_connected_map =
-        Map.insert new_max_trans new_connected connected_map
-  
-  let t_token_set = Map.lookup t token_map
-  let t_token_set' = Map.lookup t' token_map
-  let new_token_map =
-        flip (Map.insert new_max_trans) token_map
-        $ fromMaybe Set.empty
-        $ liftM2 Set.intersection t_token_set t_token_set'
+  put $
+    comp { compositions = new_compositions
+         , connected = new_connected}
 
-  new_ends <- endsLookup t'
-  let new_ends_map = Map.insert t' new_ends ends_map
-  
-  let new_composition_map =
-        Map.insert (t, t') new_max_trans composition_map
-  
-  let new_comp =
-        comp
-        { maxTrans = new_max_trans
-        , compositionMap = new_composition_map
-        , tokenMap = new_token_map
-        , endsMap = new_ends_map
-        , connectedMap = new_connected_map
-        }
-
-  let maybe_t = Map.lookup (t, t') composition_map
-  put $ case maybe_t of
-    Just _ -> comp
-    Nothing -> new_comp
-
-addCompositions :: (IsState s, IsTransition t, Enum t, Ord k) => t -> CompState t s k ()
-addCompositions t = do
-  connections <- fmap (t, ) . Set.toList <$> connectedLookup t
-  mapM_ (uncurry addComposition) connections
-
-compositionsStep :: (IsState s, IsTransition t, Enum t, Ord k) => CompState t s k ()
-compositionsStep = do
-  trans <- gets (Map.keys . connectedMap)
-  mapM_ addCompositions trans
-
-compositions :: (IsState s, IsTransition t, Enum t, Ord k) => CompState t s k ()
-compositions = do
-  curr_composition_map <- gets compositionMap
-  compositionsStep
-  next_composition_map <- gets compositionMap
-  if curr_composition_map == next_composition_map
-    then return ()
-    else compositions
-  
-
-endsLookup :: (IsTransition t, IsState s) => t -> CompState t s k (Set s)
-endsLookup t = do
-  ends_map <- gets endsMap
-  return $ fromMaybe Set.empty $ Map.lookup t ends_map
-
-connectedLookup :: (IsTransition t, IsState s) => t -> CompState t s k (Set t)
-connectedLookup t = do
-  connected_map <- gets connectedMap
-  return $ fromMaybe Set.empty $ Map.lookup t connected_map
-
-transitions' :: (IsTransition t, IsState s) => DFA t s -> Map (s, t) s
-transitions' =
-  Map.mapKeys (second runIdentity)
-  . fmap runIdentity
-  . transitions
-
-complete :: (IsTransition t, IsState s, Ord k) => DFALexer t s k -> Comp t s k
-complete lexer = comp
+endomorphismTable :: (IsState s, IsTransition t, Ord k) => DFALexer t s k -> Map t Endomorphism
+endomorphismTable lexer' = table
   where
-    comp = initComp lexer
+    lexer = reenumerateLexer (0 :: Int) lexer'
+    _states = states $ fsa lexer
+    last_index = Set.size _states - 1
+    toArray = Array.array (0, last_index) . zip [0..last_index]
+    table = toArray <$> parallelLexingTable lexer
 
-initEnds :: (IsTransition t, IsState s) => DFA t s -> Map t (Set s)
-initEnds dfa =
-  Map.unions
-  $ auxiliary
-  <$> _alphabet
+initConnected :: (IsTransition t, IsState s, Ord k) => DFALexer t s k -> Map Endomorphism (Set Endomorphism)
+initConnected lexer = Map.fromList $ auxiliary <$> _alphabet
   where
+    table = endomorphismTable lexer
+    toEndo = (table Map.!)
+
+    dfa = fsa lexer
     _alphabet = Set.toList $ alphabet dfa
     _states = Set.toList $ states dfa
     _transitions = transitions' dfa
 
     auxiliary t =
-      Map.singleton t
-      $ Set.fromList
-      $ mapMaybe ((`Map.lookup` _transitions) . (, t)) _states
-
-initConnected :: (IsTransition t, IsState s) => DFA t s -> Map t (Set t)
-initConnected dfa = Map.fromList $ auxiliary <$> _alphabet
-  where
-    _alphabet = Set.toList $ alphabet dfa
-    _states = Set.toList $ states dfa
-    _transitions = transitions' dfa
-
-    auxiliary t =
-      (t, )
+      (toEndo t, )
+      . Set.map toEndo
       . Set.unions
       $ transitionsLookup
       <$> mapMaybe ((`Map.lookup` _transitions) . (, t)) _states
@@ -143,30 +86,22 @@ initConnected dfa = Map.fromList $ auxiliary <$> _alphabet
       Set.fromList
       $ mapMaybe (transitionLookup s) _alphabet
 
-initToken :: (IsTransition t, IsState s, Ord k) => DFALexer t s k -> Map t (Set k)
-initToken lexer = token_map
-  where
-    _alphabet = Set.toList $ alphabet $ fsa lexer
-    token_map =
-      Map.unionsWith Set.union
-      $ uncurry Map.singleton
-      . first (runIdentity . snd)
-      <$> Map.toList (terminalMap lexer)
+addCompositions :: Endomorphism -> Set Endomorphism -> CompState ()
+addCompositions t t_set = do
+  mapM_ (composeMemo t) $ Set.toList t_set
 
-initComp :: (IsTransition t, IsState s, Ord k) => DFALexer t s k -> Comp t s k
-initComp lexer =
-  Comp
-  { maxTrans = max_trans
-  , compositionMap = composition_map
-  , connectedMap = connected_map
-  , endsMap = ends_map
-  , tokenMap = token_map
-  }
-  where
-    dfa = fsa lexer
-    max_trans = maximum $ alphabet dfa
-    composition_map = Map.empty
-    connected_map = initConnected dfa
-    ends_map = initEnds dfa
-    token_map = initToken lexer
+complete' :: CompState ()
+complete' = do
+  _connected <- gets connected
+  old_compositions <- gets compositions
+  mapM_ (uncurry addCompositions) $ Map.toList _connected
+  new_compositions <- gets compositions
+  when (old_compositions /= new_compositions) complete'
 
+complete :: (IsTransition t, IsState s, Ord k) => DFALexer t s k -> Comp
+complete lexer = execState complete' comp
+  where
+    comp =
+      Comp
+      { connected = initConnected lexer
+      , compositions = Map.empty}

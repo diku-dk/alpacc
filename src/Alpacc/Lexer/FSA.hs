@@ -84,6 +84,8 @@ instance IsState s => IsState (Set s) where
 
 instance IsState Integer where
 
+instance IsState Int where
+
 instance OrdMap Identity where
   omap = fmap
 
