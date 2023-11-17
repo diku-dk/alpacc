@@ -1,5 +1,6 @@
 let
   pkgs = import <nixpkgs> { }; # pin the channel to ensure reproducibility!
+  unstable = import <nixos-unstable> { };
   compilerVersion = "ghc92"; 
   compiler = pkgs.haskell.packages."${compilerVersion}";
 in
@@ -11,5 +12,6 @@ compiler.developPackage {
         ghcid
         haskell-language-server
         pkgs.python3
+        unstable.futhark
       ]);
 }
