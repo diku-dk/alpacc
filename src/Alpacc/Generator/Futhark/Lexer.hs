@@ -37,19 +37,6 @@ def endomorphism_to_state (a : i64) : i64 =
       futharkTableCases
         $ both show <$> IntMap.toList table
 
-terminalTable :: IntMap Int -> String
-terminalTable table =
-    [i|
-def endomorphism_to_terminal (a : i64) : i64 =
-  match a
-  #{str_lexer_table}
-  case _ -> dead_terminal
-|]
-  where
-    str_lexer_table =
-      futharkTableCases
-        $ both show <$> IntMap.toList table
-
 compositionsTable :: Int -> Map (Int, Int) Int -> String
 compositionsTable identity_endomorphism table =
   [i|
@@ -70,6 +57,19 @@ convertWord8 = fromIntegral . toInteger
 
 convertInteger :: Integer -> Int
 convertInteger = fromIntegral  
+
+terminalTable :: Map ((Int, Int), Int) Int -> String
+terminalTable table =
+  [i|
+def transition_to_terminal (n : ((i64, i64), u8)) : i64 =
+  match n
+  #{cases}
+  case _ -> dead_terminal
+|]
+  where
+    cases = futharkTableCases . Map.toAscList $ _table
+    toStr ((x, y), z) = [i|((#{x}, #{y}), #{z})|]
+    _table = show <$> Map.mapKeys toStr table
 
 generateLexer ::
   DFALexer Word8 Integer T ->
