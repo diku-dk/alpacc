@@ -90,25 +90,17 @@ generate q k cfg = do
       , bothFunction
       ]
 
-convertWord8 :: Word8 -> Int
-convertWord8 = fromIntegral . toInteger
-
-convertInteger :: Integer -> Int
-convertInteger = fromIntegral
-
 generateLexer :: CFG -> Either String String
 generateLexer cfg = do
   t_rules <- everyTRule cfg
   let terminal_index_map = toTerminalIndexMap (ruleT <$> t_rules)
   terminal_type <- findTerminalIntegral terminal_index_map
   lexer <- cfgToDFALexer cfg
-  let result = show $ complete $ fsaLexerMap convertWord8 convertInteger lexer
   lexer_str <- Lexer.generateLexer lexer terminal_index_map terminal_type
   return $
     unlines
       [ lexer_str
-      , lexerFunction terminal_type
-      , "-- " ++ result
+      --, lexerFunction terminal_type
       ]
 
 generateParser :: Int -> Int -> CFG -> Either String String

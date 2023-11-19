@@ -1,5 +1,6 @@
 ignore = \s|\n|\t|\r;
-atom = test+;
+atom = e1eeee;
+atomtwo = e2eeee;
 
-E = atom | "(" E0 ")";
+E = atom | atomtwo | "(" E0 ")";
 E0 = | E E0;
