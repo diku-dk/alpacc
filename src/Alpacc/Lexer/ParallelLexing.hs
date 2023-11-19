@@ -49,7 +49,6 @@ data Comp t =
   Comp
   { compositions :: Map (Int, Int) Int
   , connected :: IntMap IntSet
-  , tokenSets :: IntMap (Set t)
   , endomorphisms :: EndoMap
   , maxKeyComp :: Int
   } deriving (Show, Eq)
@@ -68,7 +67,6 @@ compose' a b = do
   _compositions <- gets compositions
   _connected <- gets connected
   max_key <- gets maxKeyComp
-  token_sets <- gets tokenSets
   
   let new_endo = on compose (unsafeLookup _endomorphisms) a b
   let new_endo_key = fromMaybe (succ max_key) $ safeLookupR _endomorphisms new_endo
@@ -78,23 +76,15 @@ compose' a b = do
   let connections = fromMaybe IntSet.empty $ IntMap.lookup b _connected
   let new_connected =
         if new_endo_key `IntMap.member` _connected then
-          IntMap.adjust (IntSet.union connections) new_endo_key _connected
+          IntMap.adjust (IntSet.intersection connections) new_endo_key _connected
         else
           IntMap.insert  new_endo_key connections _connected
 
-  let new_token_set = on Set.union (token_sets IntMap.!) a b
-  let new_token_sets =
-        if new_endo_key `IntMap.member` token_sets then
-          IntMap.adjust (Set.union new_token_set) new_endo_key token_sets
-        else
-          IntMap.insert new_endo_key new_token_set token_sets
-  
   let new_comp =
         comp { compositions = new_comps
              , endomorphisms = new_endos
              , maxKeyComp = new_endo_key
-             , connected = new_connected
-             , tokenSets = new_token_sets}
+             , connected = new_connected}
 
   put $
     if (a, b) `Map.member` _compositions then
@@ -161,14 +151,17 @@ complete' = do
 stateMap :: Int -> EndoMap -> IntMap Int
 stateMap init' (EndoMap map' _) = (Array.! init') <$> map'
 
-maybeMinimum :: (Foldable t, Ord a) => t a -> Maybe a
-maybeMinimum a = if null a then Nothing else Just $ minimum a
+minimumTerminal :: (Foldable t, Ord a) => t a -> a
+minimumTerminal a = if null a then error "The minimum terminal could not be found." else minimum a
 
-complete :: Ord t => IntLexer t -> (IntMap Int, Map (Int, Int) Int, IntMap (Maybe t))
+complete :: Ord t => IntLexer t -> (IntMap Int, Map (Int, Int) Int, IntMap t, Int, Int, Int)
 complete lexer =
   ( stateMap initial_state $ endomorphisms final_comp 
   , compositions final_comp
-  , maybeMinimum <$> tokenSets final_comp)
+  , IntMap.empty
+  , dead_state
+  , succ $ maxKeyComp final_comp
+  , succ $ succ $ maxKeyComp final_comp)
   where
     final_comp = execState complete' comp
     max_key = maximum . alphabet $ fsa lexer
@@ -180,5 +173,4 @@ complete lexer =
       { connected = initConnected lexer
       , endomorphisms = _endomorphisms
       , compositions = Map.empty
-      , tokenSets = initTokenSets lexer _endomorphisms
       , maxKeyComp = max_key}
