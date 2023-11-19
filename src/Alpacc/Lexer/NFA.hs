@@ -154,11 +154,16 @@ lexerNFA start_state nfa_map' =
     new_initial = succ $ maximum new_states'
     new_states = Set.insert new_initial new_states'
     new_alphabet = Set.unions $ alphabet <$> nfas
+    new_accepting = Set.unions $ accepting <$> nfas
+    loopback =
+      Map.fromList
+      $ (,Set.singleton new_initial) . (, Eps)
+      <$> Set.toList new_accepting
     new_transitions =
-      Map.insert (new_initial, Eps) initials
+      Map.union loopback
+      $ Map.insert (new_initial, Eps) initials
       $ Map.unionsWith Set.union
       $ transitions <$> nfas
-    new_accepting = Set.unions $ accepting <$> nfas
 
     nfa = FSA {
       states = new_states,

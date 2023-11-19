@@ -127,9 +127,9 @@ type state_vector = [number_of_states]state
 
 |]
   where
-    table = parallelLexingTable lexer
-    dead_state = fromJust $ deadState lexer
     dfa = fsa lexer
+    dead_state = maximum $ states dfa
+    table = parallelLexingTable dead_state lexer
     number_of_terminals = length terminals
     terminals = Map.keys terminal_index_map
     lexer_function = futharkLexerFunction table

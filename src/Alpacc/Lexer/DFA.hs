@@ -21,11 +21,11 @@ import Data.Functor.Identity
 import Data.List.NonEmpty (NonEmpty)
 import Data.Map (Map)
 import Data.Map qualified as Map hiding (Map)
-import Data.Maybe (catMaybes)
 import Data.Set (Set)
 import Data.Set qualified as Set hiding (Set)
 import Data.Text (Text)
 import Data.Text qualified as Text
+import Data.Maybe
 
 type DFA t s = FSA Identity Identity t s
 
@@ -185,14 +185,14 @@ isMatch dfa = runDFA' start_state
         xs = Text.tail str'
         maybe_state = Map.lookup (s, x) trans
 
-parallelLexingTable :: (IsState s, IsTransition t, Enum s) => DFALexer t s k -> Map t [s]
-parallelLexingTable lexer = table
+parallelLexingTable :: (IsState s, IsTransition t, Enum s) => s -> DFALexer t s k -> Map t [s]
+parallelLexingTable dead_state lexer = table
   where
     dfa = fsa lexer
     _transitions = transitions' dfa
     _states = states dfa
     _alphabet = alphabet dfa
-    tableLookUp key = _transitions Map.! key
+    tableLookUp key = fromMaybe dead_state $ Map.lookup key _transitions
     statesFromChar a =
       (a,) $
         map (\b -> tableLookUp (b, a)) $
@@ -310,16 +310,15 @@ newSets dfa set = Set.filter (not . null . Set.intersection set) _states
 
 minimizeDFALexer :: (IsTransition t, IsState s, Enum s, Ord k) => s -> DFALexer t s k -> DFALexer t s k
 minimizeDFALexer start_state lexer =
-  addDeadState $
-    reenumerateLexer start_state $
-      Lexer
-        { fsa = dfa,
-          finalMap = new_final_map,
-          terminalMap = new_terminal_map,
-          deadState = Nothing
-        }
+   reenumerateLexer start_state $
+     Lexer
+       { fsa = dfa,
+         finalMap = new_final_map,
+         terminalMap = new_terminal_map,
+         deadState = Nothing
+       }
   where
-    dfa = minimize $ fsa lexer
+    dfa = removeUselessStates $ minimize $ fsa lexer
     _transitions = transitions' dfa
     final_map = finalMap lexer
     terminal_map = Map.mapKeys (second runIdentity) $ terminalMap lexer
