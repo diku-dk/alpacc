@@ -1,0 +1,5 @@
+ignore = \s|\n|\t|\r;
+atom = test+;
+
+E = atom | "(" E0 ")";
+E0 = | E E0;
