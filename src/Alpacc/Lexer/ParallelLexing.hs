@@ -30,7 +30,7 @@ type Endomorphism = Array Int Int
 
 data EndoMap =
   EndoMap (IntMap Endomorphism) (Map Endomorphism Int)
-  deriving (Show, Eq)
+  deriving (Show, Eq, Ord)
 
 insert :: EndoMap -> Int -> Endomorphism -> EndoMap
 insert (EndoMap map' map'') i e =
@@ -46,22 +46,22 @@ unsafeLookup (EndoMap map' _) i = map' IntMap.! i
 safeLookupR :: EndoMap -> Endomorphism -> Maybe Int
 safeLookupR (EndoMap _ map') e = Map.lookup e map'
 
-data Comp t =
+data Comp =
   Comp
   { compositions :: Map (Int, Int) Int
   , connected :: IntMap IntSet
   , endomorphisms :: EndoMap
   , maxKeyComp :: Int
-  } deriving (Show, Eq)
+  } deriving (Show, Eq, Ord)
 
-type CompState t a = State (Comp t) a
+type CompState a = State Comp a
 
 compose :: Endomorphism -> Endomorphism -> Endomorphism
 compose a b =
   Array.array (0, length a - 1)
   $ map (\i -> (i, b Array.! (a Array.! i))) [0..(length a - 1)]
 
-compose' :: (Show t, Ord t) => Int -> Int -> CompState t ()
+compose' :: Int -> Int -> CompState ()
 compose' a b = do
   comp <- get
   _endomorphisms <- gets endomorphisms
@@ -103,6 +103,20 @@ initEndomorphisms dead_state lexer = table
       fromList
       $ Map.toList
       $ toArray <$> parallelLexingTable dead_state lexer
+
+parallelLexingTable :: (IsState s, IsTransition t, Enum s) => s -> DFALexer t s k -> Map t [s]
+parallelLexingTable dead_state lexer = table
+  where
+    dfa = fsa lexer
+    _transitions = transitions' dfa
+    _states = states dfa
+    _alphabet = alphabet dfa
+    tableLookUp key = fromMaybe dead_state $ Map.lookup key _transitions
+    statesFromChar a =
+      (a,) $
+        map (\b -> tableLookUp (b, a)) $
+          Set.toList _states
+    table = Map.fromList $ map statesFromChar $ Set.toList _alphabet
 
 invertMap :: (Ord a, Ord b) => Map a b -> Map b (Set a) 
 invertMap =
@@ -161,11 +175,11 @@ initConnected lexer = IntMap.fromList $ auxiliary <$> _alphabet
       IntSet.fromList
       $ mapMaybe (transitionLookup s) _alphabet
 
-addCompositions :: (Show t, Ord t) => Int -> IntSet -> CompState t ()
+addCompositions :: Int -> IntSet -> CompState ()
 addCompositions t t_set = do
   mapM_ (compose' t) $ IntSet.toList t_set
 
-complete' :: (Show t, Ord t) => CompState t ()
+complete' :: CompState ()
 complete' = do
   _connected <- gets connected
   old_compositions <- gets compositions
@@ -176,9 +190,10 @@ complete' = do
 stateMap :: Int -> EndoMap -> IntMap Int
 stateMap init' (EndoMap map' _) = (Array.! init') <$> map'
 
-complete :: (Ord t, Show t) => IntLexer t -> (IntMap Int, Map (Int, Int) Int, Map ((Int, Int), Int) t, Int, Int, Int)
+complete :: (Show t, Ord t) => IntLexer t -> (Set Int, IntMap Int, Map (Int, Int) Int, Map ((Int, Int), Int) t, Int, Int, Int)
 complete lexer =
-  ( stateMap initial_state $ endomorphisms final_comp 
+  ( initialLoopSet lexer
+  , stateMap initial_state $ endomorphisms final_comp 
   , compositions final_comp
   , tokenMap lexer
   , dead_state
@@ -190,6 +205,7 @@ complete lexer =
     initial_state = initial $ fsa lexer
     dead_state = maximum . states $ fsa lexer
     _endomorphisms = initEndomorphisms dead_state lexer
+    
     comp =
       Comp
       { connected = initConnected lexer

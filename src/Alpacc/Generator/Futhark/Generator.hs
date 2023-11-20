@@ -3,7 +3,6 @@ module Alpacc.Generator.Futhark.Generator
 where
 
 import Data.String.Interpolate (i)
-import Alpacc.Lexer.ParallelLexing
 import Alpacc.Generator.Futhark.Lexer qualified as Lexer
 import Alpacc.Generator.Futhark.Parser qualified as Parser
 import Alpacc.CFG
@@ -11,8 +10,6 @@ import Alpacc.Grammar
 import Data.Map qualified as Map
 import Data.Map ( Map )
 import Alpacc.Generator.Futhark.Util
-import Data.Word (Word8)
-import Alpacc.Lexer.FSA
 
 bothFunction :: String
 bothFunction = [i|

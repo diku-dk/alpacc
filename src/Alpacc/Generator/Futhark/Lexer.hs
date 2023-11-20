@@ -8,17 +8,12 @@ import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.IntMap (IntMap)
 import Data.IntMap qualified as IntMap
-import Data.Set qualified as Set
 import Data.String.Interpolate (i)
 import Data.Tuple.Extra
-import Data.Foldable
 import Data.FileEmbed
 import Alpacc.Generator.Futhark.Util
-import Data.List.Split (chunksOf)
 import Data.Word (Word8)
 import Alpacc.Lexer.FSA
-import Control.Monad.Identity (Identity(runIdentity))
-import Data.Maybe (fromJust)
 import Alpacc.Lexer.ParallelLexing
 
 futharkLexer :: String
@@ -88,6 +83,8 @@ def dead_endomorphism: i64 = #{dead_endomorphism}
 def identity_endomorphism: i64 = #{identity_endomorphism}
 def initial_state: i64 = #{initial_state}
 
+-- #{initial_loop_set}
+
 #{compositionsTable identity_endomorphism compositions}
 
 #{stateTable state_map}
@@ -102,7 +99,7 @@ def initial_state: i64 = #{initial_state}
     terminal_index_map = (\a -> fromIntegral a :: Int) <$> terminal_index_map'
     dead_terminal = succ $ maximum terminal_index_map
     terminal_map = (terminal_index_map Map.!) <$> terminal_map'
-    (state_map, compositions, terminal_map', dead_state, dead_endomorphism, identity_endomorphism) =
+    (initial_loop_set, state_map, compositions, terminal_map', dead_state, dead_endomorphism, identity_endomorphism) =
       complete lexer
     ignore_function = 
       case T "ignore" `Map.lookup` terminal_index_map of
