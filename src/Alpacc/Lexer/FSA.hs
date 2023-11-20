@@ -32,15 +32,15 @@ data FSA f f' t s = FSA
     initial :: s,
     accepting :: Set s
   }
-  deriving (Eq, Show)
+  deriving (Ord, Eq, Show)
 
 data Lexer f f' t s k = Lexer
   { fsa :: FSA f f' t s,
     finalMap :: Map k (Set s),
     terminalMap :: Map ((s, s), f' t) (Set k),
-    deadState :: Maybe s
+    initialLoopSet :: Set t
   }
-  deriving (Eq, Show)
+  deriving (Ord, Eq, Show)
 
 class OrdMap f where
   omap :: (Ord a, Ord b) => (a -> b) -> f a -> f b
@@ -107,7 +107,7 @@ instance LexerMap Lexer where
       { fsa = fsaMap g f $ fsa fsa_lexer,
         finalMap = Set.map f <$> finalMap fsa_lexer,
         terminalMap = Map.mapKeys (bimap (both f) (omap g)) terminal_map,
-        deadState = f <$> deadState fsa_lexer
+        initialLoopSet = Set.map g $ initialLoopSet fsa_lexer 
       }
     where
       terminal_map = terminalMap fsa_lexer
