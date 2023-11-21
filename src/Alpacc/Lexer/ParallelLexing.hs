@@ -190,8 +190,18 @@ complete' = do
 stateMap :: Int -> EndoMap -> IntMap Int
 stateMap init' (EndoMap map' _) = (Array.! init') <$> map'
 
+addDeadState :: IntLexer t -> (Int, IntLexer t)
+addDeadState old_lexer = (dead_state, new_lexer)
+  where
+    old_dfa = fsa old_lexer
+    old_states = states old_dfa
+    dead_state = succ $ maximum old_states
+    new_states = Set.insert dead_state old_states
+    new_dfa = old_dfa { states = new_states }
+    new_lexer = old_lexer { fsa = new_dfa }
+
 complete :: (Show t, Ord t) => IntLexer t -> (Set Int, IntMap Int, Map (Int, Int) Int, Map ((Int, Int), Int) t, Int, Int, Int)
-complete lexer =
+complete lexer' =
   ( initialLoopSet lexer
   , stateMap initial_state $ endomorphisms final_comp 
   , compositions final_comp
@@ -202,8 +212,8 @@ complete lexer =
   where
     final_comp = execState complete' comp
     max_key = maximum . alphabet $ fsa lexer
+    (dead_state, lexer) = addDeadState lexer'
     initial_state = initial $ fsa lexer
-    dead_state = maximum . states $ fsa lexer
     _endomorphisms = initEndomorphisms dead_state lexer
     
     comp =

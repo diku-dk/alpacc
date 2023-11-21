@@ -76,6 +76,13 @@ initialLoop set =
   $ List.intercalate ", "
   $ (\j -> if j `Set.member` set then "true" else "false") <$> [0..255]
 
+acceptingStates :: Set Int -> String
+acceptingStates set =
+  (++"]")
+  $ ("["++)
+  $ List.intercalate ", "
+  $ (\j -> if j `Set.member` set then "true" else "false") <$> Set.toList set
+
 generateLexer ::
   DFALexer Word8 Integer T ->
   Map T Integer ->
@@ -87,12 +94,16 @@ generateLexer lexer' terminal_index_map' terminal_type = do
       <> [i|
 module lexer = mk_lexer {
 
+def states_size: i64 = #{Set.size $ states dfa}
+def accepting_states: [states_size]bool = #{acceptingStates $ states dfa} |> sized states_size 
 def dead_terminal: i64 = #{dead_terminal}
 def dead_state: i64 = #{dead_state}
 def dead_endomorphism: i64 = #{dead_endomorphism}
 def identity_endomorphism: i64 = #{identity_endomorphism}
 def initial_state: i64 = #{initial_state}
 def initial_loop_set: [256]bool = #{initialLoop initial_loop_set}
+
+#{ignore_function}
 
 #{compositionsTable identity_endomorphism compositions}
 
@@ -112,5 +123,5 @@ def initial_loop_set: [256]bool = #{initialLoop initial_loop_set}
       complete lexer
     ignore_function = 
       case T "ignore" `Map.lookup` terminal_index_map of
-        Just j -> [i|def is_ignore (t : terminal) : bool = #{j} == t|]
-        Nothing -> [i|def is_ignore (_ : terminal) : bool = false|]
+        Just j -> [i|def is_ignore (t : i64) : bool = #{j} == t|]
+        Nothing -> [i|def is_ignore (_ : i64) : bool = false|]
