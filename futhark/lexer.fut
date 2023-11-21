@@ -11,6 +11,7 @@ module type lexer_context = {
   val identity_endomorphism : i64
   val dead_state : i64
   val initial_state : i64
+  val initial_loop_set : [256]bool
 }
 
 module mk_lexer(L: lexer_context) = {

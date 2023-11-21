@@ -371,7 +371,7 @@ lexerNFA start_state nfa_map' =
       . minimize
       . reenumerateFSA start_state
       . fromNFAtoDFA <$> nfa_map'
-    initial_loop_set = debug $ Set.unions $ findInitialLoops <$> dfa_map 
+    initial_loop_set = Set.unions $ findInitialLoops <$> dfa_map 
     nfa_map =
       reenumerateFSAsMap start_state
       $ dfaToNFA <$> dfa_map

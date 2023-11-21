@@ -6,6 +6,8 @@ import Alpacc.Grammar
 import Alpacc.Lexer.DFA
 import Data.Map (Map)
 import Data.Map qualified as Map
+import Data.Set (Set)
+import Data.Set qualified as Set
 import Data.IntMap (IntMap)
 import Data.IntMap qualified as IntMap
 import Data.String.Interpolate (i)
@@ -15,6 +17,7 @@ import Alpacc.Generator.Futhark.Util
 import Data.Word (Word8)
 import Alpacc.Lexer.FSA
 import Alpacc.Lexer.ParallelLexing
+import Data.List qualified as List
 
 futharkLexer :: String
 futharkLexer = $(embedStringFile "futhark/lexer.fut")
@@ -66,6 +69,13 @@ def transition_to_terminal (n : ((i64, i64), u8)) : i64 =
     toStr ((x, y), z) = [i|((#{x}, #{y}), #{z})|]
     _table = show <$> Map.mapKeys toStr table
 
+initialLoop :: Set Int -> String
+initialLoop set =
+  (++"]")
+  $ ("["++)
+  $ List.intercalate ", "
+  $ (\j -> if j `Set.member` set then "true" else "false") <$> [0..255]
+
 generateLexer ::
   DFALexer Word8 Integer T ->
   Map T Integer ->
@@ -82,8 +92,7 @@ def dead_state: i64 = #{dead_state}
 def dead_endomorphism: i64 = #{dead_endomorphism}
 def identity_endomorphism: i64 = #{identity_endomorphism}
 def initial_state: i64 = #{initial_state}
-
--- #{initial_loop_set}
+def initial_loop_set: [256]bool = #{initialLoop initial_loop_set}
 
 #{compositionsTable identity_endomorphism compositions}
 
