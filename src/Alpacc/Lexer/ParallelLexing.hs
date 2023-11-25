@@ -118,40 +118,6 @@ parallelLexingTable dead_state lexer = table
           Set.toList _states
     table = Map.fromList $ map statesFromChar $ Set.toList _alphabet
 
-invertMap :: (Ord a, Ord b) => Map a b -> Map b (Set a) 
-invertMap =
-  Map.unionsWith Set.union
-  . fmap (uncurry Map.singleton . second Set.singleton . swap)
-  . Map.assocs
-
-minimumTerminal :: (Foldable t, Ord a) => t a -> a
-minimumTerminal a = if null a then error "The minimum terminal could not be found." else minimum a
-
-tokenMap :: (Ord k, Show k, IsTransition t, IsState s) => DFALexer t s k -> Map ((s, s), t) k
-tokenMap lexer = minimumTerminal <$> fixedPointIterate (/=) next terminal_map
-  where
-    dfa = fsa lexer
-    initial_state = initial dfa
-    inverted_transitions = invertMap $ transitions' dfa
-    terminal_map = Map.mapKeys (second runIdentity) $ terminalMap lexer
-
-    next term_map =
-      Map.mapWithKey (auxiliary inverted_transitions term_map) term_map
-    
-    auxiliary inv_trans term_map ((s, _), _) set =
-      if initial_state == s then
-        set
-      else
-        temp `Set.intersection` set
-      where
-        temp =
-          Set.unions
-          $ Set.map (\(s', t) ->
-                       fromMaybe Set.empty
-                       $ Map.lookup ((s', s), t) term_map)
-          $ fromMaybe Set.empty
-          $ Map.lookup s inv_trans
-
 initConnected :: Ord t => IntLexer t -> IntMap IntSet
 initConnected lexer = IntMap.fromList $ auxiliary <$> _alphabet
   where
