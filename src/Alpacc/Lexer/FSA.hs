@@ -36,9 +36,7 @@ data FSA f f' t s = FSA
 
 data Lexer f f' t s k = Lexer
   { fsa :: FSA f f' t s,
-    finalMap :: Map k (Set s),
-    terminalMap :: Map ((s, s), f' t) (Set k),
-    initialLoopSet :: Set t
+    terminalMap :: Map s k
   }
   deriving (Ord, Eq, Show)
 
@@ -105,9 +103,7 @@ instance LexerMap Lexer where
   fsaLexerMap g f fsa_lexer =
     fsa_lexer
       { fsa = fsaMap g f $ fsa fsa_lexer,
-        finalMap = Set.map f <$> finalMap fsa_lexer,
-        terminalMap = Map.mapKeys (bimap (both f) (omap g)) terminal_map,
-        initialLoopSet = Set.map g $ initialLoopSet fsa_lexer 
+        terminalMap = Map.mapKeys f terminal_map
       }
     where
       terminal_map = terminalMap fsa_lexer
