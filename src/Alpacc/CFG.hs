@@ -93,8 +93,10 @@ cfgToDFALexer (CFG {tRules = []}) = Left "CFG has no lexical rules."
 cfgToDFALexer cfg@(CFG {tRules}) = do
   implicit_t_rules <- implicitTRules cfg
   let all_t_rules = implicit_t_rules ++ tRules
-  let terminal_map = Map.fromList $ tRuleToTuple <$> all_t_rules
-  Right $ lexerDFA (0 :: Integer) terminal_map
+  let t_rule_tuples = tRuleToTuple <$> all_t_rules
+  let order_map = Map.fromList $ flip zip [(0 :: Integer)..] $ fst <$> t_rule_tuples
+  let terminal_map = Map.fromList t_rule_tuples
+  Right $ lexerDFA order_map (0 :: Integer) terminal_map
 
 type Parser = Parsec Void Text
 
