@@ -285,8 +285,8 @@ dfaToNFA dfa = dfa { transitions = new_transitions }
       Map.mapKeys (second Trans)
       $ Set.singleton <$> transitions' dfa
 
-lexerDFA :: (IsTransition t, IsState s, Enum s, Ord k, Ord o) => Map k o -> s -> Map k (NFA t s) -> DFALexer t s k
-lexerDFA terminal_to_order start_state nfa_map' = 
+lexerDFA :: (IsTransition t, IsState s, Enum s, Ord k, Ord o) => Map k o -> s -> Map k (RegEx (NonEmpty t)) -> DFALexer t s k
+lexerDFA terminal_to_order start_state nfa_map' =
   reenumerateLexer start_state $
     Lexer
     { fsa = dfa
@@ -299,6 +299,7 @@ lexerDFA terminal_to_order start_state nfa_map' =
       . minimize
       . reenumerateFSA start_state
       . fromNFAtoDFA
+      . fromRegExToNFA start_state
       
     dfa_map' = auxiliary <$> nfa_map'
     nfa_map = reenumerateFSAsMap start_state dfa_map'
