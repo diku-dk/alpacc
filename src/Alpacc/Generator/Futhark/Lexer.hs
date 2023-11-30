@@ -1,6 +1,6 @@
 module Alpacc.Generator.Futhark.Lexer
   ( generateLexer )
-where
+ where
 
 import Alpacc.Grammar
 import Alpacc.Lexer.DFA
@@ -23,9 +23,22 @@ import Data.Array qualified as Array
 futharkLexer :: String
 futharkLexer = $(embedStringFile "futhark/lexer.fut")
 
+defStateSize :: ParallelLexer Word8 Int -> String
+defStateSize =
+  ("def state_size : i64 = "++)
+  . show
+  . stateSize
+
+defEndomorphismSize :: ParallelLexer Word8 Int -> String
+defEndomorphismSize =
+  ("def endomorphism_size : i64 = "++)
+  . show
+  . endomorphismsSize
+
 isAcceptingArray :: ParallelLexer Word8 Int -> String
 isAcceptingArray parallel_lexer =
-  (++"]")
+  ([i|def is_accepting : [state_size]bool = sized state_size |]++)
+  $ (++"]")
   $ ("["++)
   $ List.intercalate ", "
   $ [if j `Set.member` accepting_states then "true" else "false" | j <- [0..state_size - 1]]
@@ -35,7 +48,8 @@ isAcceptingArray parallel_lexer =
 
 endomorphismsToStateArray :: ParallelLexer Word8 Int -> String
 endomorphismsToStateArray parallel_lexer =
-  (++"]")
+  ("def endomorphisms_to_states : [endomorphism_size]i64 = sized endomorphism_size "++)
+  $ (++"]")
   $ ("["++)
   $ List.intercalate ", "
   $ [show . fromMaybe dead_state $ Map.lookup j endos_to_states | j <- [0..endomorphisms_size - 1]]
@@ -46,7 +60,8 @@ endomorphismsToStateArray parallel_lexer =
 
 transitionsToKeyArray :: ParallelLexer Word8 Int -> String
 transitionsToKeyArray parallel_lexer =
-  (++"]")
+  ("def transitions_to_keys : [256]i64 = sized 256 "++)
+  $ (++"]")
   $ ("["++)
   $ List.intercalate ", "
   $ [show . fromMaybe dead_endo $ Map.lookup j trans_to_key | j <- [0..255]]
@@ -56,7 +71,8 @@ transitionsToKeyArray parallel_lexer =
 
 compositionsArray :: ParallelLexer Word8 Int -> String
 compositionsArray parallel_lexer =
-  (++"]")
+  ("def compositions : [endomorphism_size][endomorphism_size]i64 = "++)
+  $ (++"] :> [endomorphism_size][endomorphism_size]i64")
   $ ("["++)
   $ List.intercalate ", "
   $ [row j | j <- [0..endomorphisms_size - 1]]
@@ -72,7 +88,8 @@ compositionsArray parallel_lexer =
 
 stateToTerminalArray :: ParallelLexer Word8 Int -> String
 stateToTerminalArray parallel_lexer =
-  (++"]")
+  ("def states_to_terminals : [state_size]i64 = sized state_size "++)
+  $ (++"]")
   $ ("["++)
   $ List.intercalate ", "
   $ [show . fromMaybe dead_token $ Map.lookup j token_map | j <- [0..state_size - 1]]
@@ -83,7 +100,8 @@ stateToTerminalArray parallel_lexer =
 
 transitionsToEndomorphismsArray :: ParallelLexer Word8 Int -> String
 transitionsToEndomorphismsArray parallel_lexer =
-  (++"]")
+  ("def transitions_to_endomorphisms : [256][endomorphism_size]i64 = "++)
+  $ (++"] :> [256][endomorphism_size]i64")
   $ ("["++)
   $ List.intercalate ", "
   $ [fromMaybe dead_endo $ Map.lookup j trans_to_endo | j <- [0..255]]
@@ -114,6 +132,10 @@ module lexer = mk_lexer {
   def dead_endomorphism : i64 = #{dead_endomorphism}
   def identity_endomorphism : i64 = #{_identity}
 
+  #{defEndomorphismSize parallel_lexer}
+
+  #{defStateSize parallel_lexer}
+
   #{isAcceptingArray parallel_lexer}
 
   #{transitionsToEndomorphismsArray parallel_lexer}
@@ -123,6 +145,8 @@ module lexer = mk_lexer {
   #{compositionsArray parallel_lexer}
 
   #{stateToTerminalArray parallel_lexer}
+
+  #{endomorphismsToStateArray parallel_lexer}
 }
 |]
   where
