@@ -100,8 +100,8 @@ stateToTerminalArray parallel_lexer =
 
 transitionsToEndomorphismsArray :: ParallelLexer Word8 Int -> String
 transitionsToEndomorphismsArray parallel_lexer =
-  ("def transitions_to_endomorphisms : [256][endomorphism_size]i64 = "++)
-  $ (++"] :> [256][endomorphism_size]i64")
+  ("def transitions_to_endomorphisms : [256][state_size]i64 = "++)
+  $ (++"] :> [256][state_size]i64")
   $ ("["++)
   $ List.intercalate ", "
   $ [fromMaybe dead_endo $ Map.lookup j trans_to_endo | j <- [0..255]]

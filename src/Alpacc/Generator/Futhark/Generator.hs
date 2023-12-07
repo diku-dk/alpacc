@@ -93,7 +93,7 @@ generateLexer cfg = do
   return $
     unlines
       [ lexer_str
-      , lexerFunction terminal_type
+      -- , lexerFunction terminal_type
       ]
 
 generateParser :: Int -> Int -> CFG -> Either String String
