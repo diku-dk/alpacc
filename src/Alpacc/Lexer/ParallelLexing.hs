@@ -36,6 +36,9 @@ data Comp =
   , connected :: IntMap IntSet
   , endomorphisms' :: EndoMap
   , maxKeyComp :: Int
+  , deadStateComp :: Int
+  , initialStateComp :: Int
+  , acceptComp :: IntSet
   } deriving (Show, Eq, Ord)
 
 type CompState a = State Comp a
@@ -67,10 +70,15 @@ unsafeLookup (EndoMap map' _) i = map' IntMap.! i
 safeLookupR :: EndoMap -> Endomorphism -> Maybe Int
 safeLookupR (EndoMap _ map') e = Map.lookup e map'
 
-compose :: Endomorphism -> Endomorphism -> Endomorphism
-compose a b =
+compose :: Int -> Int -> IntSet -> Endomorphism -> Endomorphism -> Endomorphism
+compose initial_state dead_state accept a b =
   Array.array (0, length a - 1)
-  $ map (\i -> (i, b Array.! (a Array.! i))) [0..(length a - 1)]
+  $ map auxiliary [0..(length a - 1)]
+  where
+    auxiliary i = (i,  k)
+      where
+        j = a Array.! i
+        k = b Array.! j
 
 compose' :: Int -> Int -> CompState ()
 compose' a b = do
@@ -79,8 +87,11 @@ compose' a b = do
   _compositions <- gets compositions'
   _connected <- gets connected
   max_key <- gets maxKeyComp
+  dead_state <- gets deadStateComp
+  accept <- gets acceptComp
+  initial_state <- gets initialStateComp
   
-  let new_endo = on compose (unsafeLookup _endomorphisms) a b
+  let new_endo = on (compose initial_state dead_state accept) (unsafeLookup _endomorphisms) a b
   let new_endo_key = fromMaybe (succ max_key) $ safeLookupR _endomorphisms new_endo
   let new_endos = insert _endomorphisms new_endo_key new_endo
   let new_comps = Map.insert (a, b) new_endo_key _compositions
@@ -172,8 +183,43 @@ parallelLexingTable dead_state' lexer = table
           Map.toAscList state_to_int
     table = Map.fromList $ map statesFromChar $ Set.toList _alphabet
 
+findInitialTrans :: (IsState s, IsTransition t) => DFALexer t s k -> Set t
+findInitialTrans lexer =
+  Set.fromList
+  $ mapMaybe auxiliary
+  $ Set.toList _alphabet
+  where
+    dfa = fsa lexer
+    _transitions = transitions' dfa
+    _initial = initial dfa
+    _alphabet = alphabet dfa
+    auxiliary t =
+      if (_initial, t) `Map.member` _transitions
+      then Just t
+      else Nothing
+
+findFinalTrans :: (IsState s, IsTransition t) => DFALexer t s k -> Set t
+findFinalTrans lexer =
+  Set.fromList
+  $ fmap snd
+  $ Map.keys
+  $ Map.filter (`Set.member` _accepting) _transitions   
+  where
+    dfa = fsa lexer
+    _transitions = transitions' dfa
+    _accepting = accepting dfa
+    _alphabet = alphabet dfa
+
+findLoopTrans :: (IsState s, IsTransition t) => DFALexer t s k -> Map t Int -> IntMap IntSet
+findLoopTrans lexer trans_to_int = IntMap.fromList $ zip _final (repeat _init)
+  where
+    toInt = (trans_to_int Map.!)
+    _init = IntSet.fromList $ toInt <$> Set.toList (findInitialTrans lexer)
+    _final = toInt <$> Set.toList (findFinalTrans lexer)
+
 initConnected :: (IsState s, IsTransition t) => DFALexer t s k -> Map t Int -> IntMap IntSet
 initConnected lexer trans_to_int =
+  -- IntMap.unionWith IntSet.union loop_trans
   IntMap.fromList
   $ auxiliary <$> _alphabet
   where
@@ -181,6 +227,8 @@ initConnected lexer trans_to_int =
     _alphabet = Set.toList $ alphabet dfa
     _states = Set.toAscList $ states dfa
     _transitions = transitions' dfa
+
+    loop_trans = findLoopTrans lexer trans_to_int
 
     transToInt = (trans_to_int Map.!)
     
@@ -227,28 +275,43 @@ addDeadState old_lexer = (dead_state, new_lexer)
     new_dfa = old_dfa { states = new_states }
     new_lexer = old_lexer { fsa = new_dfa }
 
+insertDeadComps :: Int -> IntSet -> Map (Int, Int) Int -> Map (Int, Int) Int
+insertDeadComps dead keys comps = Map.union comps new_comps
+  where
+    keys' = IntSet.toList keys
+    new_comps =
+      Map.fromList
+      ([((dead, a), dead) | a <- keys'] ++
+      [((a, dead), dead) | a <- keys'])
+    
+
 parallelLexer :: (Enum s, IsState s, IsTransition t, Ord k) => DFALexer t s k -> ParallelLexer t k
 parallelLexer lexer' =
   ParallelLexer
-  { compositions = compositions' final_comp
+  { compositions = insertDeadComps dead_endo_key endo_keys $ compositions' final_comp
   , endomorphisms = table 
   , identity = _id
   , tokenMap = token_map
   , transitionsToKey = trans_to_endo
   , endomorphismsToStates = endomorphisms_to_states
   , initialState = initial_state_key
-  , deadEndomorphismKey = succ $ maxKeyComp final_comp
-  , deadState = states_to_keys Map.! dead_state
+  , deadEndomorphismKey = dead_endo_key
+  , deadState = dead_state_key
   , stateSize = state_size
-  , endomorphismsSize = IntSet.size $ IntMap.keysSet map'
+  , endomorphismsSize = IntSet.size endo_keys
   , acceptingStates = accepting_states
   , deadEndomorphism = dead_endomorphism
   }
   where
-    state_size = Set.size $ states $ fsa lexer
+    endo_keys = IntSet.insert dead_endo_key $ IntMap.keysSet map'
     dead_endomorphism =
       Array.array (0, last_index)
-      $ map (, states_to_keys Map.! dead_state) [0..state_size - 1]
+      $ map (, dead_state_key) [0..state_size - 1]
+
+    dead_endo_key = succ $ maxKeyComp final_comp
+    state_size = Set.size $ states $ fsa lexer
+    
+    dead_state_key = states_to_keys Map.! dead_state
     accepting_states = Set.map (states_to_keys Map.!) $ accepting $ fsa lexer
     token_map = Map.mapKeys (states_to_keys Map.!) $ terminalMap lexer
     initial_state_key = states_to_keys Map.! initial_state
@@ -272,4 +335,7 @@ parallelLexer lexer' =
       { connected = initConnected lexer trans_to_endo
       , endomorphisms' = _endomorphisms'
       , compositions' = Map.empty
-      , maxKeyComp = max_key}
+      , maxKeyComp = max_key
+      , deadStateComp = dead_state_key
+      , initialStateComp = initial_state_key
+      , acceptComp = IntSet.fromList $ Set.toList accepting_states }
