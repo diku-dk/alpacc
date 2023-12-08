@@ -20,14 +20,18 @@ module type lexer_context = {
 
 module mk_lexer(L: lexer_context) = {
   def compose (a : i64) (b : i64) : i64 =
-    L.compositions[a][b]
+    if a == L.dead_endomorphism || b == L.dead_endomorphism
+    then L.dead_endomorphism
+    else L.compositions[a][b]
 
   def trans_to_endo_key (c : u8) : i64 =
     L.transitions_to_keys[u8.to_i64 c]
 
-  def endo_to_state (i : i64) : i64 =
-    L.endomorphisms_to_states[i]
-  
+  def endo_to_state (e : i64) : i64 =
+    if e == L.dead_endomorphism
+    then L.dead_state
+    else L.endomorphisms_to_states[e]
+
   def lexer [n] (str : [n]u8) = -- : [](i64, (i64, i64)) =
     map trans_to_endo_key str
     |> scan compose L.identity_endomorphism
