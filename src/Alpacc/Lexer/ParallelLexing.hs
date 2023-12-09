@@ -15,7 +15,6 @@ import Data.Set qualified as Set hiding (Set)
 import Data.Maybe
 import Data.Array (Array)
 import Data.Array qualified as Array hiding (Array)
-import Data.List qualified as List
 import Data.Function (on)
 import Data.Bifunctor (Bifunctor (..))
 import Data.Tuple (swap)
@@ -196,7 +195,6 @@ pairEndomorphisms lexer =
     connected_table = connectedTable lexer
     endomorphism_table = endomorphismTable lexer
 
-    toConn = (connected_table Map.!)
     toEndo = (endomorphism_table Map.!)
 
     safeCompose' =

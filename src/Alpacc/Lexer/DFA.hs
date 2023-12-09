@@ -107,29 +107,6 @@ dfaFilter p dfa =
         then initial dfa
         else error "Can not filter states since the initial state is removed."
 
-solveTerminalMapping ::
-  (IsState s, IsTransition t, Ord k) =>
-  Map ((s, s), t) (Set k) ->
-  ((Set s, t), Set s) ->
-  (((Set s, Set s), t), Set k)
-solveTerminalMapping terminal_map ((s, c), s') = (((s, s'), c), new_set)
-  where
-    lookup' = (`Map.lookup` terminal_map)
-    new_set =
-      Set.unions $
-        catMaybes [lookup' ((x, y), c) | x <- toList s, y <- toList s']
-
-solveTerminalMap ::
-  (IsState s, IsTransition t, Ord k) =>
-  Map ((s, s), t) (Set k) ->
-  Map (Set s, t) (Set s) ->
-  Map ((Set s, Set s), t) (Set k)
-solveTerminalMap terminal_map =
-  Map.filter (not . null)
-    . Map.fromList
-    . fmap (solveTerminalMapping terminal_map)
-    . Map.toList
-
 fromNFAtoDFAState :: (IsState s, IsTransition t) => State (NFA t s) (DFA t (Set s))
 fromNFAtoDFAState = do
   nfa <- get
