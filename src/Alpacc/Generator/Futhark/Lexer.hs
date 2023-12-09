@@ -1,3 +1,5 @@
+{-# LANGUAGE TemplateHaskell #-}
+
 module Alpacc.Generator.Futhark.Lexer
   ( generateLexer )
  where
@@ -60,14 +62,19 @@ endomorphismsToStateArray parallel_lexer =
 
 transitionsToKeyArray :: ParallelLexer Word8 Int -> String
 transitionsToKeyArray parallel_lexer =
-  ("def transitions_to_keys : [256]i64 = sized 256 "++)
-  $ (++"]")
+  ("def transitions_to_keys : [256][256]i64 = sized 256 "++)
+  $ (++"] :> [256][256]i64")
   $ ("["++)
   $ List.intercalate ", "
-  $ [show . fromMaybe dead_endo $ Map.lookup j trans_to_key | j <- [0..255]]
+  $ [row j | j <- [0..255]]
   where
-    trans_to_key = transitionsToKey parallel_lexer
-    dead_endo = deadEndomorphismKey parallel_lexer
+    to_endo = transitionsToEndos parallel_lexer
+    dead_endo = deadEndo parallel_lexer
+    row j =
+      (++"]")
+      $ ("["++)
+      $ List.intercalate ", "
+      $ [show . fromMaybe dead_endo $ Map.lookup (k, j) to_endo | k <- [0..255]]
 
 compositionsArray :: ParallelLexer Word8 Int -> String
 compositionsArray parallel_lexer =
@@ -79,7 +86,7 @@ compositionsArray parallel_lexer =
   where
     _compositions = compositions parallel_lexer
     endomorphisms_size = endomorphismsSize parallel_lexer
-    dead_endo = deadEndomorphismKey parallel_lexer
+    dead_endo = deadEndo parallel_lexer
     row j =
       (++"]")
       $ ("["++)
@@ -132,6 +139,8 @@ module lexer = mk_lexer {
   def dead_endomorphism : i64 = #{dead_endomorphism}
   def identity_endomorphism : i64 = #{_identity}
 
+  #{ignore_function}
+
   #{defEndomorphismSize parallel_lexer}
 
   #{defStateSize parallel_lexer}
@@ -157,7 +166,7 @@ module lexer = mk_lexer {
     token_map = terminalToIndex <$> tokenMap parallel_lexer'
     dead_state = deadState parallel_lexer
     initial_state = initialState parallel_lexer
-    dead_endomorphism = deadEndomorphismKey parallel_lexer
+    dead_endomorphism = deadEndo parallel_lexer
     _identity = identity parallel_lexer
     ignore_function = 
       case T "ignore" `Map.lookup` terminal_index_map of
