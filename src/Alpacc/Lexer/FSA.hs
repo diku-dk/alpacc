@@ -22,7 +22,6 @@ import Data.Set qualified as Set hiding (Set)
 import Data.Bifunctor (Bifunctor(..))
 import Data.Foldable
 import Control.Monad.Identity (Identity)
-import Data.Tuple.Extra (both)
 import Data.Word (Word8)
 
 data FSA f f' t s = FSA

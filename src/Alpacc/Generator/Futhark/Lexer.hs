@@ -8,12 +8,8 @@ import Alpacc.Grammar
 import Alpacc.Lexer.DFA
 import Data.Map (Map)
 import Data.Map qualified as Map
-import Data.Set (Set)
 import Data.Set qualified as Set
-import Data.IntMap (IntMap)
-import Data.IntMap qualified as IntMap
 import Data.String.Interpolate (i)
-import Data.Tuple.Extra
 import Data.FileEmbed
 import Alpacc.Generator.Futhark.Util
 import Data.Word (Word8)
@@ -127,9 +123,8 @@ transitionsToEndomorphismsArray parallel_lexer =
 generateLexer ::
   DFALexer Word8 Integer T ->
   Map T Integer ->
-  FutUInt ->
   Either String String
-generateLexer lexer terminal_index_map' terminal_type = do
+generateLexer lexer terminal_index_map' = do
   Right $
     futharkLexer
       <> [i|
