@@ -96,7 +96,7 @@ safeCompose initial_state dead_state accept a b =
           if j `Set.member` accept && k == dead_state then
             initial_state
           else
-            k
+            j
 
 endomorphismTable :: (IsTransition t, Ord k) => ModLexer t k -> Map t Endomorphism
 endomorphismTable lexer =
