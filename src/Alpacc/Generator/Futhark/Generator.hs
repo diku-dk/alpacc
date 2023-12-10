@@ -14,7 +14,9 @@ import Alpacc.Generator.Futhark.Util
 bothFunction :: String
 bothFunction = [i|
 entry parse s =
-  map (.0) s |> parser.parse
+  lexer.lexer s
+  |> map (.0)
+  |> parser.parse
 |]
 
 lexerFunction :: FutUInt -> String
