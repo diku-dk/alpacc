@@ -17,11 +17,11 @@ entry parse s =
   map (.0) s |> parser.parse
 |]
 
-lexerFunction :: String
-lexerFunction = [i|
+lexerFunction :: FutUInt -> String
+lexerFunction t = [i|
 entry lex s =
   lexer.lexer s
-  |> map (\\(a, (b, c)) -> [a, b, c])
+  |> map (\\(a, (b, c)) -> [i64.#{t} a, b, c])
 |]
 
 parserFunction :: String
@@ -75,7 +75,7 @@ generate q k cfg = do
   terminal_type <- findTerminalIntegral terminal_map
   lexer <- cfgToDFALexer cfg
   parser <- Parser.generateParser q k grammar symbol_index_map terminal_type
-  lexer_str <- Lexer.generateLexer lexer terminal_index_map
+  lexer_str <- Lexer.generateLexer lexer terminal_index_map terminal_type
   return $
     unlines
       [ parser
@@ -89,11 +89,11 @@ generateLexer cfg = do
   let terminal_index_map = toTerminalIndexMap (ruleT <$> t_rules)
   terminal_type <- findTerminalIntegral terminal_index_map
   lexer <- cfgToDFALexer cfg
-  lexer_str <- Lexer.generateLexer lexer terminal_index_map
+  lexer_str <- Lexer.generateLexer lexer terminal_index_map terminal_type
   return $
     unlines
       [ lexer_str
-      , lexerFunction
+      , lexerFunction terminal_type
       ]
 
 generateParser :: Int -> Int -> CFG -> Either String String
