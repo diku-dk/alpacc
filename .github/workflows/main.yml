@@ -9,7 +9,7 @@ on:
 
 jobs:
   haskell-test:
-    if: ${{ github.event.label.name == 'test' }}
+    if: contains(github.event.pull_request.labels.*.name, 'test')
     runs-on: ubuntu-22.04
 
     steps:
@@ -41,7 +41,7 @@ jobs:
         run: cabal test all
   
   futhark-test:
-    if: ${{ github.event.label.name == 'test' }}
+    if: contains(github.event.pull_request.labels.*.name, 'test')
     runs-on: ubuntu-22.04
   
     steps:
