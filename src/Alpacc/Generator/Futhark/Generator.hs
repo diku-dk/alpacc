@@ -14,16 +14,18 @@ import Alpacc.Generator.Futhark.Util
 bothFunction :: String
 bothFunction = [i|
 entry parse s =
-  lexer.lexer s
-  |> map (.0)
-  |> parser.parse
+  match lexer.lex s
+  case #some r -> map (.0) r |> parser.parse 
+  case #none -> []
 |]
 
 lexerFunction :: FutUInt -> String
 lexerFunction t = [i|
 entry lex s =
-  lexer.lexer s
-  |> map (\\(a, (b, c)) -> [i64.#{t} a, b, c])
+  match lexer.lex s
+  case #some r ->
+    map (\\(a, (b, c)) -> [i64.#{t} a, b, c]) r
+  case #none -> []
 |]
 
 parserFunction :: String
