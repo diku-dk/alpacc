@@ -28,8 +28,9 @@ module mk_lexer(L: lexer_context) = {
   type state = L.state_module.t
   type endomorphism = L.endomorphism_module.t
   type terminal = L.terminal_module.t
-  
+
   def compose (a : endomorphism) (b : endomorphism) : endomorphism =
+    #[unsafe]
     let a' = L.endomorphism_module.to_i64 a
     let b' = L.endomorphism_module.to_i64 b
     in copy L.compositions[b'][a']
@@ -38,39 +39,43 @@ module mk_lexer(L: lexer_context) = {
     L.is_accepting[L.state_module.to_i64 a]
 
   def trans_to_endo [n] (str : [n]u8) (i : i64) : endomorphism =
-    let c = u8.to_i64 str[i]
-    let c' = u8.to_i64 str[i + 1]
-    in copy L.transitions_to_endomorphisms[c'][c]
+    if i == n - 1
+    then L.identity_endomorphism
+    else
+      let c = u8.to_i64 str[i]
+      let c' = u8.to_i64 str[i + 1]
+      in copy L.transitions_to_endomorphisms[c'][c]
   
   def endo_to_state (e : endomorphism) : state =
     let e' = L.endomorphism_module.to_i64 e
     in copy L.endomorphisms_to_states[e']
 
-  def lookup_state [n] (states : [n - 1]state) (str : [n]u8) (i : i64) : (bool, state) =
+  def lookup_state [n] (endos : [n]endomorphism) (str : [n]u8) (i : i64) : (bool, state) =
     let c = u8.to_i64 str[i]
     let prev_state =
       L.state_module.to_i64
-      <| if i == 0 then L.initial_state else states[i - 1]
+      <| if i == 0
+         then L.initial_state
+         else endo_to_state endos[i - 1]
     let state = copy L.transitions_to_states[c][prev_state]
-    let is_end = i == n - 1 || L.initial_state L.state_module.== states[i]
+    let pseudo_state = endo_to_state endos[i]
+    let is_end = i == n - 1 || L.initial_state L.state_module.== pseudo_state
     in (is_end, state)
 
   def to_terminal (s : state) : terminal =
     let s' = L.state_module.to_i64 s
-    in copy L.states_to_terminals[s']
+	in copy L.states_to_terminals[s']
 
   def to_ends_states [n] (str : [n]u8) : [n](bool, state) =
-    let prev_states =
-      tabulate (n - 1) (trans_to_endo str)
+    let endos =
+      tabulate n (trans_to_endo str)
       |> scan compose L.identity_endomorphism
-      |> map endo_to_state
-    in tabulate n (lookup_state prev_states str)
+    in tabulate n (lookup_state endos str)
     
   def lex [n] (str : [n]u8) : opt ([](terminal, (i64, i64))) =
     let ends_states = if n == 0 then [] else to_ends_states str
-    let is_valid =
-      all (\(e, s) -> not e || (e && is_accept s)) ends_states
     let is = filter (\i -> ends_states[i].0) (iota n)
+    let is_valid = all (\i -> is_accept ends_states[i].1) is
     let new_size = length is
     let result =
       tabulate new_size (
@@ -82,7 +87,7 @@ module mk_lexer(L: lexer_context) = {
                )
       |> filter (not <-< L.is_ignore <-< (.0))
     in if is_valid
-       then #some result
+       then some result
        else #none
 }
 
