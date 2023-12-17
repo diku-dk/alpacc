@@ -23,7 +23,6 @@ import Data.Set (Set)
 import Data.Set qualified as Set hiding (Set)
 import Data.Text (Text)
 import Data.Text qualified as Text
-import Data.Maybe
 import Data.Foldable
 
 type DFA t s = FSA Identity Identity t s
