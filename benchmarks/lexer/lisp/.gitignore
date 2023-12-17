@@ -1,0 +1,9 @@
+*
+!.gitignore
+!*.cg
+!*.md
+!*.rs
+!Cargo.toml
+!Cargo.lock
+!Makefile
+!tokens.c
