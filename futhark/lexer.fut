@@ -96,7 +96,7 @@ module mk_lexer(L: lexer_context) = {
     let ends_states = if m == 0 then [] else to_ends_states substr
     let is = filter (\i -> ends_states[i].0) (iota m)
     let new_size = length is
-    let result =
+    let lexed' =
       tabulate new_size (
                  \i ->
                    let start = if i == 0 then 0 else 1 + is[i - 1]
@@ -104,21 +104,20 @@ module mk_lexer(L: lexer_context) = {
                    let span = (offset + start, offset + end + 1)
                    in (ends_states[end].1, span)
                )
-    let new_offset =
+    let (lexed, new_offset') =
       if new_size <= 1 || m < size
-      then -1
-      else last result |> (.1) |> (.0)
-    let lexed =
-      if new_size <= 1 || m < size
-      then []
-      else init result
-    let result' =
-        if m < size
-        then (result, n - 1)
-        else (lexed, new_offset)
-    in if new_size <= 1 && m == size
+      then ([], -1)
+      else (init lexed', last lexed' |> (.1) |> (.0))
+    let (states_spans, new_offset) =
+      if m < size
+      then (lexed', n - 1)
+      else (lexed, new_offset')
+    let is_invalid = all (\(s, _) -> is_accept s) states_spans |> not
+    in if (new_size <= 1 && m == size) || is_invalid
        then #none
-       else some result'
+       else let terminals_spans =
+              map (\(s, span) -> (to_terminal s, span)) states_spans 
+            in some (terminals_spans, new_offset)
 
   def lex' [n] (str : [n]u8) (max_token_size : i64) =
     let step = max_token_size + 1
