@@ -57,7 +57,7 @@ module mk_lexer(L: lexer_context) = {
       <| if i == 0
          then L.initial_state
          else endo_to_state endos[i - 1]
-    let state = copy L.transitions_to_states[c][prev_state]
+    let state = copy L.transitions_to_states[c, prev_state]
     let pseudo_state = endo_to_state endos[i]
     let is_end = i == n - 1 || L.initial_state L.state_module.== pseudo_state
     in (is_end, state)
