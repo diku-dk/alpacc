@@ -122,15 +122,11 @@ module mk_lexer(L: lexer_context) = {
 
   def lex' [n] (max_token_size : i64) (str : [n]u8) : opt ([](terminal, (i64, i64))) =
     let step = max_token_size + 1
-    let (ys, final_offset, _) =
-      loop (xs, offset, stop) = ([], 0, true) while stop do
+    let (ys, final_offset) =
+      loop (xs, offset) = ([], 0) while offset != n - 1 && offset != -1 do
         match lex_step str offset step
-        case #none -> ([], -1, false)
-        case #some (lexed, new_offset) ->
-          let xs' = xs ++ lexed
-          in if new_offset == n - 1
-             then (xs', new_offset, false)
-             else (xs', new_offset, true)
+        case #none -> ([], -1)
+        case #some (lexed, new_offset) -> (xs ++ lexed, new_offset)
     in if final_offset == n - 1
        then some ys
        else #none
