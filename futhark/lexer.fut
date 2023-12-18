@@ -33,7 +33,7 @@ module mk_lexer(L: lexer_context) = {
     #[unsafe]
     let a' = L.endomorphism_module.to_i64 a
     let b' = L.endomorphism_module.to_i64 b
-    in (copy L.compositions)[b'][a']
+    in copy L.compositions[b', a']
 
   def is_accept (a : state) : bool =
     L.is_accepting[L.state_module.to_i64 a]
@@ -44,7 +44,7 @@ module mk_lexer(L: lexer_context) = {
     else
       let c = u8.to_i64 str[i]
       let c' = u8.to_i64 str[i + 1]
-      in (copy L.transitions_to_endomorphisms)[c'][c]
+      in copy L.transitions_to_endomorphisms[c', c]
   
   def endo_to_state (e : endomorphism) : state =
     let e' = L.endomorphism_module.to_i64 e
