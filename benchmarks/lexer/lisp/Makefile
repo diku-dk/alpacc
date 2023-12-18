@@ -20,7 +20,7 @@ sexp.fut: sexp.cg data.in
 bench: lexer data.in sexp.fut
 	echo "Lisp Lexer Benchmark:"
 	echo "Benchmarking Rust:"
-	./$^
+	./lexer data.in
 	echo "Benchmarking Futhark:"
 	futhark bench --backend cuda sexp.fut
 
