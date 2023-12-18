@@ -90,7 +90,7 @@ module mk_lexer(L: lexer_context) = {
        then some result
        else #none
 
-  def lex_step [n] (str : [n]u8) (offset : i64) (size : i64) =
+  def lex_step [n] (str : [n]u8) (offset : i64) (size : i64) : opt ([](terminal, (i64, i64)), i64) =
     let substr = str[offset: i64.min n (offset + size)]
     let m = length substr
     let ends_states = if m == 0 then [] else to_ends_states substr
@@ -113,15 +113,16 @@ module mk_lexer(L: lexer_context) = {
       then (lexed', n - 1)
       else (lexed, new_offset')
     let is_invalid = all (\(s, _) -> is_accept s) states_spans |> not
+    let terminals_spans =
+      map (\(s, span) -> (to_terminal s, span)) states_spans
+      |> filter (not <-< L.is_ignore <-< (.0))
     in if (new_size <= 1 && m == size) || is_invalid
        then #none
-       else let terminals_spans =
-              map (\(s, span) -> (to_terminal s, span)) states_spans 
-            in some (terminals_spans, new_offset)
+       else some (terminals_spans, new_offset)
 
-  def lex' [n] (str : [n]u8) (max_token_size : i64) =
+  def lex' [n] (max_token_size : i64) (str : [n]u8) : opt ([](terminal, (i64, i64))) =
     let step = max_token_size + 1
-    let (ys, _, _) =
+    let (ys, final_offset, _) =
       loop (xs, offset, stop) = ([], 0, true) while stop do
         match lex_step str offset step
         case #none -> ([], -1, false)
@@ -129,7 +130,9 @@ module mk_lexer(L: lexer_context) = {
           if new_offset == n - 1
           then (xs ++ lexed, new_offset, false)
           else (xs ++ lexed, new_offset, true)
-    in ys
+    in if final_offset == n - 1
+       then some ys
+       else #none
 }
 
 -- End of lexer.fut
