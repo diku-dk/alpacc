@@ -7,3 +7,4 @@
 !Cargo.lock
 !Makefile
 !tokens.c
+!futhark.pkg
