@@ -127,9 +127,10 @@ module mk_lexer(L: lexer_context) = {
         match lex_step str offset step
         case #none -> ([], -1, false)
         case #some (lexed, new_offset) ->
-          if new_offset == n - 1
-          then (xs ++ lexed, new_offset, false)
-          else (xs ++ lexed, new_offset, true)
+          let xs' = xs ++ lexed
+          in if new_offset == n - 1
+             then (xs', new_offset, false)
+             else (xs', new_offset, true)
     in if final_offset == n - 1
        then some ys
        else #none
