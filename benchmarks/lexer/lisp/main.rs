@@ -39,7 +39,9 @@ fn main() {
 
     let now = SystemTime::now();
     let mut step = lex.next();
+    let mut tokens = 0;
     while step != None {
+        tokens += 1;
         match step.unwrap() {
             Ok(token) => {
                 result.push((token, lex.span()));
@@ -51,6 +53,7 @@ fn main() {
         }
         step = lex.next()
     }
+    println!{"#tokens: {:?}", tokens}
     // println!("{:?}", result);
     match now.elapsed() {
         Ok(elapsed) => {
