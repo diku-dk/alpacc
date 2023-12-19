@@ -45,7 +45,7 @@ int random_token() {
 
 int main() {
   int curr_size = 0;
-  int max_size = 1 << 30;
+  int max_size = 100 * (1 << 20);
   while (curr_size < max_size) {
     curr_size += random_token();
   }

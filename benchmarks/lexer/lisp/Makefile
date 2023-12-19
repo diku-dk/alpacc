@@ -10,18 +10,18 @@ data.in: tokens
 
 lexer: main.rs Cargo.toml Cargo.lock
 	cargo build --release
-	cp target/release/lexer .
+	@cp target/release/lexer .
 
 sexp.fut: sexp.cg data.in
 	alpacc sexp.cg --lexer
-	printf -- "\n-- ==\n-- entry: lex\n-- script input { \$$loadbytes \"data.in\" }\n" >> sexp.fut
+	@printf -- "\n-- ==\n-- entry: lex\n-- script input { \$$loadbytes \"data.in\" }\n" >> sexp.fut
 	futhark pkg sync
 
 bench: lexer data.in sexp.fut
-	echo "Lisp Lexer Benchmark:"
-	echo "Benchmarking Rust:"
+	@echo "Lisp Lexer Benchmark:"
+	@echo "Benchmarking Rust:"
 	./lexer data.in
-	echo "Benchmarking Futhark:"
+	@echo "Benchmarking Futhark:"
 	futhark bench --backend cuda sexp.fut
 
 clean:
