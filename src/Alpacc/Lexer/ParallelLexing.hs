@@ -278,7 +278,16 @@ newEndoConn conn_endos endo endo_set =
   $ Set.map toMap endo_set
   where
     toConn = (conn_endos Map.!)
-    toMap endo' = Map.singleton (endo `compose` endo') (toConn endo')
+    toMap endo' =
+      Map.singleton comp (toConn endo') `Map.union` new_map
+      where
+        comp = endo `compose` endo'
+        set = Set.singleton comp
+        new_map =
+          Map.unions
+          $ fmap (`Map.singleton` set)
+          $ Map.keys
+          $ Map.filter (endo `Set.member`) conn_endos
 
 newEndoConns ::
   Map Endomorphism (Set Endomorphism) ->
