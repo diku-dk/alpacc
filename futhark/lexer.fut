@@ -72,9 +72,9 @@ module mk_lexer(L: lexer_context) = {
       |> scan compose L.identity_endomorphism
     in tabulate n (lookup_state endos str)
 
-  def lex [n] (str : [n]u8) : opt ([](terminal, (i64, i64))) =
+  def lex [n] (str : [n]u8) : opt ([](terminal, (i32, i32))) =
     let ends_states = if n == 0 then [] else to_ends_states str
-    let is = filter (\i -> ends_states[i].0) (iota n)
+    let is = filter (\i -> ends_states[i].0) (0i32..<n)
     let is_valid = all (\i -> is_accept ends_states[i].1) is
     let new_size = length is
     let result =
@@ -90,11 +90,11 @@ module mk_lexer(L: lexer_context) = {
        then some result
        else #none
 
-  def lex_step [n] (str : [n]u8) (offset : i64) (size : i64) : opt ([](terminal, (i64, i64)), i64) =
-    let substr = str[offset: i64.min n (offset + size)]
+  def lex_step [n] (str : [n]u8) (offset : i32) (size : i32) : opt ([](terminal, (i32, i32)), i32) =
+    let substr = str[offset: i32.min n (offset + size)]
     let m = length substr
     let ends_states = if m == 0 then [] else to_ends_states substr
-    let is = filter (\i -> ends_states[i].0) (iota m)
+    let is = filter (\i -> ends_states[i].0) (0i32..<m)
     let new_size = length is
     let lexed' =
       tabulate new_size (
@@ -120,7 +120,7 @@ module mk_lexer(L: lexer_context) = {
        then #none
        else some (terminals_spans, new_offset)
 
-  def lex' [n] (max_token_size : i64) (str : [n]u8) : opt ([](terminal, (i64, i64))) =
+  def lex' [n] (max_token_size : i32) (str : [n]u8) : opt ([](terminal, (i32, i32))) =
     let step = max_token_size + 1
     let (ys, final_offset, _) =
       loop (xs, offset, stop) = ([], 0, true) while stop do

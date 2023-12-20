@@ -31,7 +31,8 @@ in pkg.overrideAttrs (attrs: {
         gcc
         ispc
         ocl-icd
-        rustup
+        rustc
+        cargo
       ]) ++
     (with unstable;
       [ futhark
