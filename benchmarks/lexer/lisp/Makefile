@@ -1,5 +1,6 @@
 CC?=cc
 CFLAGS=-O3
+FUTHARK_BACKEND?=cuda
 .PHONY: clean bench
 
 tokens: tokens.c
@@ -22,7 +23,7 @@ bench: lexer data.in sexp.fut
 	@echo "Benchmarking Rust:"
 	./lexer data.in
 	@echo "Benchmarking Futhark:"
-	futhark bench --backend cuda sexp.fut
+	futhark bench --backend $(FUTHARK_BACKEND) sexp.fut
 
 clean:
 	rm -rf tokens data.in target lexer
