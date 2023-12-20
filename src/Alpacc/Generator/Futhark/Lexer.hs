@@ -49,7 +49,7 @@ endomorphismsToStateArray parallel_lexer =
   ("def endomorphisms_to_states : [endomorphism_size]state = sized endomorphism_size "++)
   $ (++"]")
   $ ("["++)
-  $ List.intercalate ", "
+  $ List.intercalate ",\n"
   $ [show . fromMaybe dead_state $ Map.lookup j endos_to_states | j <- [0..endomorphisms_size - 1]]
   where
     endomorphisms_size = endomorphismsSize parallel_lexer
@@ -61,7 +61,7 @@ transitionsToEndomorphismsArray parallel_lexer =
   ("def transitions_to_endomorphisms : [256][256]endomorphism = sized 256 "++)
   $ (++"] :> [256][256]endomorphism")
   $ ("["++)
-  $ List.intercalate ", "
+  $ List.intercalate ",\n"
   $ [row j | j <- [0..255]]
   where
     to_endo = transitionsToEndos parallel_lexer
@@ -77,7 +77,7 @@ compositionsArray parallel_lexer =
   ("def compositions : [endomorphism_size][endomorphism_size]endomorphism = "++)
   $ (++"] :> [endomorphism_size][endomorphism_size]endomorphism")
   $ ("["++)
-  $ List.intercalate ", "
+  $ List.intercalate ",\n"
   $ [row j | j <- [0..endomorphisms_size - 1]]
   where
     _compositions = compositions parallel_lexer
@@ -106,7 +106,7 @@ transitionsToStatesArray parallel_lexer =
   ("def transitions_to_states : [256][state_size]state = "++)
   $ (++"] :> [256][state_size]state")
   $ ("["++)
-  $ List.intercalate ", "
+  $ List.intercalate ",\n"
   $ [fromMaybe dead_endo $ Map.lookup j trans_to_endo | j <- [0..255]]
   where
     trans_to_endo = toArrayString <$> endomorphisms parallel_lexer
