@@ -1,7 +1,7 @@
 CC?=cc
 CFLAGS=-O3
 FUTHARK_BACKEND?=cuda
-.PHONY: clean bench
+.PHONY: clean bench build
 
 tokens: tokens.c
 	$(CC) -o $@ $^ $(CFLAGS)
@@ -18,10 +18,13 @@ sexp.fut: sexp.cg data.in
 	@printf -- "\n-- ==\n-- entry: lex\n-- script input { \$$loadbytes \"data.in\" }\n" >> sexp.fut
 	futhark pkg sync
 
+build: lexer sexp.fut
+	@:
+
 bench: lexer data.in sexp.fut
 	@echo "Lisp Lexer Benchmark:"
 	@echo "Benchmarking Rust:"
-	./lexer data.in
+	@./lexer data.in
 	@echo "Benchmarking Futhark:"
 	futhark bench --backend $(FUTHARK_BACKEND) sexp.fut
 
