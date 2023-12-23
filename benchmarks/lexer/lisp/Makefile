@@ -59,4 +59,4 @@ bench: lexer-rust lexer-c sexp.fut data.in
 	futhark bench --backend $(FUTHARK_BACKEND) sexp.fut
 
 clean:
-	rm -rf tokens data.in target lexer-rust lexer-c data.out sexp sexp.c
+	rm -rf tokens data.in target lexer-rust lexer-c data.out sexp sexp.c sexp.fut
