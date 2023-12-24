@@ -41,7 +41,7 @@ futharkParserTableKey empty_terminal q k =
 -- | Creates a string that is a array in the Futhark language which corresponds
 -- to the resulting productions list. This is used in the pattern matching.
 futharkProductions :: Int -> Int -> ([Bracket Integer], [Int]) -> String
-futharkProductions max_alpha_omega max_pi = ("#just " ++) . toTuple . toArr . snd' . fst'
+futharkProductions max_alpha_omega max_pi = ("#some " ++) . toTuple . toArr . snd' . fst'
   where
     toArr (a, b) = [a, b]
     snd' = BI.second (toTuple . rpad "empty_production" max_pi . map show)
@@ -74,7 +74,7 @@ futharkParserTable empty_terminal q k table =
     stacks = toArray $ replicate max_alpha_omega "epsilon"
     rules = toArray $ replicate max_pi "empty_production"
     ne = toTuple [stacks, rules]
-    last_case_str = [i|\n  case _ -> #nothing|]
+    last_case_str = [i|\n  case _ -> #none|]
     prods = fmap (futharkProductions max_alpha_omega max_pi)
     keys = Map.mapKeys (futharkParserTableKey empty_terminal q k)
 
@@ -181,8 +181,8 @@ def lookahead_array_to_tuple [n] (arr : [n]terminal) : lookahead_type =
   #{toTupleIndexArray "arr" k}
 
 def key_to_config (key : (lookback_type, lookahead_type))
-                : maybe ([max_ao]bracket, [max_pi]production) =
-  map_maybe (\\((#{brackets}),(#{productions})) ->
+                : opt ([max_ao]bracket, [max_pi]production) =
+  map_opt (\\((#{brackets}),(#{productions})) ->
     (sized max_ao [#{brackets}], sized max_pi [#{productions}])
   ) <|
   match key

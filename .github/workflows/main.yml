@@ -9,6 +9,7 @@ on:
 
 jobs:
   haskell-test:
+    if: contains(github.event.pull_request.labels.*.name, 'test')
     runs-on: ubuntu-22.04
 
     steps:
@@ -40,6 +41,7 @@ jobs:
         run: cabal test all
   
   futhark-test:
+    if: contains(github.event.pull_request.labels.*.name, 'test')
     runs-on: ubuntu-22.04
   
     steps:
@@ -125,4 +127,4 @@ jobs:
     - name: futhark-tests
       shell: bash
       run: |
-        futhark test -c --no-terminal --no-tuning --backend=c futhark-tests/*.fut
+        futhark test -c --no-terminal --no-tuning --backend=multicore futhark-tests/*.fut

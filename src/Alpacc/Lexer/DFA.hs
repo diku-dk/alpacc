@@ -1,11 +1,11 @@
 module Alpacc.Lexer.DFA
   ( DFA,
     isMatch,
-    parallelLexingTable,
     invertSetMap,
     lexerDFA,
     DFALexer,
     fromRegExToDFA,
+    transitions'
   )
 where
 
@@ -14,21 +14,19 @@ import Alpacc.Lexer.NFA
 import Alpacc.Util
 import Control.Monad.State
 import Data.Bifunctor (Bifunctor (..))
-import Data.Foldable (Foldable (..))
 import Data.Function
 import Data.Functor.Identity
 import Data.List.NonEmpty (NonEmpty)
 import Data.Map (Map)
 import Data.Map qualified as Map hiding (Map)
-import Data.Maybe (catMaybes)
 import Data.Set (Set)
 import Data.Set qualified as Set hiding (Set)
 import Data.Text (Text)
 import Data.Text qualified as Text
+import Data.Foldable
 
 type DFA t s = FSA Identity Identity t s
-
-type DFALexer t s k = Lexer Identity Identity t s k
+type DFALexer t s k = Lexer Identity Identity t s k 
 
 transitions' :: (IsState s, IsTransition t) => DFA t s -> Map (s, t) s
 transitions' = Map.mapKeys (second runIdentity) . fmap runIdentity . transitions
@@ -108,29 +106,6 @@ dfaFilter p dfa =
         then initial dfa
         else error "Can not filter states since the initial state is removed."
 
-solveTerminalMapping ::
-  (IsState s, IsTransition t, Ord k) =>
-  Map ((s, s), t) (Set k) ->
-  ((Set s, t), Set s) ->
-  (((Set s, Set s), t), Set k)
-solveTerminalMapping terminal_map ((s, c), s') = (((s, s'), c), new_set)
-  where
-    lookup' = (`Map.lookup` terminal_map)
-    new_set =
-      Set.unions $
-        catMaybes [lookup' ((x, y), c) | x <- toList s, y <- toList s']
-
-solveTerminalMap ::
-  (IsState s, IsTransition t, Ord k) =>
-  Map ((s, s), t) (Set k) ->
-  Map (Set s, t) (Set s) ->
-  Map ((Set s, Set s), t) (Set k)
-solveTerminalMap terminal_map =
-  Map.filter (not . null)
-    . Map.fromList
-    . fmap (solveTerminalMapping terminal_map)
-    . Map.toList
-
 fromNFAtoDFAState :: (IsState s, IsTransition t) => State (NFA t s) (DFA t (Set s))
 fromNFAtoDFAState = do
   nfa <- get
@@ -183,20 +158,6 @@ isMatch dfa = runDFA' start_state
         x = Text.head str'
         xs = Text.tail str'
         maybe_state = Map.lookup (s, x) trans
-
-parallelLexingTable :: (IsState s, IsTransition t, Enum s) => DFALexer t s k -> Map t [s]
-parallelLexingTable lexer = table
-  where
-    dfa = fsa lexer
-    _transitions = transitions' dfa
-    _states = states dfa
-    _alphabet = alphabet dfa
-    tableLookUp key = _transitions Map.! key
-    statesFromChar a =
-      (a,) $
-        map (\b -> tableLookUp (b, a)) $
-          toList _states
-    table = Map.fromList $ map statesFromChar $ toList _alphabet
 
 invertSetMap :: (Ord t, Ord s) => Map t (Set s) -> Map s (Set t)
 invertSetMap mapping = Map.fromList $ setMap <$> codomain
@@ -293,65 +254,71 @@ minimize dfa' = removeUselessStates new_dfa
     newMatrix matrix = Map.mapWithKey (\k _ -> newMatrixValue matrix k) matrix
     newMatrixValue matrix st@(s, s') = matrix Map.! st || isDistinguishable matrix s s'
 
-addDeadState :: (IsTransition t, IsState s, Enum s, Ord k) => DFALexer t s k -> DFALexer t s k
-addDeadState lexer =
-  lexer
-    { fsa = dfa,
-      deadState = dead_state
+dfaToNFA :: (IsState s, IsTransition t) => DFA t s -> NFA t s
+dfaToNFA dfa = dfa { transitions = new_transitions }
+  where
+    new_transitions =
+      Map.mapKeys (second Trans)
+      $ Set.singleton <$> transitions' dfa
+
+lexerDFA :: (IsTransition t, IsState s, Enum s, Ord k, Ord o) => Map k o -> s -> Map k (RegEx (NonEmpty t)) -> DFALexer t s k
+lexerDFA terminal_to_order start_state nfa_map' =
+  reenumerateLexer start_state $
+    Lexer
+    { fsa = dfa
+    , terminalMap = dfa_terminal_map
     }
   where
-    (dfa, dead_state) = mkDFATotal $ fsa lexer
+    auxiliary =
+      dfaToNFA
+      . reenumerateFSA start_state
+      . minimize
+      . reenumerateFSA start_state
+      . fromNFAtoDFA
+      . fromRegExToNFA start_state
+      
+    dfa_map' = auxiliary <$> nfa_map'
+    nfa_map = reenumerateFSAsMap start_state dfa_map'
+    nfas = Map.elems nfa_map
+    initials = Set.fromList $ initial <$> nfas
 
-newSets :: Ord a => FSA f f' t (Set a) -> Set a -> Set (Set a)
-newSets dfa set = Set.filter (not . null . Set.intersection set) _states
-  where
-    _states = states dfa
+    newStates set k s =
+      Map.unionsWith Set.union
+      . map (uncurry Map.singleton
+             . (, Set.singleton k))
+      . Set.toList
+      $ Set.filter (s `Set.member`) set
 
-minimizeDFALexer :: (IsTransition t, IsState s, Enum s, Ord k) => s -> DFALexer t s k -> DFALexer t s k
-minimizeDFALexer start_state lexer =
-  addDeadState $
-    reenumerateLexer start_state $
-      Lexer
-        { fsa = dfa,
-          finalMap = new_final_map,
-          terminalMap = new_terminal_map,
-          deadState = Nothing
-        }
-  where
-    dfa = minimize $ fsa lexer
-    _transitions = transitions' dfa
-    final_map = finalMap lexer
-    terminal_map = Map.mapKeys (second runIdentity) $ terminalMap lexer
-
-    new_final_map = newSets dfa <$> final_map
-    new_terminal_map =
-      Map.mapKeys (second Identity) $
-        solveTerminalMap terminal_map _transitions
-
-lexerDFA :: (IsTransition t, IsState s, Enum s, Ord k) => s -> Map k (RegEx (NonEmpty t)) -> DFALexer t s k
-lexerDFA start_state regex_map =
-  minimizeDFALexer start_state $
-    reenumerateLexer start_state $
-      Lexer
-        { fsa = dfa,
-          finalMap = dfa_final_map,
-          terminalMap = dfa_terminal_map,
-          deadState = Nothing
-        }
-  where
-    nfa_map = fromRegExToNFA start_state <$> regex_map
-    nfa_lexer = lexerNFA start_state nfa_map
-    nfa = fsa nfa_lexer
-    final_map = finalMap nfa_lexer
-    terminal_map =
-      Map.mapKeys (second fromTransition) $
-        Map.filterWithKey (\(_, t) _ -> isTransition t) $
-          terminalMap nfa_lexer
-
-    dfa = fromNFAtoDFA nfa
-    _transitions = transitions' dfa
-    dfa_final_map = newSets dfa <$> final_map
+    minimumSet = minimumBy (on compare (terminal_to_order Map.!))
+    
     dfa_terminal_map =
-      Map.mapKeys (second Identity) $
-        solveTerminalMap terminal_map _transitions
+      fmap minimumSet
+      . Map.unionsWith Set.union
+      . concat
+      . Map.elems
+      $ Map.mapWithKey (
+          \k ->
+            map (newStates (states dfa) k)
+            . Set.toList
+            . accepting
+        ) nfa_map
 
+    new_states' = Set.unions $ states <$> nfas
+    new_initial = succ $ maximum $ Set.insert start_state new_states'
+    new_states = Set.insert new_initial new_states'
+    new_alphabet = Set.unions $ alphabet <$> nfas
+    new_accepting = Set.unions $ accepting <$> nfas
+    new_transitions =
+      Map.insert (new_initial, Eps) initials
+      $ Map.unionsWith Set.union
+      $ transitions <$> nfas
+
+    dfa =
+      fromNFAtoDFA $
+        FSA
+        { states = new_states
+        , alphabet = new_alphabet
+        , transitions = new_transitions
+        , accepting = new_accepting
+        , initial = new_initial
+        }

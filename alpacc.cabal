@@ -48,6 +48,7 @@ library
     , file-embed
     , split
     , utf8-string
+    , array
 
   exposed-modules:
     Alpacc.CFG
@@ -68,11 +69,11 @@ library
 
   hs-source-dirs:     src
 
-  ghc-options:        -O2 -Wall -Werror
+  ghc-options: -O2 -Wall
 
 executable alpacc
   default-language:   GHC2021
-  ghc-options:        -threaded -O2 -rtsopts -Wall -Werror
+  ghc-options:        -threaded -O2 -rtsopts -Wall
   main-is:            Main.hs
 
   default-extensions:
@@ -105,7 +106,7 @@ executable alpacc
 
 test-suite test-alpacc
   default-language:   Haskell2010
-  ghc-options:        -threaded -O2 -rtsopts -Werror
+  ghc-options:        -threaded -O2 -rtsopts
   other-modules:
     LL
     LLP

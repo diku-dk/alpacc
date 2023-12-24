@@ -3,149 +3,140 @@
 -- The generic parallel lexer, expressed as a parameterised
 -- module.
 
-import "lib/github.com/diku-dk/containers/bitset"
-import "lib/github.com/diku-dk/containers/maybe"
-
-module bitset_u32 = mk_bitset u32
+import "lib/github.com/diku-dk/containers/opt"
 
 module type lexer_context = {
   module state_module : integral
-  module char_module : integral
+  module endomorphism_module : integral
   module terminal_module : integral
-  val accepting_size : i64
-  val number_of_states : i64
-  val number_of_terminals : i64
-  val initial_state : state_module.t
   val dead_state : state_module.t
-  val accepting_states : [accepting_size]state_module.t
-  val final_terminal_states : [number_of_terminals](bitset_u32.bitset[(number_of_states - 1) / bitset_u32.nbs + 1])
-  val inverted_final_terminal_states : [number_of_states](bitset_u32.bitset[(number_of_terminals - 1) / bitset_u32.nbs + 1])
-  val char_to_transitions : char_module.t -> [number_of_states]state_module.t
-  val transition_to_terminal_set : ((state_module.t, state_module.t), char_module.t) -> bitset_u32.bitset[(number_of_terminals - 1) / bitset_u32.nbs + 1]
+  val initial_state : state_module.t
+  val dead_endomorphism : endomorphism_module.t
+  val identity_endomorphism : endomorphism_module.t
+  val endomorphism_size : i64
+  val state_size : i64
   val is_ignore : terminal_module.t -> bool
+  val is_accepting : [state_size]bool
+  val transitions_to_states : [256][state_size]state_module.t
+  val transitions_to_endomorphisms : [256][256]endomorphism_module.t
+  val compositions : [endomorphism_size][endomorphism_size]endomorphism_module.t
+  val states_to_terminals : [state_size]terminal_module.t
+  val endomorphisms_to_states : [endomorphism_size]state_module.t
 }
 
 module mk_lexer(L: lexer_context) = {
-  module terminal_module = L.terminal_module
-  module state_module = L.state_module
-  module char_module = L.char_module
+  type state = L.state_module.t
+  type endomorphism = L.endomorphism_module.t
+  type terminal = L.terminal_module.t
 
-  type terminal = terminal_module.t
-  type state = state_module.t
-  type char = char_module.t
+  def compose (a : endomorphism) (b : endomorphism) : endomorphism =
+    #[unsafe]
+    let a' = L.endomorphism_module.to_i64 a
+    let b' = L.endomorphism_module.to_i64 b
+    in copy L.compositions[b', a']
 
-  type terminal_set = bitset_u32.bitset[(L.number_of_terminals - 1) / bitset_u32.nbs + 1]
-  type state_vector = [L.number_of_states]state
-  type maybe_state_vector = [L.number_of_states](maybe state)
+  def is_accept (a : state) : bool =
+    L.is_accepting[L.state_module.to_i64 a]
 
-  type transition = (state, state)
-
-  def identity_state_vector : state_vector =
-    map state_module.i64 (iota L.number_of_states)
-    |> sized L.number_of_states
-
-  def transitions [n] (str : [n]char) : [n]state_vector =
-    map L.char_to_transitions str
-
-  def minimum (set : terminal_set) : terminal =
-    let m = bitset_u32.to_array set
-        |> reduce_comm (i64.min) (L.number_of_terminals - 1)
-    in terminal_module.i64 m
-
-  def terminal_empty_set = bitset_u32.empty L.number_of_terminals
-
-  def terminal_full_set = bitset_u32.complement terminal_empty_set
-
-  type state_set = bitset_u32.bitset[(L.number_of_states - 1) / bitset_u32.nbs + 1]
-
-  def state_empty_set = bitset_u32.empty L.number_of_states
-
-  def state_full_set = bitset_u32.complement state_empty_set
-
-  def compose_transition_vectors (a : state_vector) (b : state_vector) : state_vector =
-    map (\s ->
-      b[state_module.to_i64 s]
-    ) a
+  def trans_to_endo [n] (str : [n]u8) (i : i64) : endomorphism =
+    if i == n - 1
+    then L.identity_endomorphism
+    else
+      let c = u8.to_i64 str[i]
+      let c' = u8.to_i64 str[i + 1]
+      in copy L.transitions_to_endomorphisms[c', c]
   
-  def find_ends [n] (state_vectors: [n]state_vector) : [n]state_set =
-    map2 (\i v ->
-      if i == n - 1
-      then state_full_set
-      else let w = state_vectors[i + 1]
-           in map2 (\i s ->
-                if w[state_module.to_i64 s] state_module.== L.dead_state then i else -1
-              ) (indices v) v
-              |> bitset_u32.from_array L.number_of_states
-    ) (iota n) state_vectors
+  def endo_to_state (e : endomorphism) : state =
+    let e' = L.endomorphism_module.to_i64 e
+    in copy L.endomorphisms_to_states[e']
 
-  def find_terminal_strings [n] (path : [n]transition) (str : [n]char) (ends : [n]bool) : [n]terminal_set =
-    map3 (\is_end transition char ->
-      let set = L.transition_to_terminal_set (transition, char)
-      let final_set = copy L.inverted_final_terminal_states[state_module.to_i64 transition.1]
-      in if is_end
-         then final_set `bitset_u32.intersection` set
-         else set
-    ) ends path str
-
-  def find_transition [n] (str : [n]char) (composed_vectors : [n]state_vector) (ends : [n]state_set) (i : i64) : (transition, bool) =
-    let prev_index =
-      if i >= 2
-      then
-        composed_vectors[i - 2]
-        |> (.[state_module.to_i64 L.initial_state])
-        |> state_module.to_i64
-      else state_module.to_i64 L.initial_state
+  def lookup_state [n] (endos : [n]endomorphism) (str : [n]u8) (i : i64) : (bool, state) =
+    let c = u8.to_i64 str[i]
     let prev_state =
-      if i >= 1 && not (prev_index `bitset_u32.member` ends[i - 1])
-      then
-        composed_vectors[i - 1]
-        |> (.[state_module.to_i64 L.initial_state])
-      else L.initial_state
-    let curr_index = state_module.to_i64 prev_state
-    let curr_state_vector = L.char_to_transitions str[i]
-    let curr_state = curr_state_vector[curr_index]
-    let curr_is_end = curr_index `bitset_u32.member` ends[i]
-    in ((prev_state, curr_state), curr_is_end)
+      L.state_module.to_i64
+      <| if i == 0
+         then L.initial_state
+         else endo_to_state endos[i - 1]
+    let state = copy L.transitions_to_states[c, prev_state]
+    let pseudo_state = endo_to_state endos[i]
+    let is_end = i == n - 1 || L.initial_state L.state_module.== pseudo_state
+    in (is_end, state)
 
-  def find_path [n] (str : [n]char) (state_vectors: [n]state_vector) : [n](transition, bool) =
-    let ends = find_ends state_vectors
-    let composed_vectors =
-      tabulate_2d n L.number_of_states (\i j ->
-        let curr_state = state_vectors[i][j]
-        in if j `bitset_u32.member` ends[i]
-           then L.initial_state
-           else curr_state
-      )
-      |> scan compose_transition_vectors identity_state_vector
-    in tabulate n (find_transition str composed_vectors ends)
+  def to_terminal (s : state) : terminal =
+    let s' = L.state_module.to_i64 s
+	in copy L.states_to_terminals[s']
 
-  def is_valid_transition (((a, b), is_end) : (transition, bool)) : bool =
-    b state_module.!= L.dead_state &&
-    a state_module.!= L.dead_state &&
-    (not is_end || any (state_module.==b) L.accepting_states) 
+  def to_ends_states [n] (str : [n]u8) : [n](bool, state) =
+    let endos =
+      tabulate n (trans_to_endo str)
+      |> scan compose L.identity_endomorphism
+    in tabulate n (lookup_state endos str)
 
-  def lex [n] (str : [n]char) : maybe ([](terminal, (i64, i64))) =
-    let path_and_ends =
-      transitions str
-      |> find_path str
-    let is_valid = all is_valid_transition path_and_ends
-    let (path, ends) = unzip path_and_ends
-    let terminal_strings = find_terminal_strings path str ends
-    let terminal_ends = filter (\i -> ends[i]) (iota n)
-    let unfiltered_terminals_and_spans =
-      map (\i ->
-        let (a, b) =
-          if i == 0
-          then (0, terminal_ends[i] + 1)
-          else (terminal_ends[i - 1] + 1, terminal_ends[i] + 1)
-        let t = reduce_comm bitset_u32.intersection terminal_full_set terminal_strings[a:b]
-                |> minimum
-        in (t, (a, b))
-      ) (indices terminal_ends)
-    let terminals_and_spans = filter (not <-< L.is_ignore <-< (.0)) unfiltered_terminals_and_spans
+  def lex [n'] (str : [n']u8) : opt ([](terminal, (i32, i32))) =
+    let n = i32.i64 n'
+    let ends_states = if n == 0 then [] else to_ends_states str
+    let is = filter (\i -> ends_states[i].0) (0i32..<n)
+    let is_valid = all (\i -> is_accept ends_states[i].1) is
+    let new_size = length is
+    let result =
+      tabulate new_size (
+                 \i ->
+                   let start = if i == 0 then 0 else 1 + is[i - 1]
+                   let end = is[i]
+                   let span = (start, end + 1)
+                   in (to_terminal ends_states[end].1, span)
+               )
+      |> filter (not <-< L.is_ignore <-< (.0))
     in if is_valid
-       then #just terminals_and_spans
-       else #nothing
+       then some result
+       else #none
+
+  def lex_step [n'] (str : [n']u8) (offset : i32) (size : i32) : opt ([](terminal, (i32, i32)), i32) =
+    let n = i32.i64 n'
+    let substr = str[i64.i32 offset:i64.i32 (i32.min n (offset + size))]
+    let m = length substr |> i32.i64
+    let ends_states = if m == 0 then [] else to_ends_states substr
+    let is = filter (\i -> ends_states[i].0) (0i32..<m)
+    let new_size = length is
+    let lexed' =
+      tabulate new_size (
+                 \i ->
+                   let start = if i == 0 then 0 else 1 + is[i - 1]
+                   let end = is[i]
+                   let span = (offset + start, offset + end + 1)
+                   in (ends_states[end].1, span)
+               )
+    let (lexed, new_offset') =
+      if new_size <= 1 || m < size
+      then ([], -1)
+      else (init lexed', last lexed' |> (.1) |> (.0))
+    let (states_spans, new_offset) =
+      if m < size
+      then (lexed', n - 1)
+      else (lexed, new_offset')
+    let is_invalid = all (\(s, _) -> is_accept s) states_spans |> not
+    let terminals_spans =
+      map (\(s, span) -> (to_terminal s, span)) states_spans
+      |> filter (not <-< L.is_ignore <-< (.0))
+    in if (new_size <= 1 && m == size) || is_invalid
+       then #none
+       else some (terminals_spans, new_offset)
+
+  def lex' [n'] (max_token_size : i32) (str : [n']u8) : opt ([](terminal, (i32, i32))) =
+    let n = i32.i64 n'
+    let step = max_token_size + 1
+    let (ys, final_offset, _) =
+      loop (xs, offset, stop) = ([], 0, true) while stop do
+        match lex_step str offset step
+        case #none -> ([], -1, false)
+        case #some (lexed, new_offset) ->
+          let xs' = xs ++ lexed
+          in if new_offset == n - 1
+             then (xs', new_offset, false)
+             else (xs', new_offset, true)
+    in if final_offset == n - 1
+       then some ys
+       else #none
 }
 
 -- End of lexer.fut

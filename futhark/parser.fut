@@ -4,7 +4,7 @@
 -- module.
 
 import "lib/github.com/diku-dk/sorts/radix_sort"
-import "lib/github.com/diku-dk/containers/maybe"
+import "lib/github.com/diku-dk/containers/opt"
 
 module type parser_context = {
   module terminal_module : integral
@@ -25,7 +25,7 @@ module type parser_context = {
   val start_terminal : terminal_module.t
   val end_terminal : terminal_module.t
   val ne : ([max_ao]bracket_module.t, [max_pi]production_module.t)
-  val key_to_config : (lookback_type, lookahead_type) -> maybe ([max_ao]bracket_module.t, [max_pi]production_module.t)
+  val key_to_config : (lookback_type, lookahead_type) -> opt ([max_ao]bracket_module.t, [max_pi]production_module.t)
 }
 
 module mk_parser(P: parser_context) = {
@@ -58,7 +58,7 @@ module mk_parser(P: parser_context) = {
     let lookahead = lookahead_chunks arr
     in zip lookback lookahead
 
-  def depths [n] (input : [n]bracket) : maybe ([n]i64) =
+  def depths [n] (input : [n]bracket) : opt ([n]i64) =
     let left_brackets =
       input
       |> map (is_left)
@@ -70,8 +70,8 @@ module mk_parser(P: parser_context) = {
       bracket_scan
       |> map2 (\a b -> b - i64.bool a) left_brackets
     in if any (<0) bracket_scan || last bracket_scan != 0
-       then #nothing
-       else #just result
+       then #none
+       else #some result
 
   def grade [n] (xs : [n]i64) : [n]i64 =
     zip xs (indices xs)
@@ -89,20 +89,20 @@ module mk_parser(P: parser_context) = {
 
   def brackets_matches [n] (brackets : [n]bracket) : bool =
     match depths brackets
-    case #just depths' ->
+    case #some depths' ->
       let grade' = grade depths'
       in even_indices grade'
          |> map (\i -> eq_no_bracket brackets[grade'[i]] brackets[grade'[i+1]])
          |> and
-    case #nothing -> false
+    case #none -> false
 
   def parse [n] (arr : [n]terminal) : []production =
     let arr' = [P.start_terminal] ++ arr ++ [P.end_terminal]
     let configs = keys arr' |> map P.key_to_config
-    in if any (is_nothing) configs
+    in if any (is_none) configs
        then []
        else
-       let (brackets, productions) = unzip (map (from_maybe P.ne) configs)
+       let (brackets, productions) = unzip (map (from_opt P.ne) configs)
        in if brackets |> flatten |> filter (bracket_module.!=epsilon) |> brackets_matches
           then productions
                |> flatten

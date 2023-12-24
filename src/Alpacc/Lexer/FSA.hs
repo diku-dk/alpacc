@@ -22,7 +22,6 @@ import Data.Set qualified as Set hiding (Set)
 import Data.Bifunctor (Bifunctor(..))
 import Data.Foldable
 import Control.Monad.Identity (Identity)
-import Data.Tuple.Extra (both)
 import Data.Word (Word8)
 
 data FSA f f' t s = FSA
@@ -32,15 +31,13 @@ data FSA f f' t s = FSA
     initial :: s,
     accepting :: Set s
   }
-  deriving (Eq, Show)
+  deriving (Ord, Eq, Show)
 
 data Lexer f f' t s k = Lexer
   { fsa :: FSA f f' t s,
-    finalMap :: Map k (Set s),
-    terminalMap :: Map ((s, s), f' t) (Set k),
-    deadState :: Maybe s
+    terminalMap :: Map s k
   }
-  deriving (Eq, Show)
+  deriving (Ord, Eq, Show)
 
 class OrdMap f where
   omap :: (Ord a, Ord b) => (a -> b) -> f a -> f b
@@ -54,6 +51,8 @@ instance IsTransition Char where
 instance IsTransition Word8 where
 
 instance IsTransition Integer where
+
+instance IsTransition Int where
 
 class (IsTransition t, Ord (f' t), OrdMap f, OrdMap f', IsState s) => FSAMappable p f f' t s where
 
@@ -84,6 +83,8 @@ instance IsState s => IsState (Set s) where
 
 instance IsState Integer where
 
+instance IsState Int where
+
 instance OrdMap Identity where
   omap = fmap
 
@@ -101,9 +102,7 @@ instance LexerMap Lexer where
   fsaLexerMap g f fsa_lexer =
     fsa_lexer
       { fsa = fsaMap g f $ fsa fsa_lexer,
-        finalMap = Set.map f <$> finalMap fsa_lexer,
-        terminalMap = Map.mapKeys (bimap (both f) (omap g)) terminal_map,
-        deadState = f <$> deadState fsa_lexer
+        terminalMap = Map.mapKeys f terminal_map
       }
     where
       terminal_map = terminalMap fsa_lexer
