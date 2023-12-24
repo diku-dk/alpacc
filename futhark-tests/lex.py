@@ -57,7 +57,7 @@ def generate_tests(inps, regex):
     pattern = re.compile('|'.join(f'(?P<{n}>{p})' for n, p in regex.items()))
     outs = (lexer(inp, regex, pattern, mapping) for inp in inps)
     test = ''.join(
-        to_futhark_test(inp, out, 'u64')
+        to_futhark_test(inp, out, 'i32')
         for inp, out in zip(inps, outs)
     )
     return test

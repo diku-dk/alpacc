@@ -1,9 +1,6 @@
 *
-!*/
-!*.*
-*.fut
-*.c
-*.actual
-*.expected
-lib
-__pycache__
+!./lexer-tests/*.json
+!*.py
+!.gitignore
+!*.pkg
+!*.md

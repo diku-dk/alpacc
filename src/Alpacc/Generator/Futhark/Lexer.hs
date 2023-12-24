@@ -1,162 +1,191 @@
+{-# LANGUAGE TemplateHaskell #-}
+
 module Alpacc.Generator.Futhark.Lexer
   ( generateLexer )
-where
+ where
 
+import Alpacc.Generator.Futhark.Util
 import Alpacc.Grammar
 import Alpacc.Lexer.DFA
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Set qualified as Set
 import Data.String.Interpolate (i)
-import Data.Tuple.Extra
-import Data.Foldable
 import Data.FileEmbed
-import Alpacc.Generator.Futhark.Util
-import Data.List.Split (chunksOf)
 import Data.Word (Word8)
-import Alpacc.Lexer.FSA
-import Control.Monad.Identity (Identity(runIdentity))
-import Data.Maybe (fromJust)
+import Alpacc.Lexer.ParallelLexing
+import Data.List qualified as List
+import Data.Maybe
+import Data.Array qualified as Array
 
 futharkLexer :: String
 futharkLexer = $(embedStringFile "futhark/lexer.fut")
 
-futharkLexerFunction :: Map Word8 [Integer] -> String
-futharkLexerFunction table =
-    [i|
-def char_to_transitions (c : char) : state_vector =
-  let vector =
-  match c
-  #{str_lexer_table}
-  case _ -> replicate number_of_states dead_state
-  in sized number_of_states vector
-|]
-  where
-    str_lexer_table =
-      futharkTableCases
-        . Map.toAscList
-        $ toArray . fmap show <$> Map.mapKeys show table
+defStateSize :: ParallelLexer Word8 Int -> String
+defStateSize =
+  ("def state_size : i64 = "++)
+  . show
+  . stateSize
 
-toBoolsLists :: Int -> [Int] -> [Bool]
-toBoolsLists m ls = reverse $ map (`elem` ls) [0..m]
+defEndomorphismSize :: ParallelLexer Word8 Int -> String
+defEndomorphismSize =
+  ("def endomorphism_size : i64 = "++)
+  . show
+  . endomorphismsSize
 
-toBoolSet :: Int -> [Int] -> String
-toBoolSet m ls = toArray . map toInt $ chunksOf 64 lists 
+isAcceptingArray :: ParallelLexer Word8 Int -> String
+isAcceptingArray parallel_lexer =
+  ([i|def is_accepting : [state_size]bool = sized state_size |]++)
+  $ (++"]")
+  $ ("["++)
+  $ List.intercalate ", "
+  $ [if j `Set.member` accepting_states then "true" else "false" | j <- [0..state_size - 1]]
   where
-    lists = toBoolsLists m ls
-    toChar True = '1'
-    toChar False = '0'
-    toInt = ("0b"++) . map toChar
+    state_size = stateSize parallel_lexer
+    accepting_states = acceptingStates parallel_lexer
 
-transitionTable :: Int -> Map ((Integer, Integer), Word8) [Integer] -> String
-transitionTable num_of_terminals table =
-  [i|
-def transition_to_terminal_set (n : (transition, char)) : terminal_bitset =
-  match n
-  #{cases}
-  case _ -> bitset_u32.from_bit_array number_of_terminals #{empty_set}
-|]
+endomorphismsToStateArray :: ParallelLexer Word8 Int -> String
+endomorphismsToStateArray parallel_lexer =
+  ("def endomorphisms_to_states : [endomorphism_size]state = sized endomorphism_size "++)
+  $ (++"]")
+  $ ("["++)
+  $ List.intercalate ",\n"
+  $ [show . fromMaybe dead_state $ Map.lookup j endos_to_states | j <- [0..endomorphisms_size - 1]]
   where
-    empty_set = toBoolSet num_of_terminals []
-    cases = futharkTableCases . Map.toAscList $ _table
-    toStr ((x, y), z) = [i|((#{x}, #{y}), #{z})|]
-    _table =
-      ([i|bitset_u32.from_bit_array number_of_terminals |]++)
-      . toBoolSet num_of_terminals
-      . fmap fromInteger <$> Map.mapKeys toStr table
-      
-findStateIntegral ::
-  DFA Word8 Integer ->
+    endomorphisms_size = endomorphismsSize parallel_lexer
+    endos_to_states = endomorphismsToStates parallel_lexer
+    dead_state = deadState parallel_lexer
+
+transitionsToEndomorphismsArray :: ParallelLexer Word8 Int -> String
+transitionsToEndomorphismsArray parallel_lexer =
+  ("def transitions_to_endomorphisms : [256][256]endomorphism = sized 256 "++)
+  $ (++"] :> [256][256]endomorphism")
+  $ ("["++)
+  $ List.intercalate ",\n"
+  $ [row j | j <- [0..255]]
+  where
+    to_endo = transitionsToEndos parallel_lexer
+    dead_endo = deadEndo parallel_lexer
+    row j =
+      (++"]")
+      $ ("["++)
+      $ List.intercalate ", "
+      $ [show . fromMaybe dead_endo $ Map.lookup (k, j) to_endo | k <- [0..255]]
+
+compositionsArray :: ParallelLexer Word8 Int -> String
+compositionsArray parallel_lexer =
+  ("def compositions : [endomorphism_size][endomorphism_size]endomorphism = "++)
+  $ (++"] :> [endomorphism_size][endomorphism_size]endomorphism")
+  $ ("["++)
+  $ List.intercalate ",\n"
+  $ [row j | j <- [0..endomorphisms_size - 1]]
+  where
+    _compositions = compositions parallel_lexer
+    endomorphisms_size = endomorphismsSize parallel_lexer
+    dead_endo = deadEndo parallel_lexer
+    row j =
+      (++"]")
+      $ ("["++)
+      $ List.intercalate ", "
+      $ [show . fromMaybe dead_endo $ Map.lookup (k, j) _compositions | k <- [0..endomorphisms_size - 1]]
+
+stateToTerminalArray :: ParallelLexer Word8 Int -> String
+stateToTerminalArray parallel_lexer =
+  ("def states_to_terminals : [state_size]terminal = sized state_size "++)
+  $ (++"]")
+  $ ("["++)
+  $ List.intercalate ", "
+  $ [show . fromMaybe dead_token $ Map.lookup j token_map | j <- [0..state_size - 1]]
+  where
+    state_size = stateSize parallel_lexer
+    token_map = tokenMap parallel_lexer
+    dead_token = maximum token_map
+
+transitionsToStatesArray :: ParallelLexer Word8 Int -> String
+transitionsToStatesArray parallel_lexer =
+  ("def transitions_to_states : [256][state_size]state = "++)
+  $ (++"] :> [256][state_size]state")
+  $ ("["++)
+  $ List.intercalate ",\n"
+  $ [fromMaybe dead_endo $ Map.lookup j trans_to_endo | j <- [0..255]]
+  where
+    trans_to_endo = toArrayString <$> endomorphisms parallel_lexer
+    dead_endo = toArrayString $ deadEndomorphism parallel_lexer
+
+    toArrayString :: Endomorphism -> String
+    toArrayString =
+      (++"]")
+      . ("["++)
+      . List.intercalate ", "
+      . fmap show
+      . Array.elems 
+
+stateIntegral ::
+  ParallelLexer Word8 Int ->
   Either String FutUInt
-findStateIntegral = selectFutUInt . maximum . states
+stateIntegral = selectFutUInt . toInteger . pred . stateSize
 
-findCharIntegral ::
-  DFA Word8 Integer ->
+endomorphismIntegral ::
+  ParallelLexer Word8 Int ->
   Either String FutUInt
-findCharIntegral = selectFutUInt . toInteger . maximum . alphabet
+endomorphismIntegral = selectFutUInt . toInteger . pred . endomorphismsSize
+
 
 generateLexer ::
   DFALexer Word8 Integer T ->
   Map T Integer ->
   FutUInt ->
   Either String String
-generateLexer lexer terminal_index_map terminal_type = do
-  state_type <- findStateIntegral dfa
-  char_type <- findCharIntegral dfa
-  return $
+generateLexer lexer terminal_index_map' terminal_type = do
+  endomorphism_type <- endomorphismIntegral parallel_lexer
+  state_type <- stateIntegral parallel_lexer
+  Right $
     futharkLexer
       <> [i|
 module lexer = mk_lexer {
+  module terminal_module = #{terminal_type}
+  module state_module = #{state_type}
+  module endomorphism_module = #{endomorphism_type}
 
-module terminal_module = #{terminal_type}
-module state_module = #{state_type}
-module char_module = #{char_type}
+  type state = state_module.t
+  type endomorphism = endomorphism_module.t
+  type terminal = terminal_module.t
 
-type terminal = terminal_module.t
-type state = state_module.t
-type char = char_module.t
+  def dead_state : state = #{dead_state}
+  def initial_state : state = #{initial_state}
+  def dead_endomorphism : endomorphism = #{dead_endomorphism}
+  def identity_endomorphism : endomorphism = #{_identity}
 
-type transition = (state, state)
+  #{ignore_function}
 
-def number_of_states : i64 = #{number_of_states}
-def number_of_terminals : i64 = #{number_of_terminals}
-def initial_state : state = #{initial_state}
-def dead_state : state = #{dead_state}
-def accepting_size : i64 = #{accepting_size}
-def accepting_states : [accepting_size]state = #{accepting_states_str}
+  #{defEndomorphismSize parallel_lexer}
 
-type terminal_bitset = bitset_u32.bitset[(number_of_terminals - 1) / bitset_u32.nbs + 1] 
-type states_bitset = bitset_u32.bitset[(number_of_states - 1) / bitset_u32.nbs + 1] 
+  #{defStateSize parallel_lexer}
 
-def final_terminal_states : [number_of_terminals]states_bitset =
-  sized number_of_terminals #{final_terminal_states}
+  #{isAcceptingArray parallel_lexer}
 
-def inverted_final_terminal_states : [number_of_states]terminal_bitset =
-  sized number_of_states #{inverted_final_terminal_states}
+  #{transitionsToStatesArray parallel_lexer}
 
-type state_vector = [number_of_states]state
-  type maybe_state_vector = [number_of_states](maybe state)
+  #{transitionsToEndomorphismsArray parallel_lexer}
 
-#{ignore_function}
+  #{compositionsArray parallel_lexer}
 
-#{lexer_function}
+  #{stateToTerminalArray parallel_lexer}
 
-#{transition_function}
-
+  #{endomorphismsToStateArray parallel_lexer}
 }
-
 |]
   where
-    table = parallelLexingTable lexer
-    dead_state = fromJust $ deadState lexer
-    dfa = fsa lexer
-    number_of_terminals = length terminals
-    terminals = Map.keys terminal_index_map
-    lexer_function = futharkLexerFunction table
-    initial_state = initial dfa
-    number_of_states = Set.size $ states dfa
-    empty_states = Map.fromList $ (,Set.empty) <$> terminals
-    inverted_empty_states = Map.fromList $ (,Set.empty) <$> toList (states dfa)
-    toSetArray = 
-      toArray
-      . map (("bitset_u32.from_array number_of_states " ++) . show . toList . snd)
-      . Map.toAscList
-      . Map.mapKeys (terminal_index_map Map.!)
-      . Map.unionWith Set.union empty_states
-    toInvertedSetArray = 
-      toArray
-      . map (("bitset_u32.from_array number_of_terminals " ++) . show . toList . snd)
-      . Map.toAscList
-      . Map.map (Set.map (terminal_index_map Map.!))
-      . Map.unionWith Set.union inverted_empty_states
-    final_terminal_states = toSetArray $ finalMap lexer
-    inverted_final_terminal_states = toInvertedSetArray . invertSetMap $ finalMap lexer
-    transition_function = transitionTable number_of_terminals terminal_map
+    terminal_index_map = (\a -> fromIntegral a :: Int) <$> terminal_index_map'
+    terminalToIndex = (terminal_index_map Map.!)
+    parallel_lexer' = parallelLexer lexer
+    parallel_lexer = parallel_lexer' { tokenMap = token_map }
+    token_map = terminalToIndex <$> tokenMap parallel_lexer'
+    dead_state = deadState parallel_lexer
+    initial_state = initialState parallel_lexer
+    dead_endomorphism = deadEndo parallel_lexer
+    _identity = identity parallel_lexer
     ignore_function = 
       case T "ignore" `Map.lookup` terminal_index_map of
         Just j -> [i|def is_ignore (t : terminal) : bool = #{j} == t|]
         Nothing -> [i|def is_ignore (_ : terminal) : bool = false|]
-    terminal_map = fmap (terminal_index_map Map.!) . toList <$> Map.mapKeys (second runIdentity) (terminalMap lexer)
-    accepting_states = accepting dfa
-    accepting_size = show $ Set.size accepting_states
-    accepting_states_str = ("sized accepting_size " ++) . toArray $ show <$> Set.toList accepting_states
