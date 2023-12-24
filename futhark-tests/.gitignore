@@ -3,3 +3,4 @@
 !*.py
 !.gitignore
 !*.pkg
+!*.md
