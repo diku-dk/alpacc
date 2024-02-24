@@ -13,10 +13,6 @@ module Alpacc.LLP
   )
 where
 
--- import Control.Parallel.Strategies
--- import qualified Data.Bifunctor as Bifunctor
--- import qualified Data.List.NonEmpty as NonEmpty
--- import Data.Semigroup (Semigroup (sconcat))
 import Control.DeepSeq
 import Control.Monad.State
 import Data.Bifunctor qualified as BI
@@ -367,77 +363,6 @@ solveLlpItemsMemo items = do
         new_symbol_map' = Map.insert x (Set.singleton a) symbol_map
         x = head x'
         x' = auxiliary a
-
--- solveLlpItemsMemoParallel ::
---   (Ord t, Ord nt, Show nt, Show t, NFData t, NFData nt) =>
---   Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t)) ->
---   State (LlpContext nt t) (Set (Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t))))
--- solveLlpItemsMemoParallel items = do
---   let groups = groupByDotSymbol Map.empty $ toList items
---   Set.fromList <$> parMapM solveLlpItemMemo (toList groups)
---   where
---     auxiliary =
---       safeLast
---         . (\(DotProduction _ alpha_x _) -> alpha_x)
---         . dotProduction
---     safeLast [] = []
---     safeLast x = [List.last x]
---     groupByDotSymbol symbol_map [] = symbol_map
---     groupByDotSymbol symbol_map (a : as)
---       | null x' = groupByDotSymbol symbol_map as
---       | x `Map.member` symbol_map = groupByDotSymbol new_symbol_map as
---       | otherwise = groupByDotSymbol new_symbol_map' as
---       where
---         new_symbol_map = Map.adjust (Set.insert a) x symbol_map
---         new_symbol_map' = Map.insert x (Set.singleton a) symbol_map
---         x = head x'
---         x' = auxiliary a
-
--- parMapS :: (Semigroup s, NFData a, NFData s) => s -> (t -> State s a) -> [t] -> ([a], s)
--- parMapS ctx f = Bifunctor.second sconcat1 . unzip . parResult
---   where
---     parResult = parMap rdeepseq (\a -> runState (f a) ctx)
---     sconcat1 [] = ctx
---     sconcat1 a = sconcat (NonEmpty.fromList a)
-
--- parMapM :: (MonadState s m, Semigroup s, NFData a, NFData s) => (t -> State s a) -> [t] -> m [a]
--- parMapM f a = do
---   ctx <- get
---   let (result, new_ctx) = parMapS ctx f a
---   put new_ctx
---   return result
-
--- solveLlpItemMemoParallel ::
---   (Ord nt, Show nt, Ord t, Show t, NFData t, NFData nt) =>
---   [Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t))] ->
---   State (LlpContext nt t) (Set (Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t))))
--- solveLlpItemMemoParallel sets = do
---   sets' <- parMapM solveLlpItemsMemo sets
---   return $ Set.unions sets'
-
--- | Creates the LLP collection as described in algorithm 8 from the LLP paper.
--- This is done using memoization.
--- llpCollectionMemoParallel ::
---   (Ord t, Ord nt, Show nt, Show t, NFData t, NFData nt) =>
---   State (LlpContext nt t) (Set (Set (Item (AugmentedNonterminal nt) (AugmentedTerminal t))))
--- llpCollectionMemoParallel = do
---   ctx <- get
---   let grammar = theGrammar ctx
---   let q = lookback ctx
---   let d_init = initD q grammar
---   let d_init_set = Set.singleton d_init
---   let d_init_list = [d_init]
---   removeNull <$> auxiliary Set.empty d_init_set d_init_list
---   where
---     removeNull = Set.filter (not . null)
---     auxiliary _ items [] = return items
---     auxiliary visited items queue = do
---       let not_visited = filter (`Set.notMember` visited) queue
---       new_items' <- solveLlpItemMemoParallel not_visited
---       let new_queue = toList new_items'
---       let new_items = items `Set.union` new_items'
---       let new_visited = Set.union (Set.fromList queue) visited
---       auxiliary new_visited new_items new_queue
 
 -- | Creates the LLP collection as described in algorithm 8 from the LLP paper.
 -- This is done using memoization.

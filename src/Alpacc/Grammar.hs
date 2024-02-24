@@ -25,7 +25,8 @@ module Alpacc.Grammar
     substringGrammar,
     rightSymbols,
     grammarDuplicates,
-    grammarError
+    grammarError,
+    extendByTerminals
   )
 where
 
@@ -41,18 +42,6 @@ import qualified Data.Map as Map hiding (Map)
 import qualified Data.Set as Set
 import Data.Set (Set)
 import GHC.Generics
-import Text.ParserCombinators.ReadP
-    ( ReadP,
-      (<++),
-      between,
-      char,
-      many1,
-      munch,
-      munch1,
-      readP_to_S,
-      satisfy,
-      sepBy,
-      string )
 
 -- | Used in augmenting terminals for the augmented grammar.
 data AugmentedTerminal t
@@ -164,102 +153,9 @@ data Grammar nt t = Grammar
     nonterminals :: [nt],
     productions :: [Production nt t]
   }
-  deriving (Ord, Eq, Show, Generic)
+  deriving (Ord, Eq, Show, Read, Generic)
 
 instance (NFData t, NFData nt) => NFData (Grammar nt t)
-
--- | Skips white spaces.
-skipWhiteSpaces :: ReadP ()
-skipWhiteSpaces = do
-  _ <- munch (`elem` [' ', '\n', '\r', '\t'])
-  return ()
-
--- | Removes the white spaces around som ReadP term.
-skipSpacesAround :: ReadP a -> ReadP a
-skipSpacesAround a = do
-  _ <- skipWhiteSpaces
-  result <- a
-  _ <- skipWhiteSpaces
-  return result
-
--- | Removes whitespaces around a comma.
-sep :: ReadP ()
-sep = do
-  _ <- skipSpacesAround (char ',')
-  return ()
-
--- | Parses all elements seperated by a comma and ignore spaces.
-sepBySkip :: ReadP a -> ReadP sep -> ReadP [a]
-sepBySkip a sep' = skipSpacesAround $ sepBy a sep'
-
--- | Given a string parses it as a symbol.
-toSymbol :: (Read nt, Read t) => [String] -> [String] -> String -> Symbol nt t
-toSymbol ts nts symbol
-  | symbol `elem` nts = Nonterminal $ read symbol
-  | symbol `elem` ts = Terminal $ read symbol
-  | otherwise = error $ show symbol ++ " is not a defined symbol."
-
--- | Replaces escaped characters with their counter parts.
-replaceEscapedChars :: String -> String
-replaceEscapedChars "" = ""
-replaceEscapedChars input@(x : xs)
-  | x == '\\' = _start ++ replaceEscapedChars xs'
-  | otherwise = x : replaceEscapedChars xs
-  where
-    (_start, xs') = auxiliary input
-    auxiliary ('\\' : '\\' : ys) = ("\\", ys)
-    auxiliary ('\\' : ',' : ys) = (",", ys)
-    auxiliary ('\\' : '}' : ys) = ("}", ys)
-    auxiliary ('\\' : 't' : ys) = ("\t", ys)
-    auxiliary ('\\' : 'r' : ys) = ("\r", ys)
-    auxiliary ('\\' : 'n' : ys) = ("\n", ys)
-    auxiliary ('\\' : 's' : ys) = (" ", ys)
-    auxiliary ('\\' : ys) = ("", ys)
-    auxiliary ys = ("", ys)
-
--- | Parses a elements in a set as a string and accounts for escape characters.
-setElement :: ReadP String
-setElement = replaceEscapedChars . concat <$> many1 escaped
-  where
-    whitespace_list = [' ', ',', '}', '\n', '\r', '\t']
-    whitespace = fmap List.singleton (satisfy (`notElem` whitespace_list))
-    escaped = string "\\}" <++ string "\\," <++ whitespace
-
--- | Parses a string as a grammar.
-pGrammar :: (Read nt, Read t) => ReadP (Grammar nt t)
-pGrammar = tuple
-  where
-    set = sepBySkip setElement sep
-    production_set ts nts = sepBySkip (production ts nts) sep
-    tupleElement = munch1 (`notElem` [' ', ',', ')', '\n', '\r', '\t'])
-
-    production ts nts = do
-      nt <- setElement
-      _ <- skipSpacesAround $ string "->"
-      _symbols <- sepBySkip setElement (many1 (char ' '))
-      return $ Production (read nt) (toSymbol ts nts <$> _symbols)
-
-    tuple = between (char '(') (char ')') $ do
-      _ <- skipWhiteSpaces
-      s <- tupleElement
-      _ <- sep
-      ts <- between (char '{') (char '}') set
-      _ <- sep
-      nts <- between (char '{') (char '}') set
-      _ <- sep
-      ps <- between (char '{') (char '}') (production_set ts nts)
-      _ <- skipWhiteSpaces
-      return
-        Grammar
-          { start = read s,
-            terminals = read <$> ts,
-            nonterminals = read <$> nts,
-            productions = ps
-          }
-
--- | Uses pGrammar to allow for reading the grammar.
-instance (Read nt, Read t) => Read (Grammar nt t) where
-  readsPrec _ = readP_to_S pGrammar
 
 -- | Finds a grammar by its left handside.
 findProductions :: (Eq nt) => Grammar nt t -> nt -> [Production nt t]
@@ -455,7 +351,6 @@ hasDuplicates = Set.toList . auxiliary Set.empty Set.empty
         new_visited = Set.insert x visited
         new_dups = Set.insert x dups
 
-
 grammarError :: (Ord nt, Ord t, Show nt, Show t) => Grammar nt t -> Maybe String
 grammarError grammar
   | not $ null nt_dups = Just [i|The given grammar contains duplicate nonterminals because of #{nt_dups_str}.|]
@@ -481,3 +376,31 @@ closureAlgorithm grammar = fixedPointIterate (/=) (`newProductives` prods) Set.e
     isProductive1 _ (Terminal _) = True
     isProductive set = all (isProductive1 set) . symbols
     newProductives set = Set.fromList . fmap nonterminal . List.filter (isProductive set)
+
+extendByTerminals ::
+  (Ord nt, Ord t, Show nt, Show t) =>
+  Grammar nt t ->
+  Grammar (Either nt t) t
+extendByTerminals grammar = new_grammar
+  where
+    ts = terminals grammar
+    nts = nonterminals grammar
+    right_nts = map Left nts
+    left_nts = map Right ts
+    new_nts = left_nts ++ right_nts
+    ts_prods =
+      zipWith Production left_nts
+      $ map (List.singleton . Terminal) ts
+    toNonterminal (Terminal a) = Nonterminal $ Right a
+    toNonterminal (Nonterminal a) = Nonterminal $ Left a
+    toEither (Production nt syms) =
+      Production (Left nt)
+      $ toNonterminal
+      <$> syms
+    nts_prods = toEither <$> productions grammar
+    new_grammar =
+      Grammar
+      { start = Left $ start grammar
+      , terminals = ts
+      , nonterminals = new_nts
+      , productions = nts_prods ++ ts_prods}

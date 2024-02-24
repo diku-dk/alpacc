@@ -75,7 +75,7 @@ module mk_parser(P: parser_context) = {
 
   def grade [n] (xs : [n]i64) : [n]i64 =
     zip xs (indices xs)
-    |> radix_sort_int_by_key (.0) i64.num_bits i64.get_bit
+    |> blocked_radix_sort_int_by_key 256 (.0) i64.num_bits i64.get_bit
     |> map (.1)
 
   def even_indices 'a [n] (_ : [n]a) : [n / 2]i64 =
