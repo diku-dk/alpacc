@@ -30,7 +30,7 @@ Troels Henriksen (athas).
 ## Rust Lexer
 This benchmark is written in Rust using the lexer generator library
 Logos. They claim to have a fast lexer so they seem like a good choice
-to compare with. This benchmark is mean to work much like the futhark
+to compare with. This benchmark is meant to work much like the futhark
 lexer so every token will be saved in memory. This ends up lessening
 the performance, assuming you can use the tokens as you go. The
 benchmark also has the use that it will create a file in the futhark
@@ -40,8 +40,8 @@ futhark lexer. The benchmark can be executed using.
 $ make bench-rust
 ```
 ## C Lexer
-This benchmark is a handwritten lexer by Troels Henriksen (athas). The
-runs through every token in the input and does not save the tokens
+This benchmark is a handwritten lexer by Troels Henriksen (athas).
+It finds every token in the input and does not save the tokens
 found.
 ```
 $ make bench-c
