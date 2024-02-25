@@ -22,6 +22,11 @@ entry productions s =
   match lexer.lex' 16777216 s
   case #some r -> map (.0) r |> parser.productions 
   case #none -> []
+
+entry pre_productions s =
+  match lexer.lex' 16777216 s
+  case #some r -> map (.0) r |> parser.pre_productions 
+  case #none -> []
 |]
 
 lexerFunction :: FutUInt -> String
