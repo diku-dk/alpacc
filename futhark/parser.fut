@@ -113,8 +113,6 @@ module mk_parser(P: parser_context) = {
           then productions
                |> flatten
                |> filter (production_module.!=empty_production)
-               |> tail
-               |> map (\a -> a production_module.- (production_module.i64 1))
           else []
        
   def production_to_terminal (p: production): opt terminal =
@@ -124,8 +122,15 @@ module mk_parser(P: parser_context) = {
     copy P.production_to_arity[production_module.to_i64 p]
          
   def productions [n] (arr: [n]terminal): []production =
-    pre_productions arr
-    |> filter (is_none <-< production_to_terminal)
+    let r =
+      pre_productions arr
+      |> filter (is_none <-< production_to_terminal)
+    in if length r == 0
+       then []
+       else tail r
+            |> map (
+                 \a -> a production_module.- (production_module.i64 1)
+               )
 
   -- https://futhark-lang.org/examples/binary-search.html 
   def binary_search [n] 't (lte: t -> t -> bool) (xs: [n]t) (x: t) : i64 =
@@ -163,12 +168,12 @@ module mk_parser(P: parser_context) = {
            |> (\i -> sorted_idxs[i64.max 0 (i - 1)].0)
        ) idxs
 
-  type node 't 'p = #terminal t | #production p
+  type node 't 'p = #terminal t (i32, i32) | #production p
   
   def terminal_offsets [n][m]
                        (spans: [m](i32, i32))
                        (ts: [n](opt terminal)):
-                       [m](i64, node (terminal, (i32, i32)) production) =
+                       [m](i64, node terminal production) =
     map (is_some) ts
     |> zip3 (iota n) (ts)
     |> filter (\(_, _, b) -> b)
@@ -177,19 +182,19 @@ module mk_parser(P: parser_context) = {
     |> map (
          \(s, (i, t, _)) ->
            from_opt empty_terminal t
-           |> (\t' -> (i, #terminal (t', s)))
+           |> (\t' -> (i, #terminal t' s))
        )
     
   def parse [n] (arr: [n](terminal, (i32, i32))) =
-    let prods = map (.0) arr |> pre_productions
-    let spans = map (.1) arr
+    let (ters, spans) = unzip arr
+    let prods = ters |> pre_productions |> tail
     let parent_vector = parents prods
     let ts = map production_to_terminal prods
     let (offsets, ts') = terminal_offsets spans ts |> unzip
     let prods' =
       map (
-        \p -> #production p
-      ) prods :> [](node (terminal, (i32, i32)) production)
+        \p -> #production (p production_module.- (production_module.i64 1))
+      ) prods :> [](node terminal production)
     in scatter prods' offsets ts'
        |> zip parent_vector
 }
