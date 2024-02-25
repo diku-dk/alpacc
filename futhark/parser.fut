@@ -127,8 +127,71 @@ module mk_parser(P: parser_context) = {
     pre_productions arr
     |> filter (is_none <-< production_to_terminal)
 
-  -- def parse [n] (arr: [n](terminal, (i32, i32))): []production =
-  --  let prods = map (.0) arr |> pre_productions
+  -- https://futhark-lang.org/examples/binary-search.html 
+  def binary_search [n] 't (lte: t -> t -> bool) (xs: [n]t) (x: t) : i64 =
+    let (l, _) =
+      loop (l, r) = (0, n-1) while l < r do
+      let t = l + (r - l) / 2
+      in if x `lte` xs[t]
+         then (l, t)
+         else (t+1, r)
+    in l
+
+  def lte (a0 : i64, b0 : arity)
+          (a1 : i64, b1 : arity) :
+          bool =
+    (a0 == a1 && b0 arity_module.<= b1) || a0 < a1
+    
+  def parents [n] (ps: [n]production): [n]i64 =
+    let num_bits = i64.num_bits + arity_module.num_bits
+    let get_bit idx (i, d) =
+      let l = i32.bool (idx < arity_module.num_bits)
+      let gte = i32.bool (idx >= arity_module.num_bits)
+      in (arity_module.get_bit idx d) * l +
+         (i64.get_bit (idx - arity_module.num_bits) i) * gte
+    let idxs =
+      ps
+      |> map (
+           \p ->
+             let arity = production_to_arity p
+             in arity arity_module.- (arity_module.i64 1))
+      |> zip (iota n)
+    let sorted_idxs = blocked_radix_sort 256 num_bits get_bit idxs
+    in map (
+         \(i, d) ->
+           binary_search lte sorted_idxs (i - 1, d)
+           |> (\i -> sorted_idxs[i64.max 0 (i - 1)].0)
+       ) idxs
+
+  type node 't 'p = #terminal t | #production p
+  
+  def terminal_offsets [n][m]
+                       (spans: [m](i32, i32))
+                       (ts: [n](opt terminal)):
+                       [m](i64, node (terminal, (i32, i32)) production) =
+    map (is_some) ts
+    |> zip3 (iota n) (ts)
+    |> filter (\(_, _, b) -> b)
+    |> sized m
+    |> zip spans
+    |> map (
+         \(s, (i, t, _)) ->
+           from_opt empty_terminal t
+           |> (\t' -> (i, #terminal (t', s)))
+       )
+    
+  def parse [n] (arr: [n](terminal, (i32, i32))) =
+    let prods = map (.0) arr |> pre_productions
+    let spans = map (.1) arr
+    let parent_vector = parents prods
+    let ts = map production_to_terminal prods
+    let (offsets, ts') = terminal_offsets spans ts |> unzip
+    let prods' =
+      map (
+        \p -> #production p
+      ) prods :> [](node (terminal, (i32, i32)) production)
+    in scatter prods' offsets ts'
+       |> zip parent_vector
 }
 
 -- End of parser.fut

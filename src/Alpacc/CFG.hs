@@ -58,15 +58,19 @@ ruleTerminals = foldMap (foldMap symbolTerminal) . ruleProductions
 cfgToGrammar :: CFG -> Either String (Grammar NT T)
 cfgToGrammar (CFG {ntRules = []}) = Left "CFG has no production rules."
 cfgToGrammar (CFG {tRules, ntRules}) =
-  let productions = concatMap ruleProds ntRules
+  let productions =  concatMap ruleProds ntRules
       nonterminals = map ruleNT ntRules
       start = ruleNT $ head ntRules
-      terminals = List.nub $ map ruleT tRules ++ toList (foldMap ruleTerminals ntRules)
+      terminals' = List.nub $ map ruleT tRules ++ toList (foldMap ruleTerminals ntRules)
+      (a, b) = List.partition pred' terminals'
+      terminals = a ++ b
       grammar = Grammar {start, terminals, nonterminals, productions}
    in case grammarError grammar of
         Just err -> Left err
         Nothing -> Right grammar
   where
+    pred' (T "ignore") = True
+    pred' _ = False
     ruleProds NTRule {ruleNT, ruleProductions} =
       map (Production ruleNT) ruleProductions
 

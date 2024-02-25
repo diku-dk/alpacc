@@ -302,7 +302,7 @@ def stuck_test_timed(number_of_grammars: int, q: int = 1, k: int = 1):
 
 
 FUTHARK_TEST_HEADER = """-- ==
--- entry: parse
+-- entry: productions
 """
 
 def to_futhark_test(inp, out, futhark_type):
