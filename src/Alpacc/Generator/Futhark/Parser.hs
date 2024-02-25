@@ -3,6 +3,7 @@ module Alpacc.Generator.Futhark.Parser
   )
 where
 
+import Control.DeepSeq
 import Alpacc.Grammar
 import Alpacc.LLP
   ( Bracket (..),
@@ -79,8 +80,9 @@ futharkParserTable empty_terminal q k table =
     keys = Map.mapKeys (futharkParserTableKey empty_terminal q k)
 
 toIntegerLLPTable ::
-  Map (Symbol (AugmentedNonterminal NT) (AugmentedTerminal T)) Integer ->
-  Map ([AugmentedTerminal T], [AugmentedTerminal T]) ([Bracket (Symbol (AugmentedNonterminal NT) (AugmentedTerminal T))], [Int]) ->
+  (Ord nt, Ord t) =>
+  Map (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)) Integer ->
+  Map ([AugmentedTerminal t], [AugmentedTerminal t]) ([Bracket (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t))], [Int]) ->
   Map ([Integer], [Integer]) ([Bracket Integer], [Int])
 toIntegerLLPTable symbol_index_map table = table'
   where
@@ -105,7 +107,7 @@ def right (s : bracket) : bracket =
 |] 
 
 findBracketIntegral ::
-  Map (Symbol (AugmentedNonterminal NT) (AugmentedTerminal T)) Integer ->
+  Map (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)) Integer ->
   Either String FutUInt
 findBracketIntegral index_map = findSize _max
   where
@@ -132,13 +134,52 @@ findProductionIntegral ps = findSize _max
       | max_size < maxFutUInt U64 = Right U64
       | otherwise = Left "There are too many productions to find a Futhark integral type."
 
+productionToTerminal ::
+  (Ord nt, Ord t) =>
+  Map (Symbol (AugmentedNonterminal (Either nt t)) (AugmentedTerminal t)) Integer ->
+  [Production (AugmentedNonterminal (Either nt t)) (AugmentedTerminal t)] ->
+  String
+productionToTerminal symbol_to_index prods =
+  ([i|sized number_of_productions [|]++)
+  $ (++"]")
+  $ List.intercalate "\n,"
+  $ p
+  . nonterminal <$> prods
+  where
+    p (AugmentedNonterminal (Right t)) =
+      [i|#some #{x}|]
+        where
+          x = symbol_to_index Map.! Terminal (AugmentedTerminal t)
+    p _ = "#none"    
+
+productionToArity ::
+  [Production (AugmentedNonterminal (Either nt t)) (AugmentedTerminal t)] ->
+  Either String String
+productionToArity prods = do
+  _type <- selectFutUInt max_arity
+  let _module = [i|module arity_module = #{_type}|]
+  return (_module ++ "\n" ++ arities_str)
+  where
+    isNt (Nonterminal _) = 1 :: Integer
+    isNt _ = 0
+    arity = sum . fmap isNt . symbols
+    arities = arity <$> prods
+    max_arity = maximum arities
+    arities_str =
+      ([i|def production_to_arity: [number_of_productions]arity_module.t = sized number_of_productions [|]++)
+      $ (++"]")
+      $ List.intercalate "\n,"
+      $ show <$> arities
+    
+
 -- | Creates Futhark source code which contains a parallel parser that can
 -- create the productions list for a input which is indexes of terminals.
 generateParser ::
+  (NFData t, NFData nt, Ord nt, Show nt, Show t, Ord t) =>
   Int ->
   Int ->
-  Grammar NT T ->
-  Map (Symbol (AugmentedNonterminal NT) (AugmentedTerminal T)) Integer ->
+  Grammar (Either nt t) t ->
+  Map (Symbol (AugmentedNonterminal (Either nt t)) (AugmentedTerminal t)) Integer ->
   FutUInt ->
   Either String String
 generateParser q k grammar symbol_index_map terminal_type = do
@@ -147,6 +188,7 @@ generateParser q k grammar symbol_index_map terminal_type = do
   table <- llpParserTableWithStartsHomomorphisms q k grammar
   bracket_type <- findBracketIntegral symbol_index_map
   production_type <- findProductionIntegral $ productions grammar
+  arities <- productionToArity prods 
   let integer_table = toIntegerLLPTable symbol_index_map table
   let (max_ao, max_pi, ne, futhark_table) =
         futharkParserTable (maxFutUInt terminal_type) q k integer_table
@@ -166,34 +208,41 @@ module bracket_module = #{bracket_type}
 type lookahead_type = #{lookahead_type}
 type lookback_type = #{lookback_type}
 
-def number_of_terminals : i64 = #{number_of_terminals}
-def q : i64 = #{q}
-def k : i64 = #{k}
-def max_ao : i64 = #{max_ao}
-def max_pi : i64 = #{max_pi}
-def start_terminal : terminal = #{start_terminal}
-def end_terminal : terminal = #{end_terminal} 
+def number_of_terminals: i64 = #{number_of_terminals}
+def number_of_productions: i64 = #{number_of_productions} 
+def q: i64 = #{q}
+def k: i64 = #{k}
+def max_ao: i64 = #{max_ao}
+def max_pi: i64 = #{max_pi}
+def start_terminal: terminal = #{start_terminal}
+def end_terminal: terminal = #{end_terminal}
+def production_to_terminal: [number_of_productions](opt terminal) =
+  #{prods_to_ters}
+#{arities}
 
-def lookback_array_to_tuple [n] (arr : [n]terminal) : lookback_type =
+def lookback_array_to_tuple [n] (arr: [n]terminal): lookback_type =
   #{toTupleIndexArray "arr" q}
 
-def lookahead_array_to_tuple [n] (arr : [n]terminal) : lookahead_type =
+def lookahead_array_to_tuple [n] (arr: [n]terminal): lookahead_type =
   #{toTupleIndexArray "arr" k}
 
-def key_to_config (key : (lookback_type, lookahead_type))
-                : opt ([max_ao]bracket, [max_pi]production) =
+def key_to_config (key: (lookback_type, lookahead_type)):
+                  opt ([max_ao]bracket, [max_pi]production) =
   map_opt (\\((#{brackets}),(#{productions})) ->
     (sized max_ao [#{brackets}], sized max_pi [#{productions}])
   ) <|
   match key
   #{futhark_table}
 
-def ne : ([max_ao]bracket, [max_pi]production) =
+def ne: ([max_ao]bracket, [max_pi]production) =
   let (a,b) = #{ne}
   in (sized max_ao a, sized max_pi b)
 }
 |]
   where
+    prods = productions augmented_grammar
+    number_of_productions = length prods
+    prods_to_ters = productionToTerminal symbol_index_map prods
     number_of_terminals = length terminals'
     maybe_start_terminal = Map.lookup (Terminal RightTurnstile) symbol_index_map
     maybe_end_terminal = Map.lookup (Terminal LeftTurnstile) symbol_index_map
