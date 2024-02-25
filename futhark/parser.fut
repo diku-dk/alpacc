@@ -7,58 +7,64 @@ import "lib/github.com/diku-dk/sorts/radix_sort"
 import "lib/github.com/diku-dk/containers/opt"
 
 module type parser_context = {
-  module terminal_module : integral
-  module production_module : integral
-  module bracket_module : integral
-  val empty_terminal : terminal_module.t
-  val empty_production : production_module.t
-  val epsilon : bracket_module.t
-  val q : i64
-  val k : i64
-  val max_ao : i64
-  val max_pi : i64
+  module terminal_module: integral
+  module production_module: integral
+  module bracket_module: integral
+  module arity_module: integral
+  val empty_terminal: terminal_module.t
+  val empty_production: production_module.t
+  val epsilon: bracket_module.t
+  val q: i64
+  val k: i64
+  val max_ao: i64
+  val max_pi: i64
   type lookahead_type
   type lookback_type
-  val number_of_terminals : i64
-  val lookback_array_to_tuple [n] : [n]terminal_module.t -> lookback_type
-  val lookahead_array_to_tuple [n] : [n]terminal_module.t -> lookahead_type
-  val start_terminal : terminal_module.t
-  val end_terminal : terminal_module.t
-  val ne : ([max_ao]bracket_module.t, [max_pi]production_module.t)
-  val key_to_config : (lookback_type, lookahead_type) -> opt ([max_ao]bracket_module.t, [max_pi]production_module.t)
+  val number_of_terminals: i64
+  val number_of_productions: i64
+  val production_to_terminal: [number_of_productions](opt terminal_module.t)
+  val production_to_arity: [number_of_productions]arity_module.t
+  val lookback_array_to_tuple [n]: [n]terminal_module.t -> lookback_type
+  val lookahead_array_to_tuple [n]: [n]terminal_module.t -> lookahead_type
+  val start_terminal: terminal_module.t
+  val end_terminal: terminal_module.t
+  val ne: ([max_ao]bracket_module.t, [max_pi]production_module.t)
+  val key_to_config: (lookback_type, lookahead_type) -> opt ([max_ao]bracket_module.t, [max_pi]production_module.t)
 }
 
 module mk_parser(P: parser_context) = {
   module terminal_module = P.terminal_module
   module production_module = P.production_module
   module bracket_module = P.bracket_module
-
+  module arity_module = P.arity_module
+                                      
   type terminal = terminal_module.t
   type production = production_module.t
   type bracket = bracket_module.t
+  type arity = arity_module.t
   
   def empty_terminal = P.empty_terminal
   def empty_production = P.empty_production
   def epsilon = P.epsilon
-
-  def is_left (s : bracket) : bool =
+                                      
+  def is_left (s: bracket): bool =
     bracket_module.get_bit (bracket_module.num_bits - 1) s
     |> bool.i32
   
-  def lookback_chunks [n] (arr : [n]terminal) : [n]P.lookback_type =
+  def lookback_chunks [n] (arr: [n]terminal): [n]P.lookback_type =
     let arr' = replicate P.q empty_terminal ++ arr
     in iota n |> map (\i -> arr'[i:i + P.q] |> P.lookback_array_to_tuple)
 
-  def lookahead_chunks [n] (arr : [n]terminal) : [n]P.lookahead_type =
+  def lookahead_chunks [n] (arr: [n]terminal): [n]P.lookahead_type =
     let arr' = arr ++ replicate P.k empty_terminal
     in iota n |> map (\i -> arr'[i:i + P.k] |> P.lookahead_array_to_tuple)
 
-  def keys [n] (arr : [n]terminal) : [n](P.lookback_type, P.lookahead_type) =
+  def keys [n] (arr: [n]terminal): [n](P.lookback_type, P.lookahead_type) =
     let lookback = lookback_chunks arr
     let lookahead = lookahead_chunks arr
     in zip lookback lookahead
 
-  def depths [n] (input : [n]bracket) : opt ([n]i64) =
+  def depths [n] (input: [n]bracket): opt ([n]i64) =
     let left_brackets =
       input
       |> map (is_left)
@@ -73,21 +79,21 @@ module mk_parser(P: parser_context) = {
        then #none
        else #some result
 
-  def grade [n] (xs : [n]i64) : [n]i64 =
+  def grade [n] (xs: [n]i64): [n]i64 =
     zip xs (indices xs)
     |> blocked_radix_sort_int_by_key 256 (.0) i64.num_bits i64.get_bit
     |> map (.1)
 
-  def even_indices 'a [n] (_ : [n]a) : [n / 2]i64 =
+  def even_indices 'a [n] (_: [n]a): [n / 2]i64 =
     iota (n / 2) |> map (2*)
 
-  def unpack_bracket (b : bracket) : bracket =
+  def unpack_bracket (b: bracket): bracket =
     bracket_module.set_bit (bracket_module.num_bits - 1) b 0
 
-  def eq_no_bracket (a : bracket) (b : bracket) : bool =
+  def eq_no_bracket (a: bracket) (b: bracket): bool =
     unpack_bracket a bracket_module.== unpack_bracket b
 
-  def brackets_matches [n] (brackets : [n]bracket) : bool =
+  def brackets_matches [n] (brackets: [n]bracket): bool =
     match depths brackets
     case #some depths' ->
       let grade' = grade depths'
@@ -96,7 +102,7 @@ module mk_parser(P: parser_context) = {
          |> and
     case #none -> false
 
-  def parse [n] (arr : [n]terminal) : []production =
+  def pre_productions [n] (arr: [n]terminal): []production =
     let arr' = [P.start_terminal] ++ arr ++ [P.end_terminal]
     let configs = keys arr' |> map P.key_to_config
     in if any (is_none) configs
@@ -110,7 +116,19 @@ module mk_parser(P: parser_context) = {
                |> tail
                |> map (\a -> a production_module.- (production_module.i64 1))
           else []
+       
+  def production_to_terminal (p: production): opt terminal =
+    copy P.production_to_terminal[production_module.to_i64 p]
 
+  def production_to_arity (p: production): arity =
+    copy P.production_to_arity[production_module.to_i64 p]
+         
+  def productions [n] (arr: [n]terminal): []production =
+    pre_productions arr
+    |> filter (is_none <-< production_to_terminal)
+
+  -- def parse [n] (arr: [n](terminal, (i32, i32))): []production =
+  --  let prods = map (.0) arr |> pre_productions
 }
 
 -- End of parser.fut

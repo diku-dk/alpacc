@@ -15,7 +15,12 @@ bothFunction :: String
 bothFunction = [i|
 entry parse s =
   match lexer.lex' 16777216 s
-  case #some r -> map (.0) r |> parser.parse 
+  case #some r -> parser.parse r
+  case #none -> []
+
+entry productions s =
+  match lexer.lex' 16777216 s
+  case #some r -> map (.0) r |> parser.productions 
   case #none -> []
 |]
 
@@ -70,7 +75,7 @@ findTerminalIntegral index_map = findSize _max
 
 generate :: Int -> Int -> CFG -> Either String String
 generate q k cfg = do
-  grammar <- cfgToGrammar cfg
+  grammar <- extendByTerminals <$> cfgToGrammar cfg
   let terminal_index_map = toTerminalIndexMap $ terminals grammar
   let ts = terminals grammar
   let nts = nonterminals grammar
@@ -102,7 +107,7 @@ generateLexer cfg = do
 
 generateParser :: Int -> Int -> CFG -> Either String String
 generateParser q k cfg = do
-  grammar <- cfgToGrammar cfg
+  grammar <- extendByTerminals <$> cfgToGrammar cfg
   let symbol_index_map = toSymbolIndexMap (terminals grammar) (nonterminals grammar)
   let terminal_map = Map.filterWithKey (\k' _ -> isTerminal k') symbol_index_map
   terminal_type <- findTerminalIntegral terminal_map
