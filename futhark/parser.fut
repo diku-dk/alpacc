@@ -4,13 +4,13 @@
 -- module.
 
 import "lib/github.com/diku-dk/sorts/radix_sort"
+import "lib/github.com/diku-dk/sorts/merge_sort"
 import "lib/github.com/diku-dk/containers/opt"
 
 module type parser_context = {
   module terminal_module: integral
   module production_module: integral
   module bracket_module: integral
-  module arity_module: integral
   val empty_terminal: terminal_module.t
   val empty_production: production_module.t
   val epsilon: bracket_module.t
@@ -23,7 +23,7 @@ module type parser_context = {
   val number_of_terminals: i64
   val number_of_productions: i64
   val production_to_terminal: [number_of_productions](opt terminal_module.t)
-  val production_to_arity: [number_of_productions]arity_module.t
+  val production_to_arity: [number_of_productions]i16
   val lookback_array_to_tuple [n]: [n]terminal_module.t -> lookback_type
   val lookahead_array_to_tuple [n]: [n]terminal_module.t -> lookahead_type
   val start_terminal: terminal_module.t
@@ -36,12 +36,10 @@ module mk_parser(P: parser_context) = {
   module terminal_module = P.terminal_module
   module production_module = P.production_module
   module bracket_module = P.bracket_module
-  module arity_module = P.arity_module
                                       
   type terminal = terminal_module.t
   type production = production_module.t
   type bracket = bracket_module.t
-  type arity = arity_module.t
   
   def empty_terminal = P.empty_terminal
   def empty_production = P.empty_production
@@ -118,7 +116,7 @@ module mk_parser(P: parser_context) = {
   def production_to_terminal (p: production): opt terminal =
     copy P.production_to_terminal[production_module.to_i64 p]
 
-  def production_to_arity (p: production): arity =
+  def production_to_arity (p: production): i16 =
     copy P.production_to_arity[production_module.to_i64 p]
          
   def productions [n] (arr: [n]terminal): []production =
@@ -132,40 +130,52 @@ module mk_parser(P: parser_context) = {
                  \a -> a production_module.- (production_module.i64 1)
                )
 
+  def exscan [n] 't (op: t -> t -> t) (ne: t) (arr: [n]t): [n]t =
+    if n == 0
+    then arr
+    else let sc = scan op ne arr |> rotate (-1)
+         let sc[0] = ne
+         in sc
+    
   -- https://futhark-lang.org/examples/binary-search.html 
   def binary_search [n] 't (lte: t -> t -> bool) (xs: [n]t) (x: t) : i64 =
-    let (l, _) =
-      loop (l, r) = (0, n-1) while l < r do
-      let t = l + (r - l) / 2
-      in if x `lte` xs[t]
-         then (l, t)
-         else (t+1, r)
-    in l
+  let (l, _) =
+    loop (l, r) = (0, n-1) while l < r do
+    let t = l + (r - l) / 2
+    in if x `lte` xs[t]
+       then (l, t)
+       else (t+1, r)
+  in l
 
-  def lte (a0 : i64, b0 : arity)
-          (a1 : i64, b1 : arity) :
+  def lte (a0: i64, b0: i16)
+          (a1: i64, b1: i16) :
           bool =
-    (a0 == a1 && b0 arity_module.<= b1) || a0 < a1
-    
+    (b0 == b1 && a0 <= a1) || b0 < b1
+
   def parents [n] (ps: [n]production): [n]i64 =
-    let num_bits = i64.num_bits + arity_module.num_bits
+    let num_bits = i64.num_bits + i16.num_bits
     let get_bit idx (i, d) =
-      let l = i32.bool (idx < arity_module.num_bits)
-      let gte = i32.bool (idx >= arity_module.num_bits)
-      in (arity_module.get_bit idx d) * l +
-         (i64.get_bit (idx - arity_module.num_bits) i) * gte
+      let l = i32.bool (idx >= i64.num_bits)
+      let gte = i32.bool (idx < i64.num_bits)
+      in (i16.get_bit (idx - i64.num_bits) d) * l +
+         (i64.get_bit idx i) * gte
     let idxs =
+      #[trace]
       ps
       |> map (
            \p ->
              let arity = production_to_arity p
-             in arity arity_module.- (arity_module.i64 1))
+             in arity - 1
+         )
+      |> exscan (+) 0
       |> zip (iota n)
-    let sorted_idxs = blocked_radix_sort 256 num_bits get_bit idxs
-    in map (
+    let sorted_idxs =
+      #[trace] blocked_radix_sort 256 num_bits get_bit idxs
+    in #[trace] -- This just does not work.
+       map (
          \(i, d) ->
            binary_search lte sorted_idxs (i - 1, d)
-           |> (\i -> sorted_idxs[i64.max 0 (i - 1)].0)
+           |> (\j -> sorted_idxs[i64.max 0 (j - 1)].0)
        ) idxs
 
   type node 't 'p = #terminal t (i32, i32) | #production p

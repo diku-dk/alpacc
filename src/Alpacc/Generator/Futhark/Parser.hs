@@ -155,10 +155,10 @@ productionToTerminal symbol_to_index prods =
 productionToArity ::
   [Production (AugmentedNonterminal (Either nt t)) (AugmentedTerminal t)] ->
   Either String String
-productionToArity prods = do
-  _type <- selectFutUInt max_arity
-  let _module = [i|module arity_module = #{_type}|]
-  return (_module ++ "\n" ++ arities_str)
+productionToArity prods =
+  if 32767 < max_arity
+  then Left "A production contains a right-hand side too many nonterminals"
+  else Right arities_str
   where
     isNt (Nonterminal _) = 1 :: Integer
     isNt _ = 0
@@ -166,7 +166,7 @@ productionToArity prods = do
     arities = arity <$> prods
     max_arity = maximum arities
     arities_str =
-      ([i|def production_to_arity: [number_of_productions]arity_module.t = sized number_of_productions [|]++)
+      ([i|def production_to_arity: [number_of_productions]i16 = sized number_of_productions [|]++)
       $ (++"]")
       $ List.intercalate "\n,"
       $ show <$> arities
