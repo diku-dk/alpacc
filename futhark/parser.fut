@@ -136,48 +136,60 @@ module mk_parser(P: parser_context) = {
     else let sc = scan op ne arr |> rotate (-1)
          let sc[0] = ne
          in sc
-    
-  -- https://futhark-lang.org/examples/binary-search.html 
-  def binary_search [n] 't (lte: t -> t -> bool) (xs: [n]t) (x: t) : i64 =
-  let (l, _) =
-    loop (l, r) = (0, n-1) while l < r do
-    let t = l + (r - l) / 2
-    in if x `lte` xs[t]
-       then (l, t)
-       else (t+1, r)
-  in l
 
-  def lte (a0: i64, b0: i16)
-          (a1: i64, b1: i16) :
-          bool =
-    (b0 == b1 && a0 <= a1) || b0 < b1
+  def size (h: i64): i64 =
+    (1 << h) - 1
+    
+  def mk_tree [n] 't (op: t -> t -> t) (ne: t) (arr: [n]t) =
+    let temp = i64.num_bits - i64.clz n
+    let h = i64.i32 <| if i64.popc n == 1 then temp else temp + 1
+    let tree_size = size h
+    let offset = size (h - 1)
+    let offsets = iota n |> map (+offset)
+    let tree = scatter (replicate tree_size ne) offsets arr
+    let arr = copy tree[offset:]
+    let (tree, _, _) =
+      loop (tree, arr, level) = (tree, arr, h - 2) while level >= 0 do
+      let new_size = length arr / 2
+      let new_arr =
+        tabulate new_size (
+                   \i -> arr[2 * i] `op` arr[2 * i + 1]
+                 )
+      let offset = size level
+      let offsets = iota new_size |> map (+offset)
+      let new_tree = scatter tree offsets new_arr
+      in (new_tree, new_arr, level - 1)
+    in tree
+
+  def find_previous [n] 't
+                    (op: t -> t -> bool)
+                    (tree: [n]t)
+                    (idx: i64): i64 =
+    let sibling i = i - i64.bool (i % 2 == 0) + i64.bool (i % 2 == 1)
+    let parent i = (i - 1) / 2
+    let is_left i = i % 2 == 1
+    let h = i64.i32 <| i64.num_bits - i64.clz n
+    let offset = size (h - 1)
+    let start = offset + idx
+    let v = tree[start]
+    let ascent i = i != 0 && (is_left i || !(tree[sibling i] `op` v))
+    let descent i = 2 * i + 1 + i64.bool (tree[2 * i + 2] `op` v)
+    let index = iterate_while ascent parent start
+    in if index != 0
+       then iterate_while (< offset) descent (sibling index) - offset
+       else -1
 
   def parents [n] (ps: [n]production): [n]i64 =
-    let num_bits = i64.num_bits + i16.num_bits
-    let get_bit idx (i, d) =
-      let l = i32.bool (idx >= i64.num_bits)
-      let gte = i32.bool (idx < i64.num_bits)
-      in (i16.get_bit (idx - i64.num_bits) d) * l +
-         (i64.get_bit idx i) * gte
-    let idxs =
-      #[trace]
-      ps
-      |> map (
-           \p ->
-             let arity = production_to_arity p
-             in arity - 1
-         )
+    let tree =
+      map production_to_arity ps
+      |> map ((+ -1) <-< i64.i16)
       |> exscan (+) 0
-      |> zip (iota n)
-    let sorted_idxs =
-      #[trace] blocked_radix_sort 256 num_bits get_bit idxs
-    in #[trace] -- This just does not work.
-       map (
-         \(i, d) ->
-           binary_search lte sorted_idxs (i - 1, d)
-           |> (\j -> sorted_idxs[i64.max 0 (j - 1)].0)
-       ) idxs
-
+      |> mk_tree i64.min i64.highest
+    let parents' = map (find_previous (<=) tree) (iota n)
+    in if n == 0
+       then parents'
+       else let parents'[0] = 0 in parents'
+  
   type node 't 'p = #terminal t (i32, i32) | #production p
   
   def terminal_offsets [n][m]
