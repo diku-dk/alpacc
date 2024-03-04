@@ -1,7 +1,7 @@
 # alpacc <sup><sub><sup><sub>(Array Language Parallelism-Accelerated Compiler Compiler)</sup></sub></sup></sub>
 alpacc is a parallel LL parser generator which creates parsers written in [Futhark](https://futhark-lang.org/). These parsers uses the LLP grammmar class [1] together with a parallel lexer generator [2]. The parsers are currently not that useful in real life applications. Since the parser either creates the tree or not and does not tell the user if an error happend.
 
-The parsing is done using the entry point `parse`. This function takes a UTF-8 encoded array of `u8` values and returns an empty array if the string could not be parse. If the string could be parsed then an nonempty array with a tree will be returned. The tree will be a preorder traversal of the syntax tree where each node either is a production or a terminal. Each node will have a index to the parent node.
+The parsing is done using the entry point `parse`. This function takes a UTF-8 encoded array of `u8` values and returns an empty array if the string could not be parse. If the string could be parsed then an nonempty array with a tree will be returned. The tree will be a preorder traversal of the syntax tree where each node either is a production or a terminal. If the node is a terminal then it will also have value which gives the span of that token in the original input string. Each node will have a index to the parent node.
 
 ## Defining parsers
 Either a terminal or a nonterminal can be defined on each line which ends in a semicolon.
@@ -33,7 +33,6 @@ cabal run alpacc -- grammars/paper_grammar.cg -q 1 -k 1
 This will create the Futhark source file `paper_grammar.fut` which contains the actual parser which is a function `parse`. 
 
 A leftmost derivable string from this grammar is `1+[2+3]`. When parsing this the resulting syntax tree is.
-
 ```
 [(0, #production 0)
 ,(0, #production 3)
@@ -53,7 +52,7 @@ A leftmost derivable string from this grammar is `1+[2+3]`. When parsing this th
 ,(5, #terminal 4 (6, 7))
 ,(3, #production 2)]
 ```
-First element in each tuple is the parent index of each node, so the root nodes has itself as a parent. The second element in each tuple is the actual node. A node is either a production or a terminal, and they are enumerated seperately. They are also enumerated in the order they are defined (besides `ignore`). So if we look at the first element then its parent is itself and the node is a production `#production 0`. The first production defined is `E = T E'` which is the starting production and has been given the value `0`.
+First element in each tuple is the parent index of each node, so the root nodes has itself as a parent. The second element in each tuple is the actual node. A node is either a production or a terminal, and they are enumerated seperately. They are also enumerated in the order they are defined (besides `ignore` it will always have the value `0`). So if we look at the first element then its parent is itself and the node is a production `#production 0`. The first production defined is `E = T E'` which is the starting production and has been given the value `0`. If we look at the element `(1, #terminal 1 (0, 1))` then its parent is at index `1` and its the terminal is `a` since `ignore` is defined. `(0, 1))` is the span of the substring that token corresponds to in the input string.
 
 It is also possible to only generate a lexer or parser using the flags `--lexer` or `--parser`. 
 
