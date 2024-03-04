@@ -1,4 +1,4 @@
-# alpacc (Array Language Parallelism-Accelerated Compiler Compiler)
+# alpacc <sup><sub><sup><sub>(Array Language Parallelism-Accelerated Compiler Compiler)</sup></sub></sup></sub>
 alpacc is a parallel LL parser generator which creates parsers written in [Futhark](https://futhark-lang.org/). These parsers uses the LLP grammmar class [1] together with a parallel lexer generator [2]. The parsers are currently not that useful in real life applications. Since the parser either creates the tree or not and does not tell the user if an error happend.
 
 The parsing is done using the entry point `parse`. This function takes a UTF-8 encoded array of `u8` values and returns an empty array if the string could not be parse. If the string could be parsed then an nonempty array with a tree will be returned. The tree will be a preorder traversal of the syntax tree where each node either is a production or a terminal. Each node will have a index to the parent node.
