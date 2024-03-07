@@ -27,6 +27,7 @@ import Data.Foldable
 import Data.Word (Word8)
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NonEmpty hiding (NonEmpty)
+import Data.String.Interpolate (i)
 
 -- | Terminal formation rule.
 data TRule = TRule
@@ -100,7 +101,10 @@ cfgToDFALexer cfg@(CFG {tRules}) = do
   let t_rule_tuples = tRuleToTuple <$> all_t_rules
   let order_map = Map.fromList $ flip zip [(0 :: Integer)..] $ fst <$> t_rule_tuples
   let terminal_map = Map.fromList t_rule_tuples
-  Right $ lexerDFA order_map (0 :: Integer) terminal_map
+  let x = find (producesEpsilon . snd) t_rule_tuples
+  case x of
+    Just (t, _) -> Left [i|Error: #{t} may not produce empty strings.|]
+    Nothing -> Right $ lexerDFA order_map (0 :: Integer) terminal_map
 
 type Parser = Parsec Void Text
 
