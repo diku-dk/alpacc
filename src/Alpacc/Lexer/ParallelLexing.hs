@@ -19,6 +19,7 @@ import Data.Function (on)
 import Data.Bifunctor (Bifunctor (..))
 import Data.Tuple (swap)
 import Data.Tuple.Extra (both)
+import Alpacc.Debug (debug)
 
 type State = Int
 type Endo = Int
@@ -149,7 +150,7 @@ findFinalTrans lexer =
     _alphabet = alphabet dfa
 
 findLoopTrans :: IsTransition t => ModLexer t k -> Map t (Set t)
-findLoopTrans lexer = Map.fromList $ zip _final (repeat _init)
+findLoopTrans lexer = Map.fromList $ map (, _init) _final
   where
     _init = findInitialTrans lexer
     _final = Set.toList (findFinalTrans lexer)
@@ -336,7 +337,7 @@ endoCompositions toEndo comps =
 
 parallelLexer :: (Enum s, IsState s, IsTransition t, Ord k) => DFALexer t s k -> ParallelLexer t k
 parallelLexer lexer' = 
- ParallelLexer
+  ParallelLexer
   { compositions = _compositions
   , endomorphisms = _endomorphisms
   , identity = _identity

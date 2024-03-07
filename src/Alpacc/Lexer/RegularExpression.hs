@@ -2,7 +2,8 @@ module Alpacc.Lexer.RegularExpression
   ( regExFromText,
     pRegEx,
     RegEx (..),
-    toWord8
+    toWord8,
+    producesEpsilon
   )
 where
 
@@ -35,6 +36,15 @@ instance Functor RegEx where
   fmap f (Star r) = Star (fmap f r)
   fmap f (Alter r r') = Alter (fmap f r) (fmap f r')
   fmap f (Concat r r') = Concat (fmap f r) (fmap f r')
+
+producesEpsilon :: RegEx c -> Bool
+producesEpsilon Epsilon = True
+producesEpsilon (Literal _) = False
+producesEpsilon (Range []) = True
+producesEpsilon (Range _) = False
+producesEpsilon (Star _) = True
+producesEpsilon (Alter a b) = producesEpsilon a || producesEpsilon b
+producesEpsilon (Concat a b) = producesEpsilon a && producesEpsilon b
 
 space :: Parser ()
 space = Lexer.space space1 empty empty
@@ -153,7 +163,8 @@ pTerm = do
 
 regExFromText :: FilePath -> Text -> Either String (RegEx Char)
 regExFromText fname s =
-  either (Left . errorBundlePretty) Right $ parse (pRegEx <* eof) fname s
+  either (Left . errorBundlePretty) Right
+  $ parse (pRegEx <* eof) fname s
 
 toWord8 :: RegEx Char -> RegEx [Word8]
 toWord8 = fmap encodeChar

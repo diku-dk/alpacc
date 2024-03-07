@@ -59,7 +59,10 @@ module mk_lexer(L: lexer_context) = {
          else endo_to_state endos[i - 1]
     let state = copy L.transitions_to_states[c, prev_state]
     let pseudo_state = endo_to_state endos[i]
-    let is_end = i == n - 1 || L.initial_state L.state_module.== pseudo_state
+    let is_end =
+      i == n - 1 ||
+      (L.initial_state L.state_module.== pseudo_state &&
+       is_accept state)
     in (is_end, state)
 
   def to_terminal (s : state) : terminal =
@@ -76,7 +79,7 @@ module mk_lexer(L: lexer_context) = {
     let n = i32.i64 n'
     let ends_states = if n == 0 then [] else to_ends_states str
     let is = filter (\i -> ends_states[i].0) (0i32..<n)
-    let is_valid = all (\i -> is_accept ends_states[i].1) is
+    let is_valid = last ends_states |> (.1) |> is_accept
     let new_size = length is
     let result =
       tabulate new_size (
@@ -114,7 +117,7 @@ module mk_lexer(L: lexer_context) = {
       if m < size
       then (lexed', n - 1)
       else (lexed, new_offset')
-    let is_invalid = all (\(s, _) -> is_accept s) states_spans |> not
+    let is_invalid = last states_spans |> (.0) |> is_accept |> not
     let terminals_spans =
       map (\(s, span) -> (to_terminal s, span)) states_spans
       |> filter (not <-< L.is_ignore <-< (.0))
