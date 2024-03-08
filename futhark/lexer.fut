@@ -79,7 +79,8 @@ module mk_lexer(L: lexer_context) = {
     let n = i32.i64 n'
     let ends_states = if n == 0 then [] else to_ends_states str
     let is = filter (\i -> ends_states[i].0) (0i32..<n)
-    let is_valid = last ends_states |> (.1) |> is_accept
+    let is_valid =
+      if n == 0 then false else last ends_states |> (.1) |> is_accept
     let new_size = length is
     let result =
       tabulate new_size (
@@ -117,7 +118,8 @@ module mk_lexer(L: lexer_context) = {
       if m < size
       then (lexed', n - 1)
       else (lexed, new_offset')
-    let is_invalid = last states_spans |> (.0) |> is_accept |> not
+    let is_invalid =
+      if n == 0 then true else last states_spans |> (.0) |> is_accept |> not
     let terminals_spans =
       map (\(s, span) -> (to_terminal s, span)) states_spans
       |> filter (not <-< L.is_ignore <-< (.0))
