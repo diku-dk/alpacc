@@ -3,6 +3,7 @@
 ## 0.1.1
 
 * Parallel lexer generator using a deterministic finite automaton.
+* Constructs a syntax trees.
 
 ## 0.1.0
 
