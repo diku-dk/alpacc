@@ -7,7 +7,7 @@ module Alpacc.Lexer.RegularExpression
   )
 where
 
-import Control.Monad.State
+import Control.Monad (liftM2)
 import Data.Char (chr, isDigit, isPrint)
 import Data.Text (Text)
 import Data.Text qualified as Text
