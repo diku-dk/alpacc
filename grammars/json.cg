@@ -1,8 +1,8 @@
-string = [a-zA-Z]+;
-int = [0-9]+;
+string = "[a-zA-Z0-9_\-\s\(\):/@.]+";
+num = (|\-)[0-9]+(|.[0-9]+);
 ignore = \s|\n|\t|\r;
 
-J = O | A | string | int;
+J = O | A | string | num;
 
 O = "{" FS0 "}";
 FS0 = | F FS1;
