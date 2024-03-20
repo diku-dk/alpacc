@@ -13,6 +13,7 @@ module Alpacc.LLP
   )
 where
 
+import Control.Monad (foldM, join)
 import Control.DeepSeq
 import Control.Monad.State
 import Data.Bifunctor qualified as BI
