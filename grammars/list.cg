@@ -1,5 +1,0 @@
-atom = a;
-
-V = "[" EL0 "]";
-EL0 = | atom EL1;
-EL1 = | "," atom EL1;
