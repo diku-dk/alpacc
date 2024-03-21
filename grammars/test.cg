@@ -1,6 +1,4 @@
-ignore = \s|\n|\t|\r;
-atom = eee;
-atomtwo = eee;
+atom = a;
+atomtwo = a+;
 
-E = atom | atomtwo | "e" E0 ")";
-E0 = | E E0;
+E = atom | atomtwo;

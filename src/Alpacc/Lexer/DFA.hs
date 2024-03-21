@@ -24,6 +24,7 @@ import Data.Set qualified as Set hiding (Set)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Foldable
+import Alpacc.Debug (debug)
 
 type DFA t s = FSA Identity Identity t s
 type DFALexer t s k = Lexer Identity Identity t s k 
@@ -261,8 +262,9 @@ dfaToNFA dfa = dfa { transitions = new_transitions }
       Map.mapKeys (second Trans)
       $ Set.singleton <$> transitions' dfa
 
-lexerDFA :: (IsTransition t, IsState s, Enum s, Ord k, Ord o) => Map k o -> s -> Map k (RegEx (NonEmpty t)) -> DFALexer t s k
+lexerDFA :: (Show k, IsTransition t, IsState s, Enum s, Ord k, Ord o) => Map k o -> s -> Map k (RegEx (NonEmpty t)) -> DFALexer t s k
 lexerDFA terminal_to_order start_state nfa_map' =
+  debug $
   reenumerateLexer start_state $
     Lexer
     { fsa = dfa
@@ -308,8 +310,17 @@ lexerDFA terminal_to_order start_state nfa_map' =
     new_states = Set.insert new_initial new_states'
     new_alphabet = Set.unions $ alphabet <$> nfas
     new_accepting = Set.unions $ accepting <$> nfas
+
+    reset_transitions =
+      Map.fromList
+      $ fmap (\a -> ((a,Eps), Set.singleton new_initial))
+      $ Set.toList
+      $ Set.unions
+      $ accepting <$> nfas
+
     new_transitions =
-      Map.insert (new_initial, Eps) initials
+      Map.unionWith Set.union reset_transitions
+      $ Map.insert (new_initial, Eps) initials
       $ Map.unionsWith Set.union
       $ transitions <$> nfas
 

@@ -58,20 +58,15 @@ endomorphismsToStateArray parallel_lexer =
 
 transitionsToEndomorphismsArray :: ParallelLexer Word8 Int -> String
 transitionsToEndomorphismsArray parallel_lexer =
-  ("def transitions_to_endomorphisms : [256][256]endomorphism = sized 256 "++)
-  $ (++"] :> [256][256]endomorphism")
+  ("def transitions_to_endomorphisms : [256]endomorphism = sized 256 "++)
+  $ (++"] :> [256]endomorphism")
   $ ("["++)
   $ List.intercalate ",\n"
-  $ [row j | j <- [0..255]]
+  $ [show . fromMaybe dead_endo $ Map.lookup j to_endo | j <- [0..255]]
   where
     to_endo = transitionsToEndos parallel_lexer
     dead_endo = deadEndo parallel_lexer
-    row j =
-      (++"]")
-      $ ("["++)
-      $ List.intercalate ", "
-      $ [show . fromMaybe dead_endo $ Map.lookup (k, j) to_endo | k <- [0..255]]
-
+    
 compositionsArray :: ParallelLexer Word8 Int -> String
 compositionsArray parallel_lexer =
   ("def compositions : [endomorphism_size][endomorphism_size]endomorphism = "++)

@@ -158,7 +158,7 @@ pTerm = do
     Just postfixes ->
       if '*' `elem` postfixes
         then Star term
-        else Concat term (Star term)
+        else Concat (Star term) term
     Nothing -> term
 
 regExFromText :: FilePath -> Text -> Either String (RegEx Char)
