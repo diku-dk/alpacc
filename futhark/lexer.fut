@@ -18,7 +18,7 @@ module type lexer_context = {
   val is_ignore : terminal_module.t -> bool
   val is_accepting : [state_size]bool
   val transitions_to_states : [256][state_size]state_module.t
-  val transitions_to_endomorphisms : [256][256]endomorphism_module.t
+  val transitions_to_endomorphisms : [256]endomorphism_module.t
   val compositions : [endomorphism_size][endomorphism_size]endomorphism_module.t
   val states_to_terminals : [state_size]terminal_module.t
   val endomorphisms_to_states : [endomorphism_size]state_module.t
@@ -38,13 +38,8 @@ module mk_lexer(L: lexer_context) = {
   def is_accept (a : state) : bool =
     L.is_accepting[L.state_module.to_i64 a]
 
-  def trans_to_endo [n] (str : [n]u8) (i : i64) : endomorphism =
-    if i == n - 1
-    then L.identity_endomorphism
-    else
-      let c = u8.to_i64 str[i]
-      let c' = u8.to_i64 str[i + 1]
-      in copy L.transitions_to_endomorphisms[c', c]
+  def trans_to_endo (c : u8) : endomorphism =
+    copy L.transitions_to_endomorphisms[u8.to_i64 c]
   
   def endo_to_state (e : endomorphism) : state =
     let e' = L.endomorphism_module.to_i64 e
@@ -69,15 +64,14 @@ module mk_lexer(L: lexer_context) = {
     let s' = L.state_module.to_i64 s
 	in copy L.states_to_terminals[s']
 
-  def to_ends_states [n] (str : [n]u8) : [n](bool, state) =
-    let endos =
-      tabulate n (trans_to_endo str)
-      |> scan compose L.identity_endomorphism
-    in tabulate n (lookup_state endos str)
+  def traverse [n] (str : [n]u8) : [n]state =
+    map trans_to_endo str
+    |> scan compose L.identity_endomorphism
+    |> map endo_to_state
 
   def lex [n'] (str : [n']u8) : opt ([](terminal, (i32, i32))) =
     let n = i32.i64 n'
-    let ends_states = if n == 0 then [] else to_ends_states str
+    let ends_states = if n == 0 then [] else traverse str |> map (\a -> (true, a))
     let is = filter (\i -> ends_states[i].0) (0i32..<n)
     let is_valid =
       if n == 0 then false else last ends_states |> (.1) |> is_accept
@@ -99,7 +93,7 @@ module mk_lexer(L: lexer_context) = {
     let n = i32.i64 n'
     let substr = str[i64.i32 offset:i64.i32 (i32.min n (offset + size))]
     let m = length substr |> i32.i64
-    let ends_states = if m == 0 then [] else to_ends_states substr
+    let ends_states = if m == 0 then [] else traverse substr |> map (\a -> (true, a))
     let is = filter (\i -> ends_states[i].0) (0i32..<m)
     let new_size = length is
     let lexed' =

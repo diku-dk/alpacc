@@ -29,7 +29,7 @@ data ParallelLexer t k =
   ParallelLexer
   { compositions :: Map (Endo, Endo) Endo
   , endomorphisms :: Map t Endomorphism
-  , transitionsToEndos :: Map (t, t) Endo
+  , transitionsToEndos :: Map t Endo
   , endomorphismsToStates :: Map Endo State
   , tokenMap :: Map State k
   , initialState :: State
@@ -83,21 +83,6 @@ compose  a b =
   $ map auxiliary [0..(length a - 1)]
   where
     auxiliary i = (i, b Array.! (a Array.! i))
-
-safeCompose :: State -> State -> Set State -> Endomorphism -> Endomorphism -> Endomorphism
-safeCompose initial_state dead_state accept a b =
-  Array.array (0, length a - 1)
-  $ map auxiliary [0..(length a - 1)]
-  where
-    auxiliary i = (i, m)
-      where
-        j = a Array.! i
-        k = b Array.! j
-        m =
-          if j `Set.member` accept && k == dead_state then
-            initial_state
-          else
-            j
 
 endomorphismTable :: (IsTransition t, Ord k) => ModLexer t k -> Map t Endomorphism
 endomorphismTable lexer =
@@ -183,49 +168,6 @@ connectedTable lexer =
       Set.fromList
       $ mapMaybe (transitionLookup s) _alphabet
 
-pairEndomorphisms :: (IsTransition t, Ord k) => ModLexer t k -> Map (t, t) Endomorphism
-pairEndomorphisms lexer =
-  Map.fromList
-  $ concat
-  $ Map.elems
-  $ Map.mapWithKey toPair connected_table
-  where
-    dead_state = theDeadState lexer
-    initial_state = initial $ fsa $ dfaLexer lexer
-    accept = accepting $ fsa $ dfaLexer lexer
-    connected_table = connectedTable lexer
-    endomorphism_table = endomorphismTable lexer
-
-    toEndo = (endomorphism_table Map.!)
-
-    safeCompose' =
-      on (safeCompose initial_state dead_state accept) toEndo
-
-    toPair t =
-      fmap (\t' -> ((t, t'), safeCompose' t t'))
-      . Set.toList
-
-pairConnected :: IsTransition t => ModLexer t k -> Map (t, t) (Set (t, t))
-pairConnected lexer =
-  Map.fromList
-  $ concat
-  $ Map.elems
-  $ Map.mapWithKey toPair connected_table
-  where
-    connected_table = connectedTable lexer
-    toConn = (connected_table Map.!)
-
-    auxiliary t t' =
-      ((t, t'), )
-      $ Set.fromList
-      $ fmap (t',)
-      $ Set.toList
-      $ toConn t'
-
-    toPair t =
-      fmap (auxiliary t)
-      . Set.toList
-
 deadEndomorphism' :: ModLexer t k -> Endomorphism
 deadEndomorphism' lexer =
   Array.array (first_state, last_state)
@@ -256,6 +198,7 @@ addDeadAndIdentity lexer _map =
     _id = identityEndomorphism lexer
     new_endos = Set.fromList [dead, _id]
 
+
 initConnected :: (IsTransition t, Ord k) => ModLexer t k -> Map Endomorphism (Set Endomorphism)
 initConnected lexer =
   addDeadAndIdentity lexer
@@ -263,8 +206,8 @@ initConnected lexer =
   $ auxiliary
   <$> Map.toList connected_table
   where
-    connected_table = pairConnected lexer
-    endomorphism_table = pairEndomorphisms lexer
+    connected_table = connectedTable lexer
+    endomorphism_table = endomorphismTable lexer
 
     auxiliary (t, t_set) = Map.singleton (toEndo t) (Set.map toEndo t_set)
     toEndo = (endomorphism_table Map.!)
@@ -366,7 +309,10 @@ parallelLexer lexer' =
     dead_endomorphism = deadEndomorphism' lexer
     dead_endo = toEndo dead_endomorphism
     token_map = terminalMap $ dfaLexer lexer
-    _transitions_to_endo = toEndo <$> pairEndomorphisms lexer
+    _alphabet = Set.toList $ alphabet $ fsa $ dfaLexer lexer
+    _transitions_to_endo =
+      Map.fromList
+      $ (\t -> (t, toEndo $ _endomorphisms Map.! t)) <$> _alphabet
     initial_state = initial $ fsa $ dfaLexer lexer
     dead_state = theDeadState lexer
     to_state = toStateMap initial_state to_endo
