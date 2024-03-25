@@ -9,15 +9,12 @@ module type lexer_context = {
   module state_module : integral
   module endomorphism_module : integral
   module terminal_module : integral
-  val dead_state : state_module.t
-  val initial_state : state_module.t
-  val dead_endomorphism : endomorphism_module.t
   val identity_endomorphism : endomorphism_module.t
   val endomorphism_size : i64
   val state_size : i64
   val is_ignore : terminal_module.t -> bool
   val is_accepting : [state_size]bool
-  val transitions_to_states : [256][state_size]state_module.t
+  val is_producing : [endomorphism_size]bool
   val transitions_to_endomorphisms : [256]endomorphism_module.t
   val compositions : [endomorphism_size][endomorphism_size]endomorphism_module.t
   val states_to_terminals : [state_size]terminal_module.t
@@ -38,6 +35,9 @@ module mk_lexer(L: lexer_context) = {
   def is_accept (a : state) : bool =
     L.is_accepting[L.state_module.to_i64 a]
 
+  def is_producing (a : endomorphism) : bool =
+    L.is_accepting[L.endomorphism_module.to_i64 a]
+    
   def trans_to_endo (c : u8) : endomorphism =
     copy L.transitions_to_endomorphisms[u8.to_i64 c]
   
@@ -45,33 +45,18 @@ module mk_lexer(L: lexer_context) = {
     let e' = L.endomorphism_module.to_i64 e
     in copy L.endomorphisms_to_states[e']
 
-  def lookup_state [n] (endos : [n]endomorphism) (str : [n]u8) (i : i64) : (bool, state) =
-    let c = u8.to_i64 str[i]
-    let prev_state =
-      L.state_module.to_i64
-      <| if i == 0
-         then L.initial_state
-         else endo_to_state endos[i - 1]
-    let state = copy L.transitions_to_states[c, prev_state]
-    let pseudo_state = endo_to_state endos[i]
-    let is_end =
-      i == n - 1 ||
-      (L.initial_state L.state_module.== pseudo_state &&
-       is_accept state)
-    in (is_end, state)
-
   def to_terminal (s : state) : terminal =
     let s' = L.state_module.to_i64 s
-	in copy L.states_to_terminals[s']
+    in copy L.states_to_terminals[s']
 
-  def traverse [n] (str : [n]u8) : [n]state =
+  def traverse [n] (str : [n]u8) : [n](bool, state) =
     map trans_to_endo str
     |> scan compose L.identity_endomorphism
-    |> map endo_to_state
+    |> map (\e -> (is_producing e, endo_to_state e))
 
   def lex [n'] (str : [n']u8) : opt ([](terminal, (i32, i32))) =
     let n = i32.i64 n'
-    let ends_states = if n == 0 then [] else traverse str |> map (\a -> (true, a))
+    let ends_states = if n == 0 then [] else traverse str
     let is = filter (\i -> ends_states[i].0) (0i32..<n)
     let is_valid =
       if n == 0 then false else last ends_states |> (.1) |> is_accept
@@ -93,7 +78,7 @@ module mk_lexer(L: lexer_context) = {
     let n = i32.i64 n'
     let substr = str[i64.i32 offset:i64.i32 (i32.min n (offset + size))]
     let m = length substr |> i32.i64
-    let ends_states = if m == 0 then [] else traverse substr |> map (\a -> (true, a))
+    let ends_states = if m == 0 then [] else traverse substr
     let is = filter (\i -> ends_states[i].0) (0i32..<m)
     let new_size = length is
     let lexed' =
