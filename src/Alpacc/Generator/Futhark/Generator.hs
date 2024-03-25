@@ -43,14 +43,14 @@ parserFunction = [i|
 entry parse = parser.parse
 |]
 
-toTerminalIndexMap :: Ord t => [t] -> Map t Integer
+toTerminalIndexMap :: Ord t => [t] -> Map t Int
 toTerminalIndexMap = Map.fromList . flip zip [0..]
 
 toSymbolIndexMap ::
   (Ord t, Ord nt) =>
   [t] ->
   [nt] ->
-  Map (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)) Integer
+  Map (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)) Int
 toSymbolIndexMap ts nts = Map.union aug_terminal_map nts_map
   where
     terminal_map = Map.mapKeys AugmentedTerminal $ toTerminalIndexMap ts
@@ -65,9 +65,9 @@ toSymbolIndexMap ts nts = Map.union aug_terminal_map nts_map
     nts_map = Map.fromList $ zip nts' [max_index+3..]
 
 findTerminalIntegral ::
-  Map a Integer ->
+  Map a Int ->
   Either String FutUInt
-findTerminalIntegral index_map = findSize _max
+findTerminalIntegral index_map = findSize $ toInteger _max
   where
     _max = maximum index_map
     findSize max_size

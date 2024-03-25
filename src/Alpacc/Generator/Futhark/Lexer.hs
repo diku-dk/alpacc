@@ -16,10 +16,14 @@ import Data.Word (Word8)
 import Alpacc.Lexer.ParallelLexing
 import Data.List qualified as List
 import Data.Maybe
+import Data.Either.Extra
 import Data.Array qualified as Array
 
 futharkLexer :: String
 futharkLexer = $(embedStringFile "futhark/lexer.fut")
+
+errorMessage :: String
+errorMessage = [i|Error: Happend during Futhark code generation contact a maintainer.|]
 
 defStateSize :: ParallelLexer Word8 Int -> String
 defStateSize =
@@ -44,45 +48,73 @@ isAcceptingArray parallel_lexer =
     state_size = stateSize parallel_lexer
     accepting_states = acceptingStates parallel_lexer
 
-endomorphismsToStateArray :: ParallelLexer Word8 Int -> String
-endomorphismsToStateArray parallel_lexer =
-  ("def endomorphisms_to_states : [endomorphism_size]state = sized endomorphism_size "++)
+isProducingArray :: ParallelLexer Word8 Int -> String
+isProducingArray parallel_lexer =
+  ([i|def is_producing : [endomorphism_size]bool = sized endomorphism_size |]++)
   $ (++"]")
   $ ("["++)
-  $ List.intercalate ",\n"
-  $ [show . fromMaybe dead_state $ Map.lookup j endos_to_states | j <- [0..endomorphisms_size - 1]]
+  $ List.intercalate ", "
+  $ [if j `Set.member` token_endos then "true" else "false" | j <- [0..endo_size - 1]]
+  where
+    endo_size = endomorphismsSize parallel_lexer
+    token_endos = tokenEndomorphism parallel_lexer
+
+endomorphismsToStateArray ::
+  ParallelLexer Word8 Int ->
+  Either String String
+endomorphismsToStateArray parallel_lexer = do
+  vals <-
+    maybeToEither errorMessage
+    $ mapM (fmap show . flip Map.lookup endos_to_states)
+    [0..endomorphisms_size - 1]
+  let result =
+        ("def endomorphisms_to_states : [endomorphism_size]state = sized endomorphism_size "++)
+        $ (++"]")
+        $ ("["++)
+        $ List.intercalate ",\n" vals
+  return result
   where
     endomorphisms_size = endomorphismsSize parallel_lexer
     endos_to_states = endomorphismsToStates parallel_lexer
-    dead_state = deadState parallel_lexer
 
-transitionsToEndomorphismsArray :: ParallelLexer Word8 Int -> String
-transitionsToEndomorphismsArray parallel_lexer =
-  ("def transitions_to_endomorphisms : [256]endomorphism = sized 256 "++)
-  $ (++"] :> [256]endomorphism")
-  $ ("["++)
-  $ List.intercalate ",\n"
-  $ [show . fromMaybe dead_endo $ Map.lookup j to_endo | j <- [0..255]]
+transitionsToEndomorphismsArray :: ParallelLexer Word8 Int -> Either String String
+transitionsToEndomorphismsArray parallel_lexer = do
+  vals <-
+    maybeToEither errorMessage
+    $ mapM (fmap show . flip Map.lookup to_endo)
+    [0..255]
+  let result =
+        ("def transitions_to_endomorphisms : [256]endomorphism = sized 256 "++)
+        $ (++"]")
+        $ ("["++)
+        $ List.intercalate ",\n" vals
+  return result
   where
-    to_endo = transitionsToEndos parallel_lexer
-    dead_endo = deadEndo parallel_lexer
+    to_endo = endomorphisms parallel_lexer
     
-compositionsArray :: ParallelLexer Word8 Int -> String
-compositionsArray parallel_lexer =
-  ("def compositions : [endomorphism_size][endomorphism_size]endomorphism = "++)
-  $ (++"] :> [endomorphism_size][endomorphism_size]endomorphism")
-  $ ("["++)
-  $ List.intercalate ",\n"
-  $ [row j | j <- [0..endomorphisms_size - 1]]
+compositionsArray :: ParallelLexer Word8 Int -> Either String String
+compositionsArray parallel_lexer = do
+  vals <-
+    maybeToEither errorMessage
+    $ mapM row [0..endomorphisms_size - 1]
+  let result =
+        ("def compositions : [endomorphism_size][endomorphism_size]endomorphism = "++)
+        $ (++"] :> [endomorphism_size][endomorphism_size]endomorphism")
+        $ ("["++)
+        $ List.intercalate ",\n" vals
+  return result
   where
     _compositions = compositions parallel_lexer
     endomorphisms_size = endomorphismsSize parallel_lexer
-    dead_endo = deadEndo parallel_lexer
-    row j =
-      (++"]")
-      $ ("["++)
-      $ List.intercalate ", "
-      $ [show . fromMaybe dead_endo $ Map.lookup (k, j) _compositions | k <- [0..endomorphisms_size - 1]]
+    row j = do
+      vals <-
+        mapM (\k -> show <$> Map.lookup (k, j) _compositions)
+        [0..endomorphisms_size - 1]
+      let result =
+            (++"]")
+            $ ("["++)
+            $ List.intercalate ", " vals
+      return result
 
 stateToTerminalArray :: ParallelLexer Word8 Int -> String
 stateToTerminalArray parallel_lexer =
@@ -94,26 +126,7 @@ stateToTerminalArray parallel_lexer =
   where
     state_size = stateSize parallel_lexer
     token_map = tokenMap parallel_lexer
-    dead_token = maximum token_map
-
-transitionsToStatesArray :: ParallelLexer Word8 Int -> String
-transitionsToStatesArray parallel_lexer =
-  ("def transitions_to_states : [256][state_size]state = "++)
-  $ (++"] :> [256][state_size]state")
-  $ ("["++)
-  $ List.intercalate ",\n"
-  $ [fromMaybe dead_endo $ Map.lookup j trans_to_endo | j <- [0..255]]
-  where
-    trans_to_endo = toArrayString <$> endomorphisms parallel_lexer
-    dead_endo = toArrayString $ deadEndomorphism parallel_lexer
-
-    toArrayString :: Endomorphism -> String
-    toArrayString =
-      (++"]")
-      . ("["++)
-      . List.intercalate ", "
-      . fmap show
-      . Array.elems 
+    dead_token = succ $ maximum token_map
 
 stateIntegral ::
   ParallelLexer Word8 Int ->
@@ -125,15 +138,17 @@ endomorphismIntegral ::
   Either String FutUInt
 endomorphismIntegral = selectFutUInt . toInteger . pred . endomorphismsSize
 
-
 generateLexer ::
-  DFALexer Word8 Integer T ->
-  Map T Integer ->
+  ParallelDFALexer Word8 Int T ->
+  Map T Int ->
   FutUInt ->
   Either String String
-generateLexer lexer terminal_index_map' terminal_type = do
+generateLexer lexer terminal_index_map terminal_type = do
   endomorphism_type <- endomorphismIntegral parallel_lexer
   state_type <- stateIntegral parallel_lexer
+  transitions_to_endo <- transitionsToEndomorphismsArray parallel_lexer
+  compositions_table <- compositionsArray parallel_lexer
+  endo_to_state <- endomorphismsToStateArray parallel_lexer
   Right $
     futharkLexer
       <> [i|
@@ -146,9 +161,6 @@ module lexer = mk_lexer {
   type endomorphism = endomorphism_module.t
   type terminal = terminal_module.t
 
-  def dead_state : state = #{dead_state}
-  def initial_state : state = #{initial_state}
-  def dead_endomorphism : endomorphism = #{dead_endomorphism}
   def identity_endomorphism : endomorphism = #{_identity}
 
   #{ignore_function}
@@ -159,26 +171,22 @@ module lexer = mk_lexer {
 
   #{isAcceptingArray parallel_lexer}
 
-  #{transitionsToStatesArray parallel_lexer}
+  #{isProducingArray parallel_lexer}
 
-  #{transitionsToEndomorphismsArray parallel_lexer}
+  #{transitions_to_endo}
 
-  #{compositionsArray parallel_lexer}
+  #{compositions_table}
 
   #{stateToTerminalArray parallel_lexer}
 
-  #{endomorphismsToStateArray parallel_lexer}
+  #{endo_to_state}
 }
 |]
   where
-    terminal_index_map = (\a -> fromIntegral a :: Int) <$> terminal_index_map'
     terminalToIndex = (terminal_index_map Map.!)
     parallel_lexer' = parallelLexer lexer
     parallel_lexer = parallel_lexer' { tokenMap = token_map }
     token_map = terminalToIndex <$> tokenMap parallel_lexer'
-    dead_state = deadState parallel_lexer
-    initial_state = initialState parallel_lexer
-    dead_endomorphism = deadEndo parallel_lexer
     _identity = identity parallel_lexer
     ignore_function = 
       case T "ignore" `Map.lookup` terminal_index_map of

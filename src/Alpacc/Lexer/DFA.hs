@@ -1,11 +1,13 @@
 module Alpacc.Lexer.DFA
-  ( DFA,
-    isMatch,
-    invertSetMap,
-    lexerDFA,
-    DFALexer,
-    fromRegExToDFA,
-    transitions'
+  ( DFA
+  , isMatch
+  , invertSetMap
+  , lexerDFA
+  , DFALexer
+  , fromRegExToDFA
+  , transitions'
+  , ParallelDFALexer (parDFALexer, producesToken, deadState)
+  , parallelLexerDFA
   )
 where
 
@@ -24,10 +26,18 @@ import Data.Set qualified as Set hiding (Set)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Foldable
+import Data.Either.Extra
 import Alpacc.Debug (debug)
+import Data.Maybe (mapMaybe)
 
 type DFA t s = FSA Identity Identity t s
 type DFALexer t s k = Lexer Identity Identity t s k 
+
+data ParallelDFALexer t s k = ParallelDFALexer
+    { parDFALexer :: DFALexer t s k
+    , producesToken :: Set (s, t)
+    , deadState :: s
+    } deriving (Eq, Ord, Show)
 
 transitions' :: (IsState s, IsTransition t) => DFA t s -> Map (s, t) s
 transitions' = Map.mapKeys (second runIdentity) . fmap runIdentity . transitions
@@ -262,9 +272,74 @@ dfaToNFA dfa = dfa { transitions = new_transitions }
       Map.mapKeys (second Trans)
       $ Set.singleton <$> transitions' dfa
 
-lexerDFA :: (Show k, IsTransition t, IsState s, Enum s, Ord k, Ord o) => Map k o -> s -> Map k (RegEx (NonEmpty t)) -> DFALexer t s k
-lexerDFA terminal_to_order start_state nfa_map' =
-  debug $
+tokenProducingTransitions ::
+  (IsState s, IsTransition t) =>
+  DFA t s ->
+  Map (s, t) s
+tokenProducingTransitions dfa = new_transitions
+  where
+    accept = Set.toList $ accepting dfa
+    _alphabet = Set.toList $ alphabet dfa
+    _initial = initial dfa
+    _transitions = transitions' dfa 
+    isInitialTransition = (`Map.member` _transitions) . (_initial,)
+    initial_transitions = filter isInitialTransition _alphabet
+
+    new_transitions =
+      Map.unions
+      $ (\q ->
+         Map.fromList
+         $ mapMaybe (auxiliary q) initial_transitions
+      ) <$> accept
+    
+    auxiliary q t
+      | (q, t) `Map.member` _transitions = Nothing
+      | otherwise = do
+          q' <- Map.lookup (_initial, t) _transitions
+          return ((q, t), q') 
+
+toParallelDFALexer ::
+  (Enum s, IsState s, IsTransition t) =>
+  DFALexer t s k ->
+  Either String (ParallelDFALexer t s k)
+toParallelDFALexer lexer = do
+  dead_state <-
+    maybeToEither "Error: Can not add a dead state to an empty DFA."
+    maybe_dead_state
+  return $
+    ParallelDFALexer
+    { parDFALexer = new_lexer
+    , producesToken = produces_token
+    , deadState = dead_state
+    }
+  where
+    dfa = fsa lexer
+    token_producing_trans = tokenProducingTransitions dfa
+    _transitions = transitions' dfa
+    produces_token = Map.keysSet token_producing_trans
+    new_trans = Map.union _transitions token_producing_trans
+    (new_dfa, maybe_dead_state) =
+      mkDFATotal
+      $ dfa { transitions = addIdentity new_trans }
+    new_lexer = lexer { fsa = new_dfa }
+
+parallelLexerDFA ::
+  (Show k, IsTransition t, IsState s, Enum s, Ord k, Ord o) =>
+  Map k o ->
+  s ->
+  Map k (RegEx (NonEmpty t)) ->
+  Either String (ParallelDFALexer t s k)
+parallelLexerDFA terminal_to_order start_state regex_map =
+  toParallelDFALexer
+  $ lexerDFA terminal_to_order start_state regex_map
+    
+lexerDFA ::
+  (Show k, IsTransition t, IsState s, Enum s, Ord k, Ord o) =>
+  Map k o ->
+  s ->
+  Map k (RegEx (NonEmpty t)) ->
+  DFALexer t s k
+lexerDFA terminal_to_order start_state regex_map =
   reenumerateLexer start_state $
     Lexer
     { fsa = dfa
@@ -279,7 +354,7 @@ lexerDFA terminal_to_order start_state nfa_map' =
       . fromNFAtoDFA
       . fromRegExToNFA start_state
       
-    dfa_map' = auxiliary <$> nfa_map'
+    dfa_map' = auxiliary <$> regex_map
     nfa_map = reenumerateFSAsMap start_state dfa_map'
     nfas = Map.elems nfa_map
     initials = Set.fromList $ initial <$> nfas
@@ -311,16 +386,8 @@ lexerDFA terminal_to_order start_state nfa_map' =
     new_alphabet = Set.unions $ alphabet <$> nfas
     new_accepting = Set.unions $ accepting <$> nfas
 
-    reset_transitions =
-      Map.fromList
-      $ fmap (\a -> ((a,Eps), Set.singleton new_initial))
-      $ Set.toList
-      $ Set.unions
-      $ accepting <$> nfas
-
     new_transitions =
-      Map.unionWith Set.union reset_transitions
-      $ Map.insert (new_initial, Eps) initials
+      Map.insert (new_initial, Eps) initials
       $ Map.unionsWith Set.union
       $ transitions <$> nfas
 

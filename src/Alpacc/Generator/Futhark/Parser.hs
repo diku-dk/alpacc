@@ -25,10 +25,10 @@ futharkParser = $(embedStringFile "futhark/parser.fut")
 -- | Given the table keys for a LLP parser create the keys which will be used
 -- in the Futhark language for pattern matching.
 futharkParserTableKey ::
-  Integer ->
   Int ->
   Int ->
-  ([Integer], [Integer]) ->
+  Int ->
+  ([Int], [Int]) ->
   String
 futharkParserTableKey empty_terminal q k =
   tupleToStr
@@ -41,7 +41,7 @@ futharkParserTableKey empty_terminal q k =
 
 -- | Creates a string that is a array in the Futhark language which corresponds
 -- to the resulting productions list. This is used in the pattern matching.
-futharkProductions :: Int -> Int -> ([Bracket Integer], [Int]) -> String
+futharkProductions :: Int -> Int -> ([Bracket Int], [Int]) -> String
 futharkProductions max_alpha_omega max_pi = ("#some " ++) . toTuple . toArr . snd' . fst'
   where
     toArr (a, b) = [a, b]
@@ -56,10 +56,10 @@ tupleToStr (a, b) = [i|(#{a}, #{b})|]
 -- | Creates a string that is the resulting LLP table which is done by using
 -- pattern matching in Futhark.
 futharkParserTable ::
-  Integer ->
   Int ->
   Int ->
-  Map ([Integer], [Integer]) ([Bracket Integer], [Int]) ->
+  Int ->
+  Map ([Int], [Int]) ([Bracket Int], [Int]) ->
   (Int, Int, String, String)
 futharkParserTable empty_terminal q k table =
   (max_alpha_omega, max_pi, ne, )
@@ -81,9 +81,9 @@ futharkParserTable empty_terminal q k table =
 
 toIntegerLLPTable ::
   (Ord nt, Ord t) =>
-  Map (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)) Integer ->
+  Map (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)) Int ->
   Map ([AugmentedTerminal t], [AugmentedTerminal t]) ([Bracket (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t))], [Int]) ->
-  Map ([Integer], [Integer]) ([Bracket Integer], [Int])
+  Map ([Int], [Int]) ([Bracket Int], [Int])
 toIntegerLLPTable symbol_index_map table = table'
   where
     table_index_keys = Map.mapKeys (both (fmap ((symbol_index_map Map.!) . Terminal))) table
@@ -107,7 +107,7 @@ def right (s : bracket) : bracket =
 |] 
 
 findBracketIntegral ::
-  Map (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)) Integer ->
+  Map (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)) Int ->
   Either String FutUInt
 findBracketIntegral index_map = findSize _max
   where
@@ -136,7 +136,7 @@ findProductionIntegral ps = findSize _max
 
 productionToTerminal ::
   (Ord nt, Ord t) =>
-  Map (Symbol (AugmentedNonterminal (Either nt t)) (AugmentedTerminal t)) Integer ->
+  Map (Symbol (AugmentedNonterminal (Either nt t)) (AugmentedTerminal t)) Int ->
   [Production (AugmentedNonterminal (Either nt t)) (AugmentedTerminal t)] ->
   String
 productionToTerminal symbol_to_index prods =
@@ -179,7 +179,7 @@ generateParser ::
   Int ->
   Int ->
   Grammar (Either nt t) t ->
-  Map (Symbol (AugmentedNonterminal (Either nt t)) (AugmentedTerminal t)) Integer ->
+  Map (Symbol (AugmentedNonterminal (Either nt t)) (AugmentedTerminal t)) Int ->
   FutUInt ->
   Either String String
 generateParser q k grammar symbol_index_map terminal_type = do
@@ -191,7 +191,7 @@ generateParser q k grammar symbol_index_map terminal_type = do
   arities <- productionToArity prods 
   let integer_table = toIntegerLLPTable symbol_index_map table
   let (max_ao, max_pi, ne, futhark_table) =
-        futharkParserTable (maxFutUInt terminal_type) q k integer_table
+        futharkParserTable (fromInteger $ maxFutUInt terminal_type) q k integer_table
       brackets = List.intercalate "," $ zipWith (<>) (replicate max_ao "b") $ map show [(0 :: Int) ..]
       productions = List.intercalate "," $ zipWith (<>) (replicate max_pi "p") $ map show [(0 :: Int) ..]
   return $
