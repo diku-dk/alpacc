@@ -28,6 +28,7 @@ import Data.Word (Word8)
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NonEmpty hiding (NonEmpty)
 import Data.String.Interpolate (i)
+import Alpacc.Debug
 
 -- | Terminal formation rule.
 data TRule = TRule

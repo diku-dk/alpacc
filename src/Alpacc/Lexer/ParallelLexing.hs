@@ -37,12 +37,6 @@ data ParallelLexer t k =
   , acceptingStates :: Set State
   } deriving (Show, Eq, Ord)
 
-statesToKeysMap :: Ord s => Set s -> Map s State
-statesToKeysMap =
-  Map.fromList
-  . flip zip [(0 :: State)..]
-  . Set.toAscList
-
 compose :: Endomorphism -> Endomorphism -> Endomorphism
 compose a b =
   Array.array (0, length a - 1)
@@ -59,7 +53,7 @@ composeTrans (a, _) (b, t) = (a `compose` b, t)
 endomorphismTable ::
   (Enum t, Bounded t, IsTransition t, Ord k) =>
   ParallelDFALexer t State k ->
-  Map t Endomorphism
+  Map t (Endomorphism, t)
 endomorphismTable lexer =
   Map.fromList
   $ map statesFromChar [minBound..maxBound]
@@ -79,6 +73,7 @@ endomorphismTable lexer =
       $ Map.lookup key _transitions
     statesFromChar t =
       (t,)
+      $ (,t)
       $ toArray
       $ map (tableLookUp . (, t))
       $ Set.toAscList _states
@@ -128,9 +123,8 @@ initConnected lexer =
             $ Set.toList t_set
       return $ Map.singleton e t_set'
 
-    toEndo t = do
-      e <- Map.lookup t endomorphism_table
-      return (e, t)
+    toEndo t = Map.lookup t endomorphism_table
+      
 
 newEndoConn ::
   (IsTransition t) =>
@@ -149,7 +143,7 @@ newEndoConn conn_endos endo endo_set =
         comp = endo `composeTrans` endo'
         set = Set.singleton comp
         new_map =
-          Map.unions
+          Map.unionsWith Set.union
           $ fmap (`Map.singleton` set)
           $ Map.keys
           $ Map.filter (endo `Set.member`) conn_endos
@@ -170,41 +164,46 @@ connected ::
 connected = fixedPointIterate (/=) newEndoConns
 
 compositionsTable ::
-  Map Endomorphism (Set Endomorphism) ->
-  Map (Endomorphism, Endomorphism) Endomorphism
+  IsTransition t =>
+  Map (Endomorphism, t) (Set (Endomorphism, t)) ->
+  Map ((Endomorphism, t), (Endomorphism, t)) (Endomorphism, t)
 compositionsTable _connected =
   Map.fromList
   $ concat
   $ Map.mapWithKey auxiliary _connected
   where
-    toMap e e' = ((e, e'), e `compose` e')
+    toMap e e' = ((e, e'), e `composeTrans` e')
     auxiliary e = Set.toList . Set.map (toMap e)
 
 endomorphismSet ::
-  Map Endomorphism (Set Endomorphism) ->
-  Set Endomorphism
+  IsTransition t =>
+  Map (Endomorphism, t) (Set (Endomorphism, t)) ->
+  Set (Endomorphism, t)
 endomorphismSet _connected =
-  Set.union (Map.keysSet _connected)
+  debug
+  $ Set.union (Map.keysSet _connected)
   $ Set.unions _connected
 
 enumerateEndomorphisms ::
-  Map Endomorphism (Set Endomorphism) ->
-  Map Endomorphism Endo
+  IsTransition t =>
+  Map (Endomorphism, t) (Set (Endomorphism, t)) ->
+  Map (Endomorphism, t) Endo
 enumerateEndomorphisms =
   Map.fromList
   . flip zip [0..]
   . Set.toList
   . endomorphismSet
 
-toStateMap :: State -> Map Endomorphism Endo -> Map Endo State
+toStateMap :: State -> Map (Endomorphism, t) Endo -> Map Endo State
 toStateMap initial_state =
   Map.fromList
-  . fmap (swap . first (Array.! initial_state))
+  . fmap (swap . first ((Array.! initial_state) . fst))
   . Map.toList
 
 endoCompositions ::
-  (Endomorphism -> Endo) ->
-  Map (Endomorphism, Endomorphism) Endomorphism ->
+  IsTransition t =>
+  ((Endomorphism, t) -> Endo) ->
+  Map ((Endomorphism, t), (Endomorphism, t)) (Endomorphism, t) ->
   Map (Endo, Endo) Endo
 endoCompositions toEndo comps =
   Map.mapKeys (both toEndo)
@@ -250,41 +249,13 @@ addDead dead_endo table =
       $ Set.insert dead_endo
       $ endosInTable table
 
-createIdentity ::
-  (IsTransition t, Enum t, Bounded t, Ord k) =>
-  ParallelDFALexer t State k ->
-  Endomorphism
-createIdentity lexer =
-  Array.array (first_index, last_index)
-  $ zip lst lst
-  where
-    _states = states $ fsa $ parDFALexer lexer
-    first_index = minimum _states
-    last_index = maximum _states
-    lst = [first_index..last_index]
-
-createDead ::
-  (IsTransition t, Enum t, Bounded t, Ord k) =>
-  ParallelDFALexer t State k ->
-  Endomorphism
-createDead lexer =
-  Array.array (first_index, last_index)
-  $ map (,_dead) lst
-  where
-    _states = states $ fsa $ parDFALexer lexer
-    first_index = minimum _states
-    last_index = maximum _states
-    _dead = deadState lexer
-    lst = [first_index..last_index]
-
 producesTokenEndo :: 
   (IsTransition t, Enum t, Bounded t, Ord k) =>
   ParallelDFALexer t State k ->
   Map (Endomorphism, t) (Set (Endomorphism, t)) ->
-  Set Endomorphism
+  Set (Endomorphism, t)
 producesTokenEndo lexer connected_set =
-  Set.map fst
-  $ Set.filter (
+  Set.filter (
     \(e, t) ->
       let s = e Array.! _initial
       in (s, t) `Set.member` produces
@@ -314,20 +285,13 @@ parallelLexer lexer =
   }
   where
     accept_states = accepting $ fsa $ parDFALexer lexer
-    endo_size = Map.size to_endo
+    endo_size = 2 + Map.size to_endo
     state_size = Set.size $ states $ fsa $ parDFALexer lexer
-    trans_connected = connected $ initConnected lexer
-    _connected = Map.mapKeys fst $ Set.map fst <$> trans_connected
-    to_endo' = enumerateEndomorphisms _connected
-    to_endo =
-      Map.insert vec_identity _identity
-      $ Map.insert vec_dead _dead to_endo'
-    _identity = succ $ maximum to_endo'
-    _dead = succ $ succ $ maximum to_endo'
-    vec_dead = createDead lexer
-    vec_identity = createIdentity lexer
+    _connected = connected $ initConnected lexer
+    to_endo = enumerateEndomorphisms _connected
+    _identity = succ $ maximum to_endo
+    _dead = succ $ succ $ maximum to_endo
     toEndo = (to_endo Map.!)
-    _endomorphisms = endomorphismTable lexer
     _compositions =
       addDead _dead
       $ addIdentity _identity
@@ -335,12 +299,18 @@ parallelLexer lexer =
       $ compositionsTable _connected
     token_map = terminalMap $ parDFALexer lexer
     _alphabet = Set.toList $ alphabet $ fsa $ parDFALexer lexer
-    _transitions_to_endo =
+    _dead_transitions =
       Map.fromList
-      $ (\t -> (t, toEndo $ _endomorphisms Map.! t))
-      <$> [minBound..maxBound]
+      $ map (,_dead) [minBound..maxBound]
+    _transitions_to_endo =
+      flip Map.union _dead_transitions
+      $ Map.mapKeys snd to_endo
     initial_state = initial $ fsa $ parDFALexer lexer
-    to_state = toStateMap initial_state to_endo
+    dead_state = deadState lexer
+    to_state =
+      Map.insert _dead dead_state
+      $ Map.insert _identity initial_state
+      $ toStateMap initial_state to_endo
     produces_token =
       Set.map toEndo
-      $ producesTokenEndo lexer trans_connected
+      $ producesTokenEndo lexer _connected

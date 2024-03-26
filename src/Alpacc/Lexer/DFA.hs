@@ -330,7 +330,8 @@ parallelLexerDFA ::
   Map k (RegEx (NonEmpty t)) ->
   Either String (ParallelDFALexer t s k)
 parallelLexerDFA terminal_to_order start_state regex_map =
-  toParallelDFALexer
+  debug
+  $ toParallelDFALexer
   $ lexerDFA terminal_to_order start_state regex_map
     
 lexerDFA ::

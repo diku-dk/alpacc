@@ -36,7 +36,7 @@ module mk_lexer(L: lexer_context) = {
     L.is_accepting[L.state_module.to_i64 a]
 
   def is_producing (a : endomorphism) : bool =
-    L.is_accepting[L.endomorphism_module.to_i64 a]
+    L.is_producing[L.endomorphism_module.to_i64 a]
     
   def trans_to_endo (c : u8) : endomorphism =
     copy L.transitions_to_endomorphisms[u8.to_i64 c]

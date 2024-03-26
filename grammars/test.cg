@@ -1,4 +1,4 @@
-atom = a;
-atomtwo = a+;
+atom = a+;
+atomtwo = b+;
 
 E = atom | atomtwo;
