@@ -103,16 +103,32 @@ connectedTable lexer =
       Set.fromList
       $ mapMaybe (transitionLookup s) _alphabet
 
+
+invertMap :: Ord t => Map t (Set t) -> Map t (Set t)
+invertMap mapping =
+  Map.unionsWith Set.union
+  $ toMap <$> Map.toList mapping
+  where
+    toMap (t, t_set) =
+      Map.unionsWith Set.union
+      $ flip Map.singleton (Set.singleton t) <$> Set.toList t_set
+
 initConnected ::
   (Enum t, Bounded t, IsTransition t, Ord k) =>
   ParallelDFALexer t State k ->
   Map (Endomorphism, t) (Set (Endomorphism, t))
 initConnected lexer =
-  Map.unionsWith Set.union
+  Map.unionWith Set.union temp
+  $ Map.unionsWith Set.union
   $ mapMaybe auxiliary
   $ Map.toList connected_table
   where
     connected_table = connectedTable lexer
+    inverted_connected_table = invertMap connected_table
+    temp =
+      Map.unionsWith Set.union
+      $ mapMaybe auxiliary
+      $ Map.toList inverted_connected_table
     endomorphism_table = endomorphismTable lexer
 
     auxiliary (t, t_set) = do
@@ -123,8 +139,7 @@ initConnected lexer =
             $ Set.toList t_set
       return $ Map.singleton e t_set'
 
-    toEndo t = Map.lookup t endomorphism_table
-      
+    toEndo t = Map.lookup t endomorphism_table    
 
 newEndoConn ::
   (IsTransition t) =>
@@ -137,16 +152,9 @@ newEndoConn conn_endos endo endo_set =
   $ Set.map toMap endo_set
   where
     toConn = (conn_endos Map.!)
-    toMap endo' =
-      Map.singleton comp (toConn endo') `Map.union` new_map
+    toMap endo' = Map.singleton comp (toConn endo')
       where
         comp = endo `composeTrans` endo'
-        set = Set.singleton comp
-        new_map =
-          Map.unionsWith Set.union
-          $ fmap (`Map.singleton` set)
-          $ Map.keys
-          $ Map.filter (endo `Set.member`) conn_endos
 
 newEndoConns ::
   (IsTransition t) =>
