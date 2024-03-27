@@ -9,6 +9,7 @@ import Options.Applicative
 import System.FilePath.Posix (stripExtension, takeFileName)
 import System.Exit (exitFailure)
 import Alpacc.CFG
+
 data Input
   = FileInput FilePath
   | StdInput deriving (Show)
