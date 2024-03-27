@@ -50,15 +50,24 @@ isAcceptingArray parallel_lexer =
 
 isProducingArray :: ParallelLexer Word8 Int -> String
 isProducingArray parallel_lexer =
-  ([i|def is_producing : [endomorphism_size]bool = sized endomorphism_size |]++)
-  $ (++"]")
+  ("def is_producing : [256][state_size]bool = "++)
+  $ (++"] :> [256][state_size]bool")
   $ ("["++)
-  $ List.intercalate ", "
-  $ [if j `Set.member` token_endos then "true" else "false" | j <- [0..endo_size - 1]]
+  $ List.intercalate ",\n"
+  $ map row [0..255]
   where
-    endo_size = endomorphismsSize parallel_lexer
-    token_endos = tokenEndomorphism parallel_lexer
-
+    token_set = tokenEndomorphism parallel_lexer
+    state_size = stateSize parallel_lexer
+    lookup' c s =
+      if (s, c) `Set.member` token_set
+      then "true"
+      else "false"
+    row j =
+      (++"]")
+      $ ("["++)
+      $ List.intercalate ", "
+      $ map (lookup' j) [0..state_size - 1]
+      
 endomorphismsToStateArray ::
   ParallelLexer Word8 Int ->
   Either String String

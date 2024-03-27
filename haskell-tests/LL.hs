@@ -6,14 +6,11 @@ import Alpacc.Grammar
 import Alpacc.LL
 import Alpacc.LLP hiding ( LlpContext(..) )
 import Test.HUnit
-import Debug.Trace (traceShow)
 import Text.ParserCombinators.ReadP (string)
 import Data.String.Interpolate (i)
 import Data.Sequence (Seq (..), (<|), (><), (|>))
 import qualified Data.Sequence as Seq hiding (Seq (..), (<|), (><), (|>))
 import Data.Maybe
-
-debug x = traceShow x x
 
 grammar =
   Grammar
