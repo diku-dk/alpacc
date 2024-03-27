@@ -27,7 +27,6 @@ import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Foldable
 import Data.Either.Extra
-import Alpacc.Debug (debug)
 import Data.Maybe (mapMaybe)
 
 type DFA t s = FSA Identity Identity t s
@@ -330,8 +329,7 @@ parallelLexerDFA ::
   Map k (RegEx (NonEmpty t)) ->
   Either String (ParallelDFALexer t s k)
 parallelLexerDFA terminal_to_order start_state regex_map =
-  debug
-  $ toParallelDFALexer
+  toParallelDFALexer
   $ lexerDFA terminal_to_order start_state regex_map
     
 lexerDFA ::

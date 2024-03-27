@@ -10,10 +10,7 @@ import Alpacc.LLP
 import Alpacc.LL
 import Test.HUnit
 import Data.String.Interpolate (i)
-import Debug.Trace (traceShow)
 import Data.Either
-
-debug x = traceShow x x
 
 grammar :: Grammar String String
 grammar =
