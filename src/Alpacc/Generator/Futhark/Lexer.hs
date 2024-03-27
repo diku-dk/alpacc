@@ -104,7 +104,7 @@ transitionsToEndomorphismsArray parallel_lexer = do
 compositionsArray :: ParallelLexer Word8 Int -> Either String String
 compositionsArray parallel_lexer = do
   vals <-
-    maybeToEither errorMessage
+    maybeToEither (errorMessage ++ " [STILL HERE]")
     $ mapM row [0..endomorphisms_size - 1]
   let result =
         ("def compositions : [endomorphism_size][endomorphism_size]endomorphism = "++)

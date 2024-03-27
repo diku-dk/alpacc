@@ -8,8 +8,8 @@ where
 import Alpacc.Util (fixedPointIterate)
 import Alpacc.Lexer.FSA
 import Alpacc.Lexer.DFA
-import Data.Map (Map)
-import Data.Map qualified as Map hiding (Map)
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map hiding (Map)
 import Data.Set (Set)
 import Data.Set qualified as Set hiding (Set)
 import Data.Maybe
@@ -49,7 +49,8 @@ endomorphismTable ::
   Map t Endomorphism
 endomorphismTable lexer =
   Map.fromList
-  $ map statesFromChar [minBound..maxBound]
+  $ map statesFromChar
+  $ Set.toList _alphabet
   where
     dfa = fsa $ parDFALexer lexer
     dead_state = deadState lexer
@@ -237,13 +238,10 @@ addIdentity identity_endo table =
 
 addDead :: Ord t => t -> Map (t, t) t -> Map (t, t) t
 addDead dead_endo table =
-  Map.union right_endos
-  $ Map.union table left_endos
+  Map.union table deads
   where
-    left_endos =
-      Map.fromList $ (\q -> ((dead_endo, q), dead_endo)) <$> endos
-    right_endos =
-      Map.fromList $ (\q -> ((q, dead_endo), dead_endo)) <$> endos
+    deads =
+      Map.fromList [((q, q'), dead_endo) | q <- endos, q' <- endos]
     endos =
       Set.toList
       $ Set.insert dead_endo
@@ -293,18 +291,22 @@ parallelLexer lexer =
   }
   where
     accept_states = accepting $ fsa $ parDFALexer lexer
-    endo_size = Map.size to_endo
+    endo_size = Set.size $ endosInTable _compositions
     state_size = Set.size $ states $ fsa $ parDFALexer lexer
     _connected = connected $ initConnected lexer
     to_endo' = enumerateEndomorphisms _connected
+    vec_dead = deadEndomorphism lexer
     to_endo =
-      Map.insert (deadEndomorphism lexer) _dead
+      Map.insert vec_dead _dead
       $ Map.insert (identityEndomorphism lexer) _identity to_endo'
     _identity = succ $ maximum to_endo'
-    _dead = succ $ succ $ maximum to_endo'
+    _dead =
+      case Map.lookup vec_dead to_endo' of
+        Nothing -> succ _identity
+        Just a -> a
     toEndo x =
       case Map.lookup x to_endo of
-           Nothing -> error (show x)
+           Nothing -> error "Error: Happend during Parallel Lexing genration, contact a maintainer."
            Just a -> a
     _compositions =
       addDead _dead
