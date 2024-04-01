@@ -15,11 +15,11 @@ parentVectorTest :: String
 parentVectorTest =
   [i|
 -- ==
--- entry: test_previous_or_smaller
+-- entry: test_previous_equal_or_smaller
 -- compiled random input { [100]i32 }
 -- output { true }
-entry test_previous_or_smaller [n] (arr: [n]i32): bool =
-  parser.test_previous_or_smaller arr
+entry test_previous_equal_or_smaller [n] (arr: [n]i32): bool =
+  parser.test_previous_equal_or_smaller arr
 |]
 
 
