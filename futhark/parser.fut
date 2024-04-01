@@ -197,7 +197,7 @@ module mk_parser(P: parser_context) = {
     loop j = i - 1 while j != -1 && not (arr[j] `op` arr[i]) do
       j - 1
 
-  def test_previous_or_smaller [n] (arr: [n]i32): bool =
+  def test_previous_equal_or_smaller [n] (arr: [n]i32): bool =
     let expected = map (backwards_linear_search (<=) arr) (iota n)
     let tree = mk_tree i32.min i32.highest arr
     let result = map (find_previous (<=) tree) (iota n)
