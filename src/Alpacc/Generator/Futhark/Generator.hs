@@ -11,6 +11,18 @@ import Data.Map qualified as Map
 import Data.Map ( Map )
 import Alpacc.Generator.Futhark.Util
 
+parentVectorTest :: String
+parentVectorTest =
+  [i|
+-- ==
+-- entry: test_previous_or_smaller
+-- compiled random input { [100]i32 }
+-- output { true }
+entry test_previous_or_smaller [n] (arr: [n]i32): bool =
+  parser.test_previous_or_smaller arr
+|]
+
+
 bothFunction :: String
 bothFunction = [i|
 entry parse s =
@@ -27,7 +39,7 @@ entry pre_productions s =
   match lexer.lex' 16777216 s
   case #some r -> map (.0) r |> parser.pre_productions 
   case #none -> []
-|]
+|] ++ parentVectorTest
 
 lexerFunction :: FutUInt -> String
 lexerFunction t = [i|
@@ -41,7 +53,7 @@ entry lex s =
 parserFunction :: String
 parserFunction = [i|
 entry parse = parser.parse
-|]
+|] ++ parentVectorTest
 
 toTerminalIndexMap :: Ord t => [t] -> Map t Integer
 toTerminalIndexMap = Map.fromList . flip zip [0..]
