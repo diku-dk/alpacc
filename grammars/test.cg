@@ -1,4 +1,4 @@
 lparen = a\(a;
 rparen = a\)a;
 atom = a+;
-ignore = \s|\n|\t|\r;
+ignore = (\s|\n|\t|\r)+;

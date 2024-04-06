@@ -3,6 +3,7 @@ CFLAGS=-O3
 H=\x1B[32m\033[1m
 E=\033[0m\x1B[0m
 FUTHARK_BACKEND?=cuda
+INPUT_SIZE?=1048576
 .PHONY: clean bench build bench-rust bench-c bench-futhark
 
 tokens: tokens.c
@@ -13,7 +14,7 @@ lexer-c: lexer.c
 
 data.in: tokens
 	@printf "Creating input dataset...\n"
-	@./$^ > data.in
+	@./$^ $(INPUT_SIZE) > data.in
 	@printf "Done creating input dataset.\n"
 
 lexer-rust: lexer.rs Cargo.toml Cargo.lock

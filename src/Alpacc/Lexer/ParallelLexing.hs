@@ -96,32 +96,16 @@ connectedTable lexer =
       Set.fromList
       $ mapMaybe (transitionLookup s) _alphabet
 
-
-invertMap :: Ord t => Map t (Set t) -> Map t (Set t)
-invertMap mapping =
-  Map.unionsWith Set.union
-  $ toMap <$> Map.toList mapping
-  where
-    toMap (t, t_set) =
-      Map.unionsWith Set.union
-      $ flip Map.singleton (Set.singleton t) <$> Set.toList t_set
-
 initConnected ::
   (Enum t, Bounded t, IsTransition t, Ord k) =>
   ParallelDFALexer t State k ->
   Map Endomorphism (Set Endomorphism)
 initConnected lexer =
-  Map.unionWith Set.union temp
-  $ Map.unionsWith Set.union
+  Map.unionsWith Set.union
   $ mapMaybe auxiliary
   $ Map.toList connected_table
   where
     connected_table = connectedTable lexer
-    inverted_connected_table = invertMap connected_table
-    temp =
-      Map.unionsWith Set.union
-      $ mapMaybe auxiliary
-      $ Map.toList inverted_connected_table
     endomorphism_table = endomorphismTable lexer
 
     auxiliary (t, t_set) = do

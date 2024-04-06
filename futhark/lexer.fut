@@ -17,6 +17,7 @@ module type lexer_context = {
   val is_producing : [256][state_size]bool
   val transitions_to_endomorphisms : [256]endomorphism_module.t
   val compositions : [endomorphism_size][endomorphism_size]endomorphism_module.t
+  val dead_terminal : terminal_module.t
   val states_to_terminals : [state_size]terminal_module.t
   val endomorphisms_to_states : [endomorphism_size]state_module.t
 }
@@ -54,81 +55,60 @@ module mk_lexer(L: lexer_context) = {
       map trans_to_endo str
       |> scan compose L.identity_endomorphism
       |> map endo_to_state
-    let produces = map2 is_producing (rotate 1 states) str
+    let produces = map2 is_producing states (rotate 1 str)
+    let produces =
+      if n == 0
+      then produces
+      else let produces[n - 1] = true in produces
     in zip produces states
 
-  def lex [n'] (str : [n']u8) : opt ([](terminal, (i32, i32))) =
+  def lex_with_dead [n'] (str : [n']u8) : [](terminal, (i32, i32)) =
     let n = i32.i64 n'
-    let ends_states =
-      if n == 0
-      then []
-      else let temp = traverse str
-           in temp with [n' - 1] = (true, copy temp[n' - 1].1)
+    let ends_states = if n == 0 then [] else traverse str
     let is = filter (\i -> ends_states[i].0) (0i32..<n)
-    let is_valid =
-      if n == 0 then false else last ends_states |> (.1) |> is_accept
     let new_size = length is
-    let result =
-      tabulate new_size (
-                 \i ->
-                   let start = if i == 0 then 0 else 1 + is[i - 1]
-                   let end = is[i]
-                   let span = (start, end + 1)
-                   in (to_terminal ends_states[end].1, span)
-               )
-      |> filter (not <-< L.is_ignore <-< (.0))
+    in tabulate new_size (
+                  \i ->
+                    let start = i32.bool (i != 0) + is[i - 1]
+                    let end = is[i]
+                    let span = (start, end + 1)
+                    in (to_terminal ends_states[end].1, span)
+                )
+    
+  def lex [n'] (str : [n']u8) : opt ([](terminal, (i32, i32))) =
+    let result = lex_with_dead str
+    let is_valid =
+      length result == 0 ||
+      (last result).0 L.terminal_module.!= L.dead_terminal
     in if is_valid
        then some result
        else #none
 
-  def lex_step [n'] (str : [n']u8) (offset : i32) (size : i32) : opt ([](terminal, (i32, i32)), i32) =
+  def lex_step [n']
+               (str : [n']u8)
+               (offset : i32)
+               (size : i32) : ([](terminal, (i32, i32)), bool) =
     let n = i32.i64 n'
-    let substr = str[i64.i32 offset:i64.i32 (i32.min n (offset + size))]
-    let m = length substr |> i32.i64
-    let ends_states = if m == 0 then [] else traverse substr
-    let ends_states =
-      if m < size
-      then ends_states with [m - 1] = (true, copy ends_states[m - 1].1)
-      else ends_states
-    let is = filter (\i -> ends_states[i].0) (0i32..<m)
-    let new_size = length is
-    let lexed' =
-      tabulate new_size (
-                 \i ->
-                   let start = if i == 0 then 0 else 1 + is[i - 1]
-                   let end = is[i]
-                   let span = (offset + start, offset + end + 1)
-                   in (ends_states[end].1, span)
-               )
-    let (lexed, new_offset') =
-      if new_size <= 1 || m < size
-      then ([], -1)
-      else (init lexed', last lexed' |> (.1) |> (.0))
-    let (states_spans, new_offset) =
-      if m < size
-      then (lexed', n - 1)
-      else (lexed, new_offset')
-    let is_invalid =
-      if n == 0 then true else last states_spans |> (.0) |> is_accept |> not
-    let terminals_spans =
-      map (\(s, span) -> (to_terminal s, span)) states_spans
-      |> filter (not <-< L.is_ignore <-< (.0))
-    in if (new_size <= 1 && m == size) || is_invalid
-       then #none
-       else some (terminals_spans, new_offset)
+    let lower = offset
+    let upper = i32.min n (offset + size)
+    let substr = str[i64.i32 lower : i64.i32 upper]
+    let result = lex_with_dead substr
+    in if length result == 0 || ((last result).1).1 == n
+       then (result
+            ,length result != 0 &&
+             (last result).0 L.terminal_module.!= L.dead_terminal)
+       else (init result, 1 != length result)
 
-  def lex' [n'] (max_token_size : i32) (str : [n']u8) : opt ([](terminal, (i32, i32))) =
+  def lex_chunked [n']
+                  (max_token_size : i32)
+                  (str : [n']u8) : opt ([](terminal, (i32, i32))) =
     let n = i32.i64 n'
     let step = max_token_size + 1
     let (ys, final_offset, _) =
-      loop (xs, offset, stop) = ([], 0, true) while stop do
-        match lex_step str offset step
-        case #none -> ([], -1, false)
-        case #some (lexed, new_offset) ->
-          let xs' = xs ++ lexed
-          in if new_offset == n - 1
-             then (xs', new_offset, false)
-             else (xs', new_offset, true)
+      loop (xs, offset, continue) = ([], 0, true) while continue do
+        let (lexed, is_valid) = lex_step str offset step
+        let xs' = xs ++ lexed
+        in (xs', ((last lexed).1).0, is_valid)
     in if final_offset == n - 1
        then some ys
        else #none
