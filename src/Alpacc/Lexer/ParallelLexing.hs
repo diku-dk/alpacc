@@ -10,6 +10,10 @@ import Alpacc.Lexer.FSA
 import Alpacc.Lexer.DFA
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map hiding (Map)
+import Data.IntMap.Strict (IntMap)
+import Data.IntMap.Strict qualified as IntMap hiding (IntMap)
+import Data.IntSet (IntSet)
+import Data.IntSet qualified as IntSet hiding (IntSet)
 import Data.Set (Set)
 import Data.Set qualified as Set hiding (Set)
 import Data.Maybe
@@ -18,23 +22,61 @@ import Data.Array qualified as Array hiding (Array)
 import Data.Bifunctor (Bifunctor (..))
 import Data.Tuple (swap)
 import Data.Tuple.Extra (both)
+import Control.Monad.State
 
-type State = Int
-type Endo = Int
-type Endomorphism = Array State State
+type S = Int
+type E = Int
+type Endomorphism = Array S S
 
 data ParallelLexer t k =
   ParallelLexer
-  { compositions :: Map (Endo, Endo) Endo
-  , endomorphisms :: Map t Endo
-  , tokenEndomorphism :: Set (State, t) 
-  , endomorphismsToStates :: Map Endo State
-  , tokenMap :: Map State k
-  , identity :: Endo
+  { compositions :: Map (E, E) E
+  , endomorphisms :: Map t E
+  , tokenEndomorphism :: Set (S, t) 
+  , endomorphismsToStates :: Map E S
+  , tokenMap :: Map S k
+  , identity :: E
   , stateSize :: Int
   , endomorphismsSize :: Int
-  , acceptingStates :: Set State
+  , acceptingStates :: Set S
   } deriving (Show, Eq, Ord)
+
+data EndoCtx =
+  EndoCtx
+  { comps :: Map (E, E) E
+  , endoMap :: Map Endomorphism E
+  , inverseEndoMap :: IntMap Endomorphism
+  , connectedMap :: IntMap IntSet
+  , maxE :: E
+  } deriving (Show, Eq, Ord)
+
+type EndoState = State EndoCtx
+
+errorMessage :: String
+errorMessage = "Error: Happend during Parallel Lexing genration, contact a maintainer."
+
+endoInsert :: E -> Endomorphism -> EndoState ()
+endoInsert e endo = do
+  inv_map <- gets inverseEndoMap
+  let new_inv_map = IntMap.insert e endo inv_map
+
+  _map <- gets endoMap
+  let new_map = Map.insert endo e _map
+  
+  modify $
+    \s ->
+      s { inverseEndoMap = new_inv_map
+        , endoMap = new_map }
+
+eLookup :: E -> EndoState (Maybe Endomorphism)
+eLookup e = do
+  inv_map <- gets inverseEndoMap
+  return $ IntMap.lookup e inv_map
+
+endomorphismLookup :: Endomorphism -> EndoState (Maybe E)
+endomorphismLookup endomorphism = do
+  _map <- gets endoMap
+  return $ Map.lookup endomorphism _map
 
 compose :: Endomorphism -> Endomorphism -> Endomorphism
 compose a b =
@@ -43,9 +85,36 @@ compose a b =
   where
     auxiliary i = (i, b Array.! (a Array.! i))
 
+endoNext :: EndoState E
+endoNext = do
+  max_e <- gets maxE
+  let new_max_e = succ max_e
+  modify $ \s -> s { maxE = new_max_e }
+  return new_max_e
+
+endoCompose :: E -> E -> EndoState (Either String ())
+endoCompose e e' = do
+  new_e <- endoNext
+  maybe_endo <- eLookup e
+  maybe_endo' <- eLookup e'
+  case (maybe_endo, maybe_endo') of
+    (Just endo, Just endo') ->
+      let endo'' = endo `compose` endo'
+      in Right <$> endoInsert new_e endo''
+    _ -> return $ Left errorMessage
+
+stateCompose :: E -> E -> EndoState (Either String ())
+stateCompose e e' = do
+  _comps <- gets comps
+  if (e, e') `Map.member` _comps
+  then return $ Right ()
+  else endoCompose e e'
+
+-- initEndoCtx :: EndoCtx
+
 endomorphismTable ::
   (Enum t, Bounded t, IsTransition t, Ord k) =>
-  ParallelDFALexer t State k ->
+  ParallelDFALexer t S k ->
   Map t Endomorphism
 endomorphismTable lexer =
   Map.fromList
@@ -71,7 +140,7 @@ endomorphismTable lexer =
       $ map (tableLookUp . (, t))
       $ Set.toAscList _states
 
-connectedTable :: IsTransition t => ParallelDFALexer t State k -> Map t (Set t)
+connectedTable :: IsTransition t => ParallelDFALexer t S k -> Map t (Set t)
 connectedTable lexer =
   Map.fromList
   $ auxiliary <$> _alphabet
@@ -98,7 +167,7 @@ connectedTable lexer =
 
 initConnected ::
   (Enum t, Bounded t, IsTransition t, Ord k) =>
-  ParallelDFALexer t State k ->
+  ParallelDFALexer t S k ->
   Map Endomorphism (Set Endomorphism)
 initConnected lexer =
   Map.unionsWith Set.union
@@ -173,23 +242,23 @@ endomorphismSet _connected =
 
 enumerateEndomorphisms ::
   Map Endomorphism (Set Endomorphism) ->
-  Map Endomorphism Endo
+  Map Endomorphism E
 enumerateEndomorphisms =
   Map.fromList
   . flip zip [0..]
   . Set.toList
   . endomorphismSet
 
-toStateMap :: State -> Map Endomorphism Endo -> Map Endo State
+toStateMap :: S -> Map Endomorphism E -> Map E S
 toStateMap initial_state =
   Map.fromList
   . fmap (swap . first (Array.! initial_state))
   . Map.toList
 
 endoCompositions ::
-  (Endomorphism -> Endo) ->
+  (Endomorphism -> E) ->
   Map (Endomorphism, Endomorphism) Endomorphism ->
-  Map (Endo, Endo) Endo
+  Map (E, E) E
 endoCompositions toEndo comps =
   Map.mapKeys (both toEndo)
   $ toEndo <$> comps
@@ -233,7 +302,7 @@ addDead dead_endo table =
 
 deadEndomorphism ::
   (IsTransition t, Enum t, Bounded t, Ord k) =>
-  ParallelDFALexer t State k ->
+  ParallelDFALexer t S k ->
   Endomorphism
 deadEndomorphism lexer =
   Array.array (first_state, last_state)
@@ -246,7 +315,7 @@ deadEndomorphism lexer =
 
 identityEndomorphism ::
   (IsTransition t, Enum t, Bounded t, Ord k) =>
-  ParallelDFALexer t State k ->
+  ParallelDFALexer t S k ->
   Endomorphism
 identityEndomorphism lexer =
   Array.array (first_state, last_state)
@@ -259,7 +328,7 @@ identityEndomorphism lexer =
 
 parallelLexer ::
   (IsTransition t, Enum t, Bounded t, Ord k) =>
-  ParallelDFALexer t State k ->
+  ParallelDFALexer t S k ->
   ParallelLexer t k
 parallelLexer lexer = 
   ParallelLexer
