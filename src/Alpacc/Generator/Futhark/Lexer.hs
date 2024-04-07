@@ -172,6 +172,8 @@ module lexer = mk_lexer {
 
   def identity_endomorphism : endomorphism = #{_identity}
 
+  def dead_terminal : terminal = #{dead_token}
+
   #{ignore_function}
 
   #{defEndomorphismSize parallel_lexer}
@@ -192,6 +194,7 @@ module lexer = mk_lexer {
 }
 |]
   where
+    dead_token = succ $ maximum token_map
     terminalToIndex = (terminal_index_map Map.!)
     parallel_lexer' = parallelLexer lexer
     parallel_lexer = parallel_lexer' { tokenMap = token_map }
