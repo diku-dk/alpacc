@@ -28,7 +28,6 @@ import Data.Word (Word8)
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NonEmpty hiding (NonEmpty)
 import Data.String.Interpolate (i)
-import Alpacc.Debug
 
 -- | Terminal formation rule.
 data TRule = TRule
@@ -105,7 +104,7 @@ cfgToDFALexer cfg@(CFG {tRules}) = do
   let x = find (producesEpsilon . snd) t_rule_tuples
   case x of
     Just (t, _) -> Left [i|Error: #{t} may not produce empty strings.|]
-    Nothing -> debug $ parallelLexerDFA order_map (0 :: Int) terminal_map
+    Nothing -> parallelLexerDFA order_map (0 :: Int) terminal_map
 
 type Parser = Parsec Void Text
 
