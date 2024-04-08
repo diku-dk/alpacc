@@ -73,6 +73,35 @@ eLookup e = do
   inv_map <- gets inverseEndoMap
   return $ IntMap.lookup e inv_map
 
+connectedLookup :: E -> EndoState (Maybe IntSet)
+connectedLookup e = do
+  _map <- gets connectedMap
+  return $ IntMap.lookup e _map
+
+connectedUpdate :: E -> IntSet -> EndoState ()
+connectedUpdate e e_set = do
+  _map <- gets connectedMap
+  if e `IntMap.member` _map
+  then
+    let new_map = IntMap.insertWith IntSet.union e e_set _map
+    in modify $ \s -> s { connectedMap = new_map }
+  else
+    let new_map = IntMap.insert e e_set _map
+    in modify $ \s -> s { connectedMap = new_map }
+
+preSets :: E -> E -> EndoState ()
+preSets new_e e = do
+  _map <- gets connectedMap
+  let set = IntSet.singleton new_e
+  let new_connections =
+        IntMap.fromList
+        $ fmap (,set)
+        $ IntMap.keys
+        $ IntMap.filter (e `IntSet.member`) _map
+  let new_map = IntMap.unionWith IntSet.union _map new_connections
+  modify $
+    \s -> s { connectedMap = new_map }
+
 endomorphismLookup :: Endomorphism -> EndoState (Maybe E)
 endomorphismLookup endomorphism = do
   _map <- gets endoMap
@@ -98,19 +127,21 @@ endoCompose e e' = do
   maybe_endo <- eLookup e
   maybe_endo' <- eLookup e'
   case (maybe_endo, maybe_endo') of
-    (Just endo, Just endo') ->
+    (Just endo, Just endo') -> do
       let endo'' = endo `compose` endo'
-      in Right <$> endoInsert new_e endo''
+      endoInsert new_e endo''
+      maybe_e_set <- connectedLookup e'
+      forM_ maybe_e_set (connectedUpdate new_e)
+      preSets new_e e
+      return $ Right ()
     _ -> return $ Left errorMessage
 
 stateCompose :: E -> E -> EndoState (Either String ())
 stateCompose e e' = do
   _comps <- gets comps
-  if (e, e') `Map.member` _comps
-  then return $ Right ()
-  else endoCompose e e'
-
--- initEndoCtx :: EndoCtx
+  case Map.lookup (e, e') _comps of
+    Just e'' -> return $ Right ()
+    Nothing -> endoCompose e e'
 
 endomorphismTable ::
   (Enum t, Bounded t, IsTransition t, Ord k) =>
@@ -164,6 +195,38 @@ connectedTable lexer =
     transitionsLookup s =
       Set.fromList
       $ mapMaybe (transitionLookup s) _alphabet
+
+initEndoCtx ::
+  (Enum t, Bounded t, IsTransition t, Ord k) =>
+  ParallelDFALexer t S k ->
+  EndoCtx
+initEndoCtx lexer =
+  EndoCtx
+  { comps = Map.empty
+  , endoMap = endo_to_e
+  , inverseEndoMap = e_to_endo
+  , connectedMap = connected_table
+  , maxE = maximum endo_to_e
+  }
+  where
+    endo_table = endomorphismTable lexer
+    endo_to_e =
+      Map.fromList
+      $ flip zip [0 :: E ..]
+      $ Map.elems endo_table
+    e_to_endo =
+      IntMap.fromList
+      $ swap
+      <$> Map.toList endo_to_e
+    endoToE = (endo_to_e Map.!)
+    t_to_e = endoToE <$> endo_table
+    tToE = (t_to_e Map.!)
+    connected_table =
+      IntMap.fromList
+      $ Map.toList
+      $ Map.mapKeys tToE
+      $ IntSet.fromList . fmap tToE . Set.toList
+      <$> connectedTable lexer
 
 initConnected ::
   (Enum t, Bounded t, IsTransition t, Ord k) =>
