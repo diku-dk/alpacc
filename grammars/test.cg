@@ -1,4 +1,5 @@
-lparen = a\(a;
-rparen = a\)a;
-atom = a+;
-ignore = (\s|\n|\t|\r)+;
+if = if;
+then = then;
+else = else;
+var = [a-z]+;
+ignore = \\s|\\n|\\t|\\r;

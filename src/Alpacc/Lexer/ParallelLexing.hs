@@ -5,7 +5,6 @@ module Alpacc.Lexer.ParallelLexing
   )
 where
 
-import Alpacc.Util (fixedPointIterate)
 import Alpacc.Lexer.FSA
 import Alpacc.Lexer.DFA
 import Data.Map.Strict (Map)
@@ -21,8 +20,9 @@ import Data.Array (Array)
 import Data.Array qualified as Array hiding (Array)
 import Data.Bifunctor (Bifunctor (..))
 import Data.Tuple (swap)
-import Data.Tuple.Extra (both)
 import Control.Monad.State
+import Alpacc.Debug
+import Data.List qualified as List
 
 type S = Int
 type E = Int
@@ -89,18 +89,38 @@ connectedUpdate e e_set = do
     let new_map = IntMap.insert e e_set _map
     in modify $ \s -> s { connectedMap = new_map }
 
-preSets :: E -> E -> EndoState ()
+connectedUpdateAll :: IntMap IntSet -> EndoState ()
+connectedUpdateAll _map =
+  mapM_ (uncurry connectedUpdate) $ IntMap.assocs _map
+
+insertComposition :: E -> E -> E -> EndoState ()
+insertComposition e e' e'' = do
+  _map <- gets comps
+  let new_map = Map.insert (e, e') e'' _map
+  modify $ \s -> s { comps = new_map }
+
+connectedDiff :: IntSet -> IntSet -> Maybe IntSet
+connectedDiff a b = if IntSet.null c then Nothing else Just c
+  where
+    c = IntSet.difference a b
+
+preSets :: E -> E -> EndoState (IntMap IntSet)
 preSets new_e e = do
   _map <- gets connectedMap
   let set = IntSet.singleton new_e
-  let new_connections =
+  let new_map =
         IntMap.fromList
         $ fmap (,set)
         $ IntMap.keys
         $ IntMap.filter (e `IntSet.member`) _map
-  let new_map = IntMap.unionWith IntSet.union _map new_connections
-  modify $
-    \s -> s { connectedMap = new_map }
+  return $ IntMap.differenceWith connectedDiff new_map _map
+
+postSets :: E -> E -> EndoState (IntMap IntSet)
+postSets new_e e' = do
+  _map <- gets connectedMap
+  e_set <- fromMaybe IntSet.empty <$> connectedLookup e'
+  let new_map = IntMap.singleton new_e e_set
+  return $ IntMap.differenceWith connectedDiff new_map _map
 
 endomorphismLookup :: Endomorphism -> EndoState (Maybe E)
 endomorphismLookup endomorphism = do
@@ -121,27 +141,58 @@ endoNext = do
   modify $ \s -> s { maxE = new_max_e }
   return new_max_e
 
-endoCompose :: E -> E -> EndoState (Either String ())
+endoCompose :: E -> E -> EndoState (Maybe (IntMap IntSet))
 endoCompose e e' = do
-  new_e <- endoNext
-  maybe_endo <- eLookup e
-  maybe_endo' <- eLookup e'
-  case (maybe_endo, maybe_endo') of
-    (Just endo, Just endo') -> do
-      let endo'' = endo `compose` endo'
-      endoInsert new_e endo''
-      maybe_e_set <- connectedLookup e'
-      forM_ maybe_e_set (connectedUpdate new_e)
-      preSets new_e e
-      return $ Right ()
-    _ -> return $ Left errorMessage
-
-stateCompose :: E -> E -> EndoState (Either String ())
-stateCompose e e' = do
   _comps <- gets comps
-  case Map.lookup (e, e') _comps of
-    Just e'' -> return $ Right ()
-    Nothing -> endoCompose e e'
+  if (e, e') `Map.member` _comps
+    then return Nothing
+    else Just <$> result
+  where
+    result = do
+      maybe_endo <- eLookup e
+      maybe_endo' <- eLookup e'
+      case (maybe_endo, maybe_endo') of
+        (Just endo, Just endo') -> do
+          let endo'' = endo `compose` endo'
+          maybe_new_e <- endomorphismLookup endo''
+          new_e <- maybe endoNext return maybe_new_e
+          endoInsert new_e endo''
+          insertComposition e e' new_e
+          pre_sets <- preSets new_e e
+          post_sets <- postSets new_e e'
+          return $ IntMap.unionWith IntSet.union pre_sets post_sets
+        _ -> error "This should never happend."
+
+composeMany :: E -> IntSet -> EndoState (IntMap IntSet)
+composeMany e e_set = do
+  maybes <- mapM (endoCompose e) $ IntSet.toList e_set
+  return
+    $ IntMap.unionsWith IntSet.union
+    $ catMaybes maybes
+
+composeAll :: IntMap IntSet -> EndoState (IntMap IntSet)
+composeAll _map = do
+  maps <- mapM (uncurry composeMany) $ IntMap.assocs _map
+  return $ IntMap.unionsWith IntSet.union maps
+
+endoCompositionsTable :: IntMap IntSet -> EndoState ()
+endoCompositionsTable _map = do
+  prev_e <- gets maxE
+  new_map <- composeAll _map
+  next_e <- gets maxE
+  if prev_e == next_e
+    then return ()
+    else connectedUpdateAll new_map *> endoCompositionsTable new_map
+
+compositionsTable ::
+  (Enum t, Bounded t, IsTransition t, Ord k) =>
+  ParallelDFALexer t S k ->
+  EndoCtx
+compositionsTable lexer =
+  execState (endoCompositionsTable connected_map) ctx 
+  where
+    ctx = initEndoCtx lexer
+    connected_map = connectedMap ctx
 
 endomorphismTable ::
   (Enum t, Bounded t, IsTransition t, Ord k) =>
@@ -210,14 +261,16 @@ initEndoCtx lexer =
   }
   where
     endo_table = endomorphismTable lexer
-    endo_to_e =
-      Map.fromList
-      $ flip zip [0 :: E ..]
-      $ Map.elems endo_table
+    
     e_to_endo =
       IntMap.fromList
+      $ zip [0 :: E ..]
+      $ List.nub
+      $ Map.elems endo_table
+    endo_to_e =
+      Map.fromList
       $ swap
-      <$> Map.toList endo_to_e
+      <$> IntMap.assocs e_to_endo
     endoToE = (endo_to_e Map.!)
     t_to_e = endoToE <$> endo_table
     tToE = (t_to_e Map.!)
@@ -228,103 +281,11 @@ initEndoCtx lexer =
       $ IntSet.fromList . fmap tToE . Set.toList
       <$> connectedTable lexer
 
-initConnected ::
-  (Enum t, Bounded t, IsTransition t, Ord k) =>
-  ParallelDFALexer t S k ->
-  Map Endomorphism (Set Endomorphism)
-initConnected lexer =
-  Map.unionsWith Set.union
-  $ mapMaybe auxiliary
-  $ Map.toList connected_table
-  where
-    connected_table = connectedTable lexer
-    endomorphism_table = endomorphismTable lexer
-
-    auxiliary (t, t_set) = do
-      e <- toEndo t
-      let t_set' =
-            Set.fromList
-            $ mapMaybe toEndo
-            $ Set.toList t_set
-      return $ Map.singleton e t_set'
-
-    toEndo t = Map.lookup t endomorphism_table    
-
-newEndoConn ::
-  Map Endomorphism (Set Endomorphism) ->
-  Endomorphism ->
-  Set Endomorphism ->
-  Map Endomorphism (Set Endomorphism)
-newEndoConn conn_endos endo endo_set =
-  Map.unionsWith Set.union
-  $ Set.map toMap endo_set
-  where
-    toConn = (conn_endos Map.!)
-    toMap endo' =
-      Map.unionWith Set.union new_map
-      $ Map.singleton comp (toConn endo')
-      where
-        comp = endo `compose` endo'
-        set = Set.singleton comp
-        new_map =
-          Map.unions
-          $ fmap (`Map.singleton` set)
-          $ Map.keys
-          $ Map.filter (endo `Set.member`) conn_endos
-
-newEndoConns ::
-  Map Endomorphism (Set Endomorphism) ->
-  Map Endomorphism (Set Endomorphism)
-newEndoConns conn_endos =
-  Map.unionWith Set.union conn_endos
-  $ Map.unionsWith Set.union
-  $ Map.mapWithKey (newEndoConn conn_endos) conn_endos
-
-connected ::
-  Map Endomorphism (Set Endomorphism) ->
-  Map Endomorphism (Set Endomorphism)
-connected = fixedPointIterate (/=) newEndoConns
-
-compositionsTable ::
-  Map Endomorphism (Set Endomorphism) ->
-  Map (Endomorphism, Endomorphism) Endomorphism
-compositionsTable _connected =
-  Map.fromList
-  $ concat
-  $ Map.mapWithKey auxiliary _connected
-  where
-    toMap e e' = ((e, e'), e `compose` e')
-    auxiliary e = Set.toList . Set.map (toMap e)
-
-endomorphismSet ::
-  Map Endomorphism (Set Endomorphism) ->
-  Set Endomorphism
-endomorphismSet _connected =
-  Set.union (Map.keysSet _connected)
-  $ Set.unions _connected
-
-enumerateEndomorphisms ::
-  Map Endomorphism (Set Endomorphism) ->
-  Map Endomorphism E
-enumerateEndomorphisms =
-  Map.fromList
-  . flip zip [0..]
-  . Set.toList
-  . endomorphismSet
-
 toStateMap :: S -> Map Endomorphism E -> Map E S
 toStateMap initial_state =
   Map.fromList
   . fmap (swap . first (Array.! initial_state))
   . Map.toList
-
-endoCompositions ::
-  (Endomorphism -> E) ->
-  Map (Endomorphism, Endomorphism) Endomorphism ->
-  Map (E, E) E
-endoCompositions toEndo comps =
-  Map.mapKeys (both toEndo)
-  $ toEndo <$> comps
 
 endosInTable :: Ord t => Map (t, t) t -> Set t
 endosInTable table = endos
@@ -388,7 +349,6 @@ identityEndomorphism lexer =
     first_state = minimum _states
     last_state = maximum _states
 
-
 parallelLexer ::
   (IsTransition t, Enum t, Bounded t, Ord k) =>
   ParallelDFALexer t S k ->
@@ -409,13 +369,19 @@ parallelLexer lexer =
     accept_states = accepting $ fsa $ parDFALexer lexer
     endo_size = Set.size $ endosInTable _compositions
     state_size = Set.size $ states $ fsa $ parDFALexer lexer
-    _connected = connected $ initConnected lexer
-    to_endo' = enumerateEndomorphisms _connected
+    (EndoCtx
+      { comps = _compositions'
+      , endoMap = to_endo'
+      }) = compositionsTable lexer
     vec_dead = deadEndomorphism lexer
+    vec_identity = identityEndomorphism lexer
     to_endo =
       Map.insert vec_dead _dead
-      $ Map.insert (identityEndomorphism lexer) _identity to_endo'
-    _identity = succ $ maximum to_endo'
+      $ Map.insert vec_identity _identity to_endo'
+    _identity =
+      case Map.lookup vec_identity to_endo' of
+        Nothing -> succ $ maximum to_endo'
+        Just a -> a
     _dead =
       case Map.lookup vec_dead to_endo' of
         Nothing -> succ _identity
@@ -426,9 +392,7 @@ parallelLexer lexer =
            Just a -> a
     _compositions =
       addDead _dead
-      $ addIdentity _identity
-      $ endoCompositions toEndo
-      $ compositionsTable _connected
+      $ addIdentity _identity _compositions'
     token_map = terminalMap $ parDFALexer lexer
     _alphabet = Set.toList $ alphabet $ fsa $ parDFALexer lexer
     _dead_transitions =
