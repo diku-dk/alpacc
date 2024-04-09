@@ -105,9 +105,9 @@ connectedDiff a b = if IntSet.null c then Nothing else Just c
     c = IntSet.difference a b
 
 preSets :: E -> E -> EndoState (IntMap IntSet)
-preSets new_e e = do
+preSets e'' e = do
   _map <- gets connectedMap
-  let set = IntSet.singleton new_e
+  let set = IntSet.singleton e''
   let new_map =
         IntMap.fromList
         $ fmap (,set)
@@ -117,10 +117,10 @@ preSets new_e e = do
   -- return $ IntMap.differenceWith connectedDiff new_map _map
 
 postSets :: E -> E -> EndoState (IntMap IntSet)
-postSets new_e e' = do
+postSets e'' e' = do
   _map <- gets connectedMap
   e_set <- fromMaybe IntSet.empty <$> connectedLookup e'
-  let new_map = IntMap.singleton new_e e_set
+  let new_map = IntMap.singleton e'' e_set
   return $ IntMap.unionWith IntSet.union new_map _map
   -- return $ IntMap.differenceWith connectedDiff new_map _map
   
@@ -148,7 +148,7 @@ endoCompose e e' = do
   _comps <- gets comps
   if (e, e') `Map.member` _comps
     then return Nothing
-    else Just <$> result
+    else result
   where
     result = do
       maybe_endo <- eLookup e
@@ -156,21 +156,26 @@ endoCompose e e' = do
       case (maybe_endo, maybe_endo') of
         (Just endo, Just endo') -> do
           let endo'' = endo `compose` endo'
-          maybe_new_e <- endomorphismLookup endo''
-          new_e <- maybe endoNext return maybe_new_e
-          endoInsert new_e endo''
-          insertComposition e e' new_e
-          pre_sets <- preSets new_e e
-          post_sets <- postSets new_e e'
-          return $ IntMap.unionWith IntSet.union pre_sets post_sets
+          maybe_e'' <- endomorphismLookup endo''
+          e'' <- maybe endoNext return maybe_e''
+          endoInsert e'' endo''
+          insertComposition e e' e''
+          pre_sets <- preSets e'' e
+          post_sets <- postSets e'' e'
+          let new_sets =
+                IntMap.unionWith IntSet.union pre_sets post_sets
+          return $
+            if IntMap.null new_sets
+            then Nothing
+            else Just new_sets
         _ -> error "This should never happend."
 
 composeMany :: E -> IntSet -> EndoState (IntMap IntSet)
 composeMany e e_set = do
-  maybes <- mapM (endoCompose e) $ IntSet.toList e_set
+  e_list <- mapM (endoCompose e) $ IntSet.toList e_set
   return
     $ IntMap.unionsWith IntSet.union
-    $ catMaybes maybes
+    $ catMaybes e_list
 
 composeAll :: IntMap IntSet -> EndoState (IntMap IntSet)
 composeAll _map = do
@@ -277,9 +282,9 @@ initEndoCtx lexer =
     t_to_e = endoToE <$> endo_table
     tToE = (t_to_e Map.!)
     connected_table =
-      IntMap.fromList
+      IntMap.unionsWith IntSet.union
+      $ fmap (uncurry IntMap.singleton . first tToE)
       $ Map.toList
-      $ Map.mapKeys tToE
       $ IntSet.fromList . fmap tToE . Set.toList
       <$> connectedTable lexer
 
