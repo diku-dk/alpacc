@@ -81,13 +81,8 @@ connectedLookup e = do
 connectedUpdate :: E -> IntSet -> EndoState ()
 connectedUpdate e e_set = do
   _map <- gets connectedMap
-  if e `IntMap.member` _map
-  then
-    let new_map = IntMap.insertWith IntSet.union e e_set _map
-    in modify $ \s -> s { connectedMap = new_map }
-  else
-    let new_map = IntMap.insert e e_set _map
-    in modify $ \s -> s { connectedMap = new_map }
+  let new_map = IntMap.insertWith IntSet.union e e_set _map
+  modify $ \s -> s { connectedMap = new_map }
 
 connectedUpdateAll :: IntMap IntSet -> EndoState ()
 connectedUpdateAll _map =
@@ -143,18 +138,16 @@ endoNext = do
   modify $ \s -> s { maxE = new_max_e }
   return new_max_e
 
-endoCompose :: E -> E -> EndoState (Maybe (IntMap IntSet))
+endoCompose :: E -> E -> EndoState ()
 endoCompose e e' = do
-  _comps <- gets comps
-  if (e, e') `Map.member` _comps
-    then return Nothing
-    else result
-  where
-    result = do
-      maybe_endo <- eLookup e
-      maybe_endo' <- eLookup e'
-      case (maybe_endo, maybe_endo') of
-        (Just endo, Just endo') -> do
+  maybe_endo <- eLookup e
+  maybe_endo' <- eLookup e'
+  case (maybe_endo, maybe_endo') of
+    (Just endo, Just endo') -> do
+      _comps <- gets comps
+      case Map.lookup (e, e') _comps of
+        Just _ -> return ()
+        Nothing -> do
           let endo'' = endo `compose` endo'
           maybe_e'' <- endomorphismLookup endo''
           e'' <- maybe endoNext return maybe_e''
@@ -162,44 +155,33 @@ endoCompose e e' = do
           insertComposition e e' e''
           pre_sets <- preSets e'' e
           post_sets <- postSets e'' e'
-          let new_sets =
-                IntMap.unionWith IntSet.union pre_sets post_sets
-          return $
-            if IntMap.null new_sets
-            then Nothing
-            else Just new_sets
-        _ -> error "This should never happend."
+          connectedUpdateAll
+            $ IntMap.unionWith IntSet.union pre_sets post_sets
+    _ -> error "This should never happend."
 
-composeMany :: E -> IntSet -> EndoState (IntMap IntSet)
-composeMany e e_set = do
-  e_list <- mapM (endoCompose e) $ IntSet.toList e_set
-  return
-    $ IntMap.unionsWith IntSet.union
-    $ catMaybes e_list
-
-composeAll :: IntMap IntSet -> EndoState (IntMap IntSet)
-composeAll _map = do
-  maps <- mapM (uncurry composeMany) $ IntMap.assocs _map
-  return $ IntMap.unionsWith IntSet.union maps
-
-endoCompositionsTable :: IntMap IntSet -> EndoState ()
-endoCompositionsTable _map = do
+composeMany :: E -> IntSet -> EndoState ()
+composeMany e e_set = mapM_ (endoCompose e) $ IntSet.toList e_set
+  
+composeAll :: EndoState ()
+composeAll = do
+  _map <- gets connectedMap
+  mapM_ (uncurry composeMany) $ IntMap.assocs _map
+  
+endoCompositionsTable :: EndoState ()
+endoCompositionsTable = do
   prev_e <- gets maxE
-  new_map <- composeAll _map
+  composeAll
   next_e <- gets maxE
-  if prev_e == next_e
-    then return ()
-    else connectedUpdateAll new_map *> endoCompositionsTable new_map
+  unless (prev_e == next_e) endoCompositionsTable
 
 compositionsTable ::
   (Enum t, Bounded t, IsTransition t, Ord k) =>
   ParallelDFALexer t S k ->
   EndoCtx
 compositionsTable lexer =
-  execState (endoCompositionsTable connected_map) ctx 
+  execState endoCompositionsTable ctx 
   where
     ctx = initEndoCtx lexer
-    connected_map = connectedMap ctx
 
 endomorphismTable ::
   (Enum t, Bounded t, IsTransition t, Ord k) =>
