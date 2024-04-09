@@ -2,4 +2,4 @@ if = if;
 then = then;
 else = else;
 var = [a-z]+;
-ignore = \\s|\\n|\\t|\\r;
+ignore = \s|\n|\t|\r;
