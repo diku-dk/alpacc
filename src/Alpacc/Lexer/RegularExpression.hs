@@ -149,17 +149,12 @@ pTerm = do
         pLiteral,
         between (lexeme "(") (lexeme ")") pRegEx
       ]
-  s <- optional (many1 (char '*' <|> char '+'))
-  return $ case s of
-    -- I did a derivation and found (s*)+ = (s+)* = s* so it should hold if *
-    -- occurs in a sequence of applied postfix operation then it will equal s*.
-    -- If only + occurs in the postfix sequence then then due to (s+)+ = s+ it
-    -- will simply correspond to ss*.
-    Just postfixes ->
-      if '*' `elem` postfixes
-        then Star term
-        else Concat (Star term) term
-    Nothing -> term
+  pPostfix term
+  where pPostfix term =
+          choice [lexeme "*" *> pPostfix (Star term),
+                  lexeme "+" *> pPostfix (Concat term (Star term)),
+                  lexeme "?" *> pPostfix (Alter Epsilon term),
+                  pure term]
 
 regExFromText :: FilePath -> Text -> Either String (RegEx Char)
 regExFromText fname s =
