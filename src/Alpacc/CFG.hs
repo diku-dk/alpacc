@@ -118,7 +118,7 @@ pNT :: Parser NT
 pNT = lexeme (NT . Text.pack <$> p) <?> "nonterminal"
   where
     p = (:) <$> satisfy isUpper <*> many (satisfy ok)
-    ok c = isAlphaNum c || c `elem` ("'*" :: String)
+    ok c = isAlphaNum c || c `elem` "'*_"
 
 pStringLit :: Parser Text
 pStringLit = lexeme $ char '"' *> takeWhile1P Nothing ok <* char '"'

@@ -189,7 +189,21 @@ module mk_parser(P: parser_context) = {
     in if n == 0
        then parents'
        else let parents'[0] = 0 in parents'
-  
+
+  def backwards_linear_search [n] 't
+                              (op: t -> t -> bool)
+                              (arr: [n]t)
+                              (i: i64): i64 =
+    loop j = i - 1 while j != -1 && not (arr[j] `op` arr[i]) do
+      j - 1
+
+  def test_previous_equal_or_smaller [n] (arr: [n]i32): bool =
+    let expected = map (backwards_linear_search (<=) arr) (iota n)
+    let tree = mk_tree i32.min i32.highest arr
+    let result = map (find_previous (<=) tree) (iota n)
+    in zip expected result
+       |> all (uncurry (==))
+            
   type node 't 'p = #terminal t (i32, i32) | #production p
   
   def terminal_offsets [n][m]
