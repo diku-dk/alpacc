@@ -3,7 +3,7 @@ CFLAGS=-O3
 H=\x1B[32m\033[1m
 E=\033[0m\x1B[0m
 FUTHARK_BACKEND?=cuda
-INPUT_SIZE?=1048576
+INPUT_SIZE?=104857600
 .PHONY: clean bench build bench-rust bench-c bench-futhark
 
 tokens: tokens.c
