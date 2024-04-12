@@ -21,8 +21,8 @@ lexer-rust: lexer.rs Cargo.toml Cargo.lock
 	cargo build --release
 	@cp target/release/lexer-rust .
 
-sexp.fut: sexp.cg data.in
-	alpacc sexp.cg --lexer
+sexp.fut: sexp.alp data.in
+	alpacc sexp.alp --lexer
 	@printf -- "\n-- ==\n-- entry: lex\n-- script input { \$$loadbytes \"data.in\" }\n-- output @ data.out\n" >> sexp.fut
 	futhark pkg sync
 

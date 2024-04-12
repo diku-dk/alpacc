@@ -129,7 +129,7 @@ main = do
           Just path -> path
           Nothing -> case input_method of
             StdInput -> "parser.fut"
-            FileInput path -> (++".fut") . fromJust . stripExtension "cg" $ takeFileName path
+            FileInput path -> (++".fut") . fromJust . stripExtension "alp" $ takeFileName path
 
   contents <- case input_method of
         StdInput -> TextIO.getContents
