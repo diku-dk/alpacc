@@ -113,9 +113,9 @@ preSets e'' e = do
 postSets :: E -> E -> EndoState (IntMap IntSet)
 postSets e'' e' = do
   _map <- gets connectedMap
-  e_set <- fromMaybe IntSet.empty <$> connectedLookup e'
-  let new_map = IntMap.singleton e'' e_set
-  return $ IntMap.differenceWith connectedDiff new_map _map
+  e_set' <- fromMaybe IntSet.empty <$> connectedLookup e'
+  e_set'' <- fromMaybe IntSet.empty <$> connectedLookup e''
+  return $ IntMap.singleton e'' (IntSet.difference e_set' e_set'')
 
 endomorphismLookup :: Endomorphism -> EndoState (Maybe E)
 endomorphismLookup endomorphism = do
