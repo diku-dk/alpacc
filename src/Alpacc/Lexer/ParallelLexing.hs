@@ -138,7 +138,7 @@ endoNext = do
   modify $ \s -> s { maxE = new_max_e }
   return new_max_e
 
-endoCompose :: E -> E -> EndoState (Maybe (IntMap IntSet))
+endoCompose :: E -> E -> EndoState (IntMap IntSet)
 endoCompose e e' = do
   maybe_endo <- eLookup e
   maybe_endo' <- eLookup e'
@@ -146,7 +146,7 @@ endoCompose e e' = do
     (Just endo, Just endo') -> do
       _comps <- gets comps
       case Map.lookup (e, e') _comps of
-        Just _ -> return Nothing
+        Just _ -> return IntMap.empty
         Nothing -> do
           let endo'' = endo `compose` endo'
           maybe_e'' <- endomorphismLookup endo''
@@ -158,32 +158,29 @@ endoCompose e e' = do
           let new_sets =
                 IntMap.unionWith IntSet.union pre_sets post_sets
           connectedUpdateAll new_sets
-          return $
-            if IntMap.null new_sets
-            then Nothing
-            else Just new_sets
+          return new_sets
     _ -> error "This should never happend."
 
-composeMany :: E -> IntSet -> EndoState (IntMap IntSet)
-composeMany e e_set = do
-  e_list <- mapM (endoCompose e) $ IntSet.toList e_set
-  return
-    $ IntMap.unionsWith IntSet.union
-    $ catMaybes e_list
-
-composeAll :: IntMap IntSet -> EndoState (IntMap IntSet)
-composeAll _map = do
-  maps <- mapM (uncurry composeMany) $ IntMap.assocs _map
-  return $ IntMap.unionsWith IntSet.union maps
+popElement :: IntMap IntSet -> Maybe ((Int, Int), IntMap IntSet)
+popElement _map =
+  case IntMap.lookupMin _map of
+    Just (key, set) ->
+      if IntSet.null set
+      then popElement (IntMap.delete key _map)
+      else
+        let e = IntSet.findMin set
+            new_map = IntMap.adjust (IntSet.delete e) key _map
+         in Just ((key, e), new_map) 
+    Nothing -> Nothing
 
 endoCompositionsTable :: IntMap IntSet -> EndoState ()
-endoCompositionsTable _map = do
-  prev_e <- gets maxE
-  new_map <- composeAll _map
-  next_e <- gets maxE
-  if prev_e == next_e
-    then return ()
-    else endoCompositionsTable new_map
+endoCompositionsTable _map =
+  case popElement _map of
+    Just ((e, e'), map') -> do
+      map'' <- endoCompose e e'
+      let !map''' = IntMap.unionWith IntSet.union map' map''
+      endoCompositionsTable map''' 
+    Nothing -> return ()
 
 compositionsTable ::
   (Enum t, Bounded t, IsTransition t, Ord k) =>
