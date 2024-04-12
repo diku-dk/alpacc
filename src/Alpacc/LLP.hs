@@ -206,7 +206,9 @@ initLlpContext ::
   Int ->
   Grammar nt t ->
   Either String (LlpContext nt t)
-initLlpContext q k grammar = do
+initLlpContext q k grammar
+  | q < 0 = Left "Error: Lookback must be nonnegative."
+  | otherwise = do
   ll_table <- evalState (llTableM k augmented_grammar followFunction) first_ctx
   return $
     LlpContext
