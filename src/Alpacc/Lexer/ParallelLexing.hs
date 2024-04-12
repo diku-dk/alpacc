@@ -20,7 +20,7 @@ import Data.Array (Array)
 import Data.Array qualified as Array hiding (Array)
 import Data.Bifunctor (Bifunctor (..))
 import Data.Tuple (swap)
-import Control.Monad.State
+import Control.Monad.State.Strict
 import Alpacc.Debug
 import Data.List qualified as List
 
@@ -47,6 +47,7 @@ data EndoCtx =
   , endoMap :: Map Endomorphism E
   , inverseEndoMap :: IntMap Endomorphism
   , connectedMap :: IntMap IntSet
+  , inverseConnectedMap :: IntMap IntSet
   , maxE :: E
   } deriving (Show, Eq, Ord)
 
@@ -81,8 +82,15 @@ connectedLookup e = do
 connectedUpdate :: E -> IntSet -> EndoState ()
 connectedUpdate e e_set = do
   _map <- gets connectedMap
+  inv_map <- gets inverseConnectedMap
   let new_map = IntMap.insertWith IntSet.union e e_set _map
-  modify $ \s -> s { connectedMap = new_map }
+  let new_inverse_map =
+        IntMap.unionWith IntSet.union inv_map
+        $ IntMap.fromList
+        $ (,IntSet.singleton e) <$> IntSet.toList e_set
+  modify $ \s ->
+    s { connectedMap = new_map
+      , inverseConnectedMap = new_inverse_map }
 
 connectedUpdateAll :: IntMap IntSet -> EndoState ()
 connectedUpdateAll _map =
@@ -94,21 +102,20 @@ insertComposition e e' e'' = do
   let new_map = Map.insert (e, e') e'' _map
   modify $ \s -> s { comps = new_map }
 
-connectedDiff :: IntSet -> IntSet -> Maybe IntSet
-connectedDiff a b = if IntSet.null c then Nothing else Just c
-  where
-    c = IntSet.difference a b
-
 preSets :: E -> E -> EndoState (IntMap IntSet)
 preSets e'' e = do
   _map <- gets connectedMap
+  inv_map <- gets inverseConnectedMap
   let set = IntSet.singleton e''
-  let new_map =
-        IntMap.fromList
-        $ fmap (,set)
-        $ IntMap.keys
-        $ IntMap.filter (e `IntSet.member`) _map
-  return $ IntMap.differenceWith connectedDiff new_map _map
+  return $
+    case IntMap.lookup e inv_map of
+      Nothing -> error errorMessage -- This should never happen.
+      Just _set ->
+        if e'' `IntSet.member` _set
+        then IntMap.empty
+        else  
+          IntMap.fromList
+          $ (,set) <$> IntSet.toList _set
 
 postSets :: E -> E -> EndoState (IntMap IntSet)
 postSets e'' e' = do
@@ -157,7 +164,7 @@ endoCompose e e' = do
                 IntMap.unionWith IntSet.union pre_sets post_sets
           connectedUpdateAll new_sets
           return new_sets
-    _ -> error "This should never happend."
+    _ -> error errorMessage -- This should never happen.
 
 popElement :: IntMap IntSet -> Maybe ((Int, Int), IntMap IntSet)
 popElement _map =
@@ -183,12 +190,37 @@ endoCompositionsTable _map =
 compositionsTable ::
   (Enum t, Bounded t, IsTransition t, Ord k) =>
   ParallelDFALexer t S k ->
-  EndoCtx
-compositionsTable lexer =
-  execState (endoCompositionsTable connected_map) ctx 
+  (Map E S, Map Endomorphism E, Map (E, E) E)
+compositionsTable lexer = (to_state, to_endo, _compositions) 
   where
     ctx = initEndoCtx lexer
     connected_map = connectedMap ctx
+    (EndoCtx
+      { comps = _compositions'
+      , endoMap = to_endo'
+      }) = execState (endoCompositionsTable connected_map) ctx
+    vec_dead = deadEndomorphism lexer
+    vec_identity = identityEndomorphism lexer
+    to_endo =
+      Map.insert vec_dead _dead
+      $ Map.insert vec_identity _identity to_endo'
+    _identity =
+      case Map.lookup vec_identity to_endo' of
+        Nothing -> succ $ maximum to_endo'
+        Just a -> a
+    _dead =
+      case Map.lookup vec_dead to_endo' of
+        Nothing -> succ _identity
+        Just a -> a
+    _compositions =
+      addDead _dead
+      $ addIdentity _identity _compositions'
+    initial_state = initial $ fsa $ parDFALexer lexer
+    dead_state = deadState lexer
+    to_state =
+      Map.insert _dead dead_state
+      $ Map.insert _identity initial_state
+      $ toStateMap initial_state to_endo
 
 endomorphismTable ::
   (Enum t, Bounded t, IsTransition t, Ord k) =>
@@ -253,6 +285,7 @@ initEndoCtx lexer =
   , endoMap = endo_to_e
   , inverseEndoMap = e_to_endo
   , connectedMap = connected_table
+  , inverseConnectedMap = inverse_connected_table
   , maxE = maximum endo_to_e
   }
   where
@@ -276,6 +309,13 @@ initEndoCtx lexer =
       $ Map.toList
       $ IntSet.fromList . fmap tToE . Set.toList
       <$> connectedTable lexer
+    toMap k =
+      IntMap.fromList
+      . fmap (,IntSet.singleton k)
+      . IntSet.toList
+    inverse_connected_table =
+      IntMap.unionsWith IntSet.union
+      $ IntMap.mapWithKey toMap connected_table
 
 toStateMap :: S -> Map Endomorphism E -> Map E S
 toStateMap initial_state =
@@ -353,7 +393,7 @@ parallelLexer lexer =
   ParallelLexer
   { compositions = _compositions
   , endomorphisms = _transitions_to_endo
-  , identity = _identity
+  , identity = identity_e
   , tokenMap = token_map
   , endomorphismsToStates = to_state
   , stateSize = state_size
@@ -365,42 +405,18 @@ parallelLexer lexer =
     accept_states = accepting $ fsa $ parDFALexer lexer
     endo_size = Set.size $ endosInTable _compositions
     state_size = Set.size $ states $ fsa $ parDFALexer lexer
-    (EndoCtx
-      { comps = _compositions'
-      , endoMap = to_endo'
-      }) = compositionsTable lexer
-    vec_dead = deadEndomorphism lexer
-    vec_identity = identityEndomorphism lexer
-    to_endo =
-      Map.insert vec_dead _dead
-      $ Map.insert vec_identity _identity to_endo'
-    _identity =
-      case Map.lookup vec_identity to_endo' of
-        Nothing -> succ $ maximum to_endo'
-        Just a -> a
-    _dead =
-      case Map.lookup vec_dead to_endo' of
-        Nothing -> succ _identity
-        Just a -> a
+    (to_state, to_endo, _compositions) = compositionsTable lexer
+    dead_e = toEndo $ deadEndomorphism lexer
+    identity_e = toEndo $ identityEndomorphism lexer
     toEndo x =
       case Map.lookup x to_endo of
-           Nothing -> error "Error: Happend during Parallel Lexing genration, contact a maintainer."
+           Nothing -> error errorMessage -- This should never happen.
            Just a -> a
-    _compositions =
-      addDead _dead
-      $ addIdentity _identity _compositions'
-    token_map = terminalMap $ parDFALexer lexer
-    _alphabet = Set.toList $ alphabet $ fsa $ parDFALexer lexer
     _dead_transitions =
       Map.fromList
-      $ map (,_dead) [minBound..maxBound]
+      $ map (,dead_e) [minBound..maxBound]
     _transitions_to_endo =
       flip Map.union _dead_transitions
       $ toEndo
       <$> endomorphismTable lexer
-    initial_state = initial $ fsa $ parDFALexer lexer
-    dead_state = deadState lexer
-    to_state =
-      Map.insert _dead dead_state
-      $ Map.insert _identity initial_state
-      $ toStateMap initial_state to_endo
+    token_map = terminalMap $ parDFALexer lexer
