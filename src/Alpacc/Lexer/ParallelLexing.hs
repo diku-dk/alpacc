@@ -109,7 +109,6 @@ preSets e'' e = do
         $ IntMap.keys
         $ IntMap.filter (e `IntSet.member`) _map
   return $ IntMap.differenceWith connectedDiff new_map _map
-  -- return $ IntMap.unionWith IntSet.union new_map _map
 
 postSets :: E -> E -> EndoState (IntMap IntSet)
 postSets e'' e' = do
@@ -117,8 +116,7 @@ postSets e'' e' = do
   e_set <- fromMaybe IntSet.empty <$> connectedLookup e'
   let new_map = IntMap.singleton e'' e_set
   return $ IntMap.differenceWith connectedDiff new_map _map
-  -- return $ IntMap.unionWith IntSet.union new_map _map
-  
+
 endomorphismLookup :: Endomorphism -> EndoState (Maybe E)
 endomorphismLookup endomorphism = do
   _map <- gets endoMap
