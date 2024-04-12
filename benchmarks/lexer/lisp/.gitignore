@@ -1,6 +1,6 @@
 *
 !.gitignore
-!*.cg
+!*.alp
 !*.md
 !*.rs
 !Cargo.toml
