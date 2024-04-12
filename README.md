@@ -17,7 +17,7 @@ A special terminal is `ignore` which is a terminal that will always be removed b
 Nonterminals must be named with `UPPERCASE` letters by the possible right-hand productions. A production can result in different right-hand side separated by `|`. These right-hand sides are sequences of nonterminals and terminals separated by whitespace. The first production defined is the starting production for the grammar.
 
 ## Example
-The following grammar is found in [grammars/paper_grammar.cg](grammars/paper_grammar.cg).
+The following grammar is found in [grammars/paper_grammar.alp](grammars/paper_grammar.alp).
 ```
 a = [0-9]+;
 ignore = \s|\n|\t|\r;
@@ -28,7 +28,7 @@ T = a | "[" E "]" ;
 ```
 To construct an LLP(1, 1) grammar from this file the following command can be used.
 ```
-cabal run alpacc -- grammars/paper_grammar.cg -q 1 -k 1
+cabal run alpacc -- grammars/paper_grammar.alp -q 1 -k 1
 ```
 This will create the Futhark source file `paper_grammar.fut` which contains the actual parser which is a function `parse`. 
 

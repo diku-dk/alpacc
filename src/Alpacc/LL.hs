@@ -567,7 +567,9 @@ llTableM :: (Ord nt, Ord t, Show nt, Show t) =>
   Grammar nt t ->
   (nt -> Set [t]) ->
   State (AlphaBetaMemoizedContext nt t) (Either String (Map (nt, [t]) Int))
-llTableM k grammar follow'' = do
+llTableM k grammar follow''
+  |  k <= 0 = return $ Left "Error: Lookahead must be positive."
+  | otherwise = do
     let prods = productions grammar
     tables <- zipWithM tableEntry [0..] prods
     let table = Map.unionsWith Set.union tables
