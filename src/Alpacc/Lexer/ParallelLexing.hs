@@ -16,8 +16,9 @@ import Data.IntSet qualified as IntSet hiding (IntSet)
 import Data.Set (Set)
 import Data.Set qualified as Set hiding (Set)
 import Data.Maybe
-import Data.Array (Array)
-import Data.Array qualified as Array hiding (Array)
+import Data.Array.Base (IArray (..))
+import Data.Array.Unboxed (UArray)
+import Data.Array.Unboxed qualified as UArray hiding (UArray)
 import Data.Bifunctor (Bifunctor (..))
 import Data.Tuple (swap)
 import Control.Monad.State.Strict
@@ -26,7 +27,7 @@ import Data.List qualified as List
 
 type S = Int
 type E = Int
-type Endomorphism = Array S S
+type Endomorphism = UArray S S
 
 data ParallelLexer t k =
   ParallelLexer
@@ -131,10 +132,10 @@ endomorphismLookup endomorphism = do
 
 compose :: Endomorphism -> Endomorphism -> Endomorphism
 compose a b =
-  Array.array (0, length a - 1)
-  $ map auxiliary [0..(length a - 1)]
+  UArray.array (0, numElements a - 1)
+  $ map auxiliary [0..(numElements a - 1)]
   where
-    auxiliary i = (i, b Array.! (a Array.! i))
+    auxiliary i = (i, b UArray.! (a UArray.! i))
 
 endoNext :: EndoState E
 endoNext = do
@@ -239,7 +240,7 @@ endomorphismTable lexer =
     first_index = minimum _states
     last_index = maximum _states
     toArray =
-      Array.array (first_index, last_index)
+      UArray.array (first_index, last_index)
       . zip [first_index..last_index]
     tableLookUp key =
       fromMaybe dead_state
@@ -320,7 +321,7 @@ initEndoCtx lexer =
 toStateMap :: S -> Map Endomorphism E -> Map E S
 toStateMap initial_state =
   Map.fromList
-  . fmap (swap . first (Array.! initial_state))
+  . fmap (swap . first (UArray.! initial_state))
   . Map.toList
 
 endosInTable :: Ord t => Map (t, t) t -> Set t
@@ -365,7 +366,7 @@ deadEndomorphism ::
   ParallelDFALexer t S k ->
   Endomorphism
 deadEndomorphism lexer =
-  Array.array (first_state, last_state)
+  UArray.array (first_state, last_state)
   $ (,dead_state) <$> [first_state..last_state]
   where
     _states = states $ fsa $ parDFALexer lexer
@@ -378,7 +379,7 @@ identityEndomorphism ::
   ParallelDFALexer t S k ->
   Endomorphism
 identityEndomorphism lexer =
-  Array.array (first_state, last_state)
+  UArray.array (first_state, last_state)
   $ zip [first_state..last_state] [first_state..last_state]
   where
     _states = states $ fsa $ parDFALexer lexer
