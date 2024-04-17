@@ -4,13 +4,16 @@ H=\x1B[32m\033[1m
 E=\033[0m\x1B[0m
 FUTHARK_BACKEND?=cuda
 INPUT_SIZE?=104857600
-.PHONY: clean bench build bench-rust bench-c bench-futhark
+.PHONY: clean bench build bench-rust bench-c bench-futhark bench-cuda
 
 tokens: tokens.c
 	$(CC) -o $@ $^ $(CFLAGS)
 
 lexer-c: lexer.c
 	$(CC) -o $@ $^ $(CFLAGS)
+
+lexer-cuda: lexer.cu
+	nvcc --std=c++11 -O3 -o $@ $^
 
 data.in: tokens
 	@printf "Creating input dataset...\n"
@@ -43,11 +46,15 @@ bench-c: lexer-c data.in
 	@printf "Note: The result is not saved in memory.\n"
 	@./lexer-c data.in
 
+bench-cuda: lexer-cuda data.in
+	@printf "$(H)Benchmarking CUDA implementation:$(E)\n"
+	@./lexer-cuda data.in
+
 bench-futhark: sexp.fut data.in data.out
 	@printf "$(H)Benchmarking Futhark implementation:$(E)\n"
 	futhark bench --backend $(FUTHARK_BACKEND) sexp.fut
 
-bench: lexer-rust lexer-c sexp.fut data.in
+bench: lexer-rust lexer-c lexer-cuda sexp.fut data.in
 	@printf "$(H)Lisp Lexer Benchmark:$(E)\n"
 	@printf "$(H)Rust implementation:$(E)\n"
 	@./lexer-rust data.in
@@ -56,8 +63,11 @@ bench: lexer-rust lexer-c sexp.fut data.in
 	@printf "Note: The result is not saved in memory.\n"
 	@./lexer-c data.in
 
+	@printf "$(H)Benchmarking CUDA implementation:$(E)\n"
+	@./lexer-cuda data.in
+
 	@printf "$(H)Futhark implementation:$(E)\n"
 	futhark bench --backend $(FUTHARK_BACKEND) sexp.fut
 
 clean:
-	rm -rf tokens data.in target lexer-rust lexer-c data.out sexp sexp.c sexp.fut
+	rm -rf tokens data.in target lexer-rust lexer-c data.out sexp sexp.c sexp.fut lexer-cuda
