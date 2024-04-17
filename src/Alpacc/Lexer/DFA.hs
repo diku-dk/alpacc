@@ -28,6 +28,7 @@ import Data.Text qualified as Text
 import Data.Foldable
 import Data.Either.Extra
 import Data.Maybe (mapMaybe)
+import Alpacc.Debug
 
 type DFA t s = FSA Identity Identity t s
 type DFALexer t s k = Lexer Identity Identity t s k 
@@ -308,7 +309,7 @@ toParallelDFALexer lexer = do
   return $
     ParallelDFALexer
     { parDFALexer = new_lexer
-    , producesToken = produces_token
+    , producesToken = debug $ produces_token
     , deadState = dead_state
     }
   where
