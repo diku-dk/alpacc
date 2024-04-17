@@ -40,7 +40,7 @@ lookbackParameter =
     <> short 'q'
     <> help "The amount of characters used for lookback."
     <> showDefault
-    <> value 0
+    <> value 1
     <> metavar "INT" )
 
 lexerParameter :: Parser Generator
