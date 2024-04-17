@@ -8,4 +8,5 @@
 !Makefile
 !tokens.c
 !lexer.c
+!lexer.cu
 !futhark.pkg
