@@ -406,10 +406,10 @@ int main(int argc, char** argv) {
     uint32_t* d_indices_out;
     cudaMalloc((void**) &d_indices_in, sizeof(uint32_t) * size);
     cudaMalloc((void**) &d_indices_out, sizeof(uint32_t) * size);
-    cudaMalloc((void**) &d_in, size);
-    cudaMalloc((void**) &d_temp, size);
-    cudaMalloc((void**) &d_endo, size);
-    cudaMemcpy(d_in, str, size, cudaMemcpyHostToDevice);
+    cudaMalloc((void**) &d_in, sizeof(uint8_t) * size);
+    cudaMalloc((void**) &d_temp, sizeof(uint8_t) * size);
+    cudaMalloc((void**) &d_endo, sizeof(uint8_t) * size);
+    cudaMemcpy(d_in, str, sizeof(uint8_t) * size, cudaMemcpyHostToDevice);
 
     size_t num_tokens = 0;
     token* d_tokens = NULL;
