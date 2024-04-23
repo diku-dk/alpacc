@@ -196,8 +196,7 @@ module lexer = mk_lexer {
   where
     dead_token = succ $ maximum token_map
     terminalToIndex = (terminal_index_map Map.!)
-    parallel_lexer' = parallelLexer lexer
-    parallel_lexer = parallel_lexer' { tokenMap = token_map }
+    parallel_lexer = parallelLexer is_ignore lexer
     token_map = terminalToIndex <$> tokenMap parallel_lexer'
     _identity = identity parallel_lexer
     ignore_function = 
