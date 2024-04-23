@@ -1,8 +1,7 @@
 module Alpacc.Lexer.ParallelLexing
-  ( Endomorphism
-  , parallelLexer
+  ( intParallelLexer
   , ParallelLexer (..)
-  , EndoData (..)
+  , IntParallelLexer (..)
   )
 where
 
@@ -26,6 +25,7 @@ import Control.Monad.State.Strict
 import Data.List qualified as List
 import Data.Either.Extra
 import Data.Function
+import Data.Bits
 
 errorMessage :: String
 errorMessage = "Error: Happend during Parallel Lexing genration, contact a maintainer."
@@ -42,17 +42,73 @@ data EndoData t =
   , isIgnore :: Bool
   } deriving (Show, Eq, Ord)
 
-endoDataMasks ::
+maskSizes ::
   Int ->
   Int ->
   Either String (Int, Int, Int, Int)
-endoDataMasks endo_size token_size = Left ""
+maskSizes endo_size token_size =
+  if sum_size <= 64
+  then Left "Error: The parser cannot be create due to too mamy tokens or compositions."
+  else Right (endo_mask_size
+             ,token_mask_size
+             ,accept_mask_size
+             ,ignore_mask_size)
+  where
+    int_size = finiteBitSize (zeroBits :: Int)
+    endo_clz = countLeadingZeros (max 1 (endo_size - 1))
+    token_clz = countLeadingZeros (max 1 (token_size - 1))
+    endo_mask_size = int_size - endo_clz
+    token_mask_size = int_size - token_clz
+    accept_mask_size = 1
+    ignore_mask_size = 1
+    sum_size =
+      endo_mask_size +
+      token_mask_size +
+      accept_mask_size +
+      ignore_mask_size
+
+masks :: (Int, Int, Int, Int) -> (Int, Int, Int, Int) 
+masks (endo_mask_size
+      ,token_mask_size
+      ,accept_mask_size
+      ,ignore_mask_size) = (endo_mask
+                           ,token_mask
+                           ,accept_mask
+                           ,ignore_mask)
+  where
+    off0 = endo_mask_size
+    off1 = off0 + token_mask_size
+    off2 = off1 + accept_mask_size
+    endo_mask = shift 1 endo_mask_size - 1
+    token_mask = shift (shift 1 token_mask_size - 1) off0
+    accept_mask = shift (shift 1 accept_mask_size - 1) off1
+    ignore_mask = shift (shift 1 ignore_mask_size - 1) off2
 
 endoDataToInt ::
-  Int ->
-  Int ->
+  Ord k =>
+  (Int, Int, Int, Int) ->
+  Map (Maybe k) Int ->
+  EndoData k ->
   Either String Int
-endoDataToInt endo_size token_size = Left ""
+endoDataToInt (endo_mask_size
+              ,token_mask_size
+              ,accept_mask_size
+              ,_) to_int endo_data = do
+  t_int <- findInt maybe_token
+  return $
+    e + shift t_int off0 + shift a_int off1 + shift i_int off2
+  where
+    off0 = endo_mask_size
+    off1 = off0 + token_mask_size
+    off2 = off1 + accept_mask_size
+    EndoData { endo = e
+             , token = maybe_token
+             , isAccepting = accept 
+             , isIgnore = ignore
+             } = endo_data
+    a_int = fromEnum accept
+    i_int = fromEnum ignore
+    findInt = maybeToEither errorMessage . flip Map.lookup to_int
 
 toEndoData ::
   (Enum t, Bounded t, IsTransition t, Ord k) =>
@@ -122,15 +178,58 @@ data ParallelLexer t e =
   , endomorphismsSize :: Int
   } deriving (Show, Eq, Ord)
 
-data IntParallelLexer =
+data IntParallelLexer t =
   IntParallelLexer
-  { parLexer :: ParallelLexer Int Int
+  { parLexer :: ParallelLexer t Int
   , endoMask :: Int
   , tokenMask :: Int
   , isAcceptingMask :: Int
   , isIgnoreMask :: Int
   } deriving (Show, Eq, Ord)
 
+intParallelLexer ::
+  (IsTransition t, Enum t, Bounded t, Ord k) =>
+  k ->
+  Map (Maybe k) Int ->
+  ParallelDFALexer t S k ->
+  Either String (IntParallelLexer t)
+intParallelLexer is_ignore to_int lexer = do
+  (endo_size, parallel_lexer) <- parallelLexer is_ignore lexer
+  let token_size = Map.size to_int
+  size_tuple <- maskSizes endo_size token_size
+  let _masks = masks size_tuple
+  let endoDataToInt' = endoDataToInt size_tuple to_int
+  let (endo_mask, token_mask,
+       accept_mask, ignore_mask) = masks size_tuple
+  new_compositions <-
+    mapM endoDataToInt' (compositions parallel_lexer)
+  new_endomorphims <-
+    mapM endoDataToInt' (endomorphisms parallel_lexer)
+  new_produces_token <-
+    fmap Set.fromList
+    $ mapM (\(a, b) -> do
+               x <- endoDataToInt' a
+               return (x, b))
+    $ Set.toList
+    $ producesTokenSet parallel_lexer
+  new_identity <-
+    endoDataToInt' $ identity parallel_lexer
+  let new_parallel_lexer =
+        parallelLexer
+        { compositions = new_compositions
+        , endomorphisms = new_endomorphims
+        , producesTokenSet = new_produces_token
+        , identity = new_identity
+        }
+  return $
+    IntParallelLexer
+    { parLexer = new_parallel_lexer
+    , endoMask = endo_mask
+    , tokenMask = token_mask
+    , isAcceptingMask = accept_mask
+    , isIgnoreMask = ignore_mask
+    }
+  
 data EndoCtx =
   EndoCtx
   { comps :: Map (E, E) E
@@ -387,7 +486,6 @@ initEndoCtx lexer =
   }
   where
     endo_table = endomorphismTable lexer
-    
     e_to_endo =
       IntMap.fromList
       $ zip [0 :: E ..]
@@ -480,7 +578,7 @@ parallelLexer ::
   (IsTransition t, Enum t, Bounded t, Ord k) =>
   k ->
   ParallelDFALexer t S k ->
-  Either String (ParallelLexer t (EndoData k))
+  Either String (Int, ParallelLexer t (EndoData k))
 parallelLexer is_ignore lexer = do
   (to_endo, produces_token, _compositions) <- compositionsTable is_ignore lexer
   let endo_size = Map.size to_endo
@@ -494,11 +592,12 @@ parallelLexer is_ignore lexer = do
         fmap (`Map.union` _dead_transitions)
         $ mapM toEndo
         $ endomorphismTable lexer
-  return $
-    ParallelLexer
-    { compositions = _compositions
-    , producesTokenSet = produces_token
-    , endomorphisms = _transitions_to_endo
-    , identity = identity_e
-    , endomorphismsSize = endo_size
-    }
+  return
+    (endo_size
+    ,ParallelLexer
+     { compositions = _compositions
+     , producesTokenSet = produces_token
+     , endomorphisms = _transitions_to_endo
+     , identity = identity_e
+     , endomorphismsSize = endo_size
+     })
