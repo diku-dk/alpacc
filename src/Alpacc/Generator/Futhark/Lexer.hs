@@ -18,6 +18,7 @@ import Data.List qualified as List
 import Data.Maybe
 import Data.Either.Extra
 import Data.Array qualified as Array
+import Alpacc.Debug
 
 futharkLexer :: String
 futharkLexer = $(embedStringFile "futhark/lexer.fut")
@@ -25,39 +26,22 @@ futharkLexer = $(embedStringFile "futhark/lexer.fut")
 errorMessage :: String
 errorMessage = [i|Error: Happend during Futhark code generation contact a maintainer.|]
 
-defStateSize :: ParallelLexer Word8 Int -> String
-defStateSize =
-  ("def state_size : i64 = "++)
-  . show
-  . stateSize
-
 defEndomorphismSize :: ParallelLexer Word8 Int -> String
 defEndomorphismSize =
-  ("def endomorphism_size : i64 = "++)
+  ("def endomorphism_size: i64 = "++)
   . show
   . endomorphismsSize
 
-isAcceptingArray :: ParallelLexer Word8 Int -> String
-isAcceptingArray parallel_lexer =
-  ([i|def is_accepting : [state_size]bool = sized state_size |]++)
-  $ (++"]")
-  $ ("["++)
-  $ List.intercalate ", "
-  $ [if j `Set.member` accepting_states then "true" else "false" | j <- [0..state_size - 1]]
-  where
-    state_size = stateSize parallel_lexer
-    accepting_states = acceptingStates parallel_lexer
-
 isProducingArray :: ParallelLexer Word8 Int -> String
 isProducingArray parallel_lexer =
-  ("def is_producing : [256][state_size]bool = "++)
-  $ (++"] :> [256][state_size]bool")
+  ("def is_producing: [256][endomorphism_size]bool = "++)
+  $ (++"] :> [256][endomorphism_size]bool")
   $ ("["++)
   $ List.intercalate ",\n"
   $ map row [0..255]
   where
-    token_set = tokenEndomorphism parallel_lexer
-    state_size = stateSize parallel_lexer
+    token_set = producesTokenSet parallel_lexer
+    state_size = endomorphismsSize parallel_lexer
     lookup' c s =
       if (s, c) `Set.member` token_set
       then "true"
@@ -67,24 +51,6 @@ isProducingArray parallel_lexer =
       $ ("["++)
       $ List.intercalate ", "
       $ map (lookup' j) [0..state_size - 1]
-      
-endomorphismsToStateArray ::
-  ParallelLexer Word8 Int ->
-  Either String String
-endomorphismsToStateArray parallel_lexer = do
-  vals <-
-    maybeToEither errorMessage
-    $ mapM (fmap show . flip Map.lookup endos_to_states)
-    [0..endomorphisms_size - 1]
-  let result =
-        ("def endomorphisms_to_states : [endomorphism_size]state = sized endomorphism_size "++)
-        $ (++"]")
-        $ ("["++)
-        $ List.intercalate ",\n" vals
-  return result
-  where
-    endomorphisms_size = endomorphismsSize parallel_lexer
-    endos_to_states = endomorphismsToStates parallel_lexer
 
 transitionsToEndomorphismsArray :: ParallelLexer Word8 Int -> Either String String
 transitionsToEndomorphismsArray parallel_lexer = do
@@ -104,7 +70,7 @@ transitionsToEndomorphismsArray parallel_lexer = do
 compositionsArray :: ParallelLexer Word8 Int -> Either String String
 compositionsArray parallel_lexer = do
   vals <-
-    maybeToEither (errorMessage ++ " [STILL HERE]")
+    maybeToEither errorMessage
     $ mapM row [0..endomorphisms_size - 1]
   let result =
         ("def compositions : [endomorphism_size][endomorphism_size]endomorphism = "++)
@@ -125,27 +91,16 @@ compositionsArray parallel_lexer = do
             $ List.intercalate ", " vals
       return result
 
-stateToTerminalArray :: ParallelLexer Word8 Int -> String
-stateToTerminalArray parallel_lexer =
-  ("def states_to_terminals : [state_size]terminal = sized state_size "++)
-  $ (++"]")
-  $ ("["++)
-  $ List.intercalate ", "
-  $ [show . fromMaybe dead_token $ Map.lookup j token_map | j <- [0..state_size - 1]]
-  where
-    state_size = stateSize parallel_lexer
-    token_map = tokenMap parallel_lexer
-    dead_token = succ $ maximum token_map
-
-stateIntegral ::
-  ParallelLexer Word8 Int ->
-  Either String FutUInt
-stateIntegral = selectFutUInt . toInteger . pred . stateSize
-
 endomorphismIntegral ::
-  ParallelLexer Word8 Int ->
+  IntParallelLexer t ->
   Either String FutUInt
-endomorphismIntegral = selectFutUInt . toInteger . pred . endomorphismsSize
+endomorphismIntegral = selectFutUInt . toInteger . pred . endoSize
+
+ignoreFunction :: Map T Int -> String
+ignoreFunction terminal_index_map = 
+  case T "ignore" `Map.lookup` terminal_index_map of
+    Just j -> [i|def is_ignore (t : terminal) : bool = #{j} == t|]
+    Nothing -> [i|def is_ignore (_ : terminal) : bool = false|]
 
 generateLexer ::
   ParallelDFALexer Word8 Int T ->
@@ -153,53 +108,48 @@ generateLexer ::
   FutUInt ->
   Either String String
 generateLexer lexer terminal_index_map terminal_type = do
-  endomorphism_type <- endomorphismIntegral parallel_lexer
-  state_type <- stateIntegral parallel_lexer
+  int_parallel_lexer <-
+    intParallelLexer new_token_map lexer
+  let (token_mask, token_offset) = tokenMask int_parallel_lexer
+  let (endo_mask, endo_offset) = endoMask int_parallel_lexer
+  let (accept_mask, accept_offset) = acceptMask int_parallel_lexer
+  let parallel_lexer = parLexer int_parallel_lexer
+  let _identity = identity parallel_lexer
+  endomorphism_type <- endomorphismIntegral int_parallel_lexer
   transitions_to_endo <- transitionsToEndomorphismsArray parallel_lexer
   compositions_table <- compositionsArray parallel_lexer
-  endo_to_state <- endomorphismsToStateArray parallel_lexer
   Right $
     futharkLexer
       <> [i|
 module lexer = mk_lexer {
   module terminal_module = #{terminal_type}
-  module state_module = #{state_type}
   module endomorphism_module = #{endomorphism_type}
 
-  type state = state_module.t
   type endomorphism = endomorphism_module.t
   type terminal = terminal_module.t
+  
+  def identity_endomorphism: endomorphism = #{_identity}
+  def dead_terminal: terminal = #{dead_token}
+  def endo_mask: endomorphism = #{endo_mask}
+  def endo_offset: endomorphism = #{endo_offset}
+  def terminal_mask: endomorphism = #{token_mask}
+  def terminal_offset: endomorphism = #{token_offset}
+  def accept_mask: endomorphism = #{accept_mask}
+  def accept_offset: endomorphism = #{accept_offset}
 
-  def identity_endomorphism : endomorphism = #{_identity}
-
-  def dead_terminal : terminal = #{dead_token}
-
-  #{ignore_function}
+  #{ignoreFunction terminal_index_map}
 
   #{defEndomorphismSize parallel_lexer}
-
-  #{defStateSize parallel_lexer}
-
-  #{isAcceptingArray parallel_lexer}
 
   #{isProducingArray parallel_lexer}
 
   #{transitions_to_endo}
 
   #{compositions_table}
-
-  #{stateToTerminalArray parallel_lexer}
-
-  #{endo_to_state}
 }
 |]
   where
-    dead_token = succ $ maximum token_map
-    terminalToIndex = (terminal_index_map Map.!)
-    parallel_lexer = parallelLexer is_ignore lexer
-    token_map = terminalToIndex <$> tokenMap parallel_lexer'
-    _identity = identity parallel_lexer
-    ignore_function = 
-      case T "ignore" `Map.lookup` terminal_index_map of
-        Just j -> [i|def is_ignore (t : terminal) : bool = #{j} == t|]
-        Nothing -> [i|def is_ignore (_ : terminal) : bool = false|]
+    dead_token = succ $ maximum terminal_index_map
+    new_token_map =
+      Map.insert Nothing dead_token
+      $ Map.mapKeys Just terminal_index_map
