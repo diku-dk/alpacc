@@ -9,16 +9,13 @@ import Alpacc.Grammar
 import Alpacc.Lexer.DFA
 import Data.Map (Map)
 import Data.Map qualified as Map
-import Data.Set qualified as Set
+-- import Data.Set qualified as Set
 import Data.String.Interpolate (i)
 import Data.FileEmbed
 import Data.Word (Word8)
 import Alpacc.Lexer.ParallelLexing
 import Data.List qualified as List
-import Data.Maybe
 import Data.Either.Extra
-import Data.Array qualified as Array
-import Alpacc.Debug
 
 futharkLexer :: String
 futharkLexer = $(embedStringFile "futhark/lexer.fut")
@@ -32,25 +29,25 @@ defEndomorphismSize =
   . show
   . endomorphismsSize
 
-isProducingArray :: ParallelLexer Word8 Int -> String
-isProducingArray parallel_lexer =
-  ("def is_producing: [256][endomorphism_size]bool = "++)
-  $ (++"] :> [256][endomorphism_size]bool")
-  $ ("["++)
-  $ List.intercalate ",\n"
-  $ map row [0..255]
-  where
-    token_set = producesTokenSet parallel_lexer
-    state_size = endomorphismsSize parallel_lexer
-    lookup' c s =
-      if (s, c) `Set.member` token_set
-      then "true"
-      else "false"
-    row j =
-      (++"]")
-      $ ("["++)
-      $ List.intercalate ", "
-      $ map (lookup' j) [0..state_size - 1]
+-- isProducingArray :: ParallelLexer Word8 Int -> String
+-- isProducingArray parallel_lexer =
+--   ("def is_producing: [256][endomorphism_size]bool = "++)
+--   $ (++"] :> [256][endomorphism_size]bool")
+--   $ ("["++)
+--   $ List.intercalate ",\n"
+--   $ map row [0..255]
+--   where
+--     token_set = producesTokenSet parallel_lexer
+--     state_size = endomorphismsSize parallel_lexer
+--     lookup' c s =
+--       if (s, c) `Set.member` token_set
+--       then "true"
+--       else "false"
+--     row j =
+--       (++"]")
+--       $ ("["++)
+--       $ List.intercalate ", "
+--       $ map (lookup' j) [0..state_size - 1]
 
 transitionsToEndomorphismsArray :: ParallelLexer Word8 Int -> Either String String
 transitionsToEndomorphismsArray parallel_lexer = do
@@ -113,6 +110,7 @@ generateLexer lexer terminal_index_map terminal_type = do
   let (token_mask, token_offset) = tokenMask int_parallel_lexer
   let (endo_mask, endo_offset) = endoMask int_parallel_lexer
   let (accept_mask, accept_offset) = acceptMask int_parallel_lexer
+  let (produce_mask, produce_offset) = produceMask int_parallel_lexer
   let parallel_lexer = parLexer int_parallel_lexer
   let _identity = identity parallel_lexer
   endomorphism_type <- endomorphismIntegral int_parallel_lexer
@@ -136,12 +134,12 @@ module lexer = mk_lexer {
   def terminal_offset: endomorphism = #{token_offset}
   def accept_mask: endomorphism = #{accept_mask}
   def accept_offset: endomorphism = #{accept_offset}
+  def produce_mask: endomorphism = #{produce_mask}
+  def produce_offset: endomorphism = #{produce_offset}
 
   #{ignoreFunction terminal_index_map}
 
   #{defEndomorphismSize parallel_lexer}
-
-  #{isProducingArray parallel_lexer}
 
   #{transitions_to_endo}
 
