@@ -13,10 +13,11 @@ module type lexer_context = {
   val endo_mask: endomorphism_module.t
   val terminal_mask: endomorphism_module.t
   val accept_mask: endomorphism_module.t
+  val produce_mask: endomorphism_module.t
   val endo_offset: endomorphism_module.t
   val terminal_offset: endomorphism_module.t
   val accept_offset: endomorphism_module.t
-  val is_producing: [256][endomorphism_size]bool
+  val produce_offset: endomorphism_module.t
   val is_ignore: terminal_module.t -> bool
   val transitions_to_endomorphisms: [256]endomorphism_module.t
   val compositions: [endomorphism_size][endomorphism_size]endomorphism_module.t
@@ -39,6 +40,12 @@ module mk_lexer(L: lexer_context) = {
     |> L.endomorphism_module.to_i64
     |> bool.i64
 
+  def is_produce (a: endomorphism): bool =
+    get_value L.produce_mask L.produce_offset a
+    |> L.endomorphism_module.to_i64
+    |> bool.i64
+
+
   def to_terminal (a: endomorphism): terminal =
     get_value L.terminal_mask L.terminal_offset a
     |> L.endomorphism_module.to_i64
@@ -53,9 +60,6 @@ module mk_lexer(L: lexer_context) = {
     let a' = to_index a
     let b' = to_index b
     in copy L.compositions[b', a']
-
-  def is_producing (a: endomorphism) (c: u8): bool =
-    L.is_producing[u8.to_i64 c, to_index a]
     
   def trans_to_endo (c: u8): endomorphism =
     copy L.transitions_to_endomorphisms[u8.to_i64 c]
@@ -64,7 +68,7 @@ module mk_lexer(L: lexer_context) = {
     let endos =
       map trans_to_endo str
       |> scan compose L.identity_endomorphism
-    let produces = map2 is_producing endos (rotate 1 str)
+    let produces = map is_produce endos |> rotate 1
     let produces =
       if n == 0
       then produces
