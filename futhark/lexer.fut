@@ -45,7 +45,6 @@ module mk_lexer(L: lexer_context) = {
     |> L.endomorphism_module.to_i64
     |> bool.i64
 
-
   def to_terminal (a: endomorphism): terminal =
     get_value L.terminal_mask L.terminal_offset a
     |> L.endomorphism_module.to_i64
