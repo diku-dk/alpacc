@@ -44,94 +44,73 @@ void compute_descriptors(timeval* measurements, size_t size) {
     printf(" (95%% CI: [%.0lfμs, %.0lfμs])\n", sample_mean - bound, sample_mean + bound);
 }
 
-template<typename T>
-void randomArray(T* array, size_t size, T min, T max) {
-    std::default_random_engine generator {static_cast<long unsigned int>(time(0))};
-    std::uniform_int_distribution<T> distribution(min, max);
-    for (size_t i = 0; i < size; i++) {
-        array[i] = distribution(generator);
-    }
-}
-
-const size_t NUM_STATES = 6;
-const size_t NUM_ENDOS = 6;
+const size_t NUM_ENDOS = 12;
 const size_t NUM_TRANS = 256;
+const uint8_t IGNORE_TOKEN = 0;
+const uint16_t ENDO_MASK = 15;
+const uint16_t ENDO_OFFSET = 0;
+const uint16_t TERMINAL_MASK = 112;
+const uint16_t TERMINAL_OFFSET = 4;
+const uint16_t ACCEPT_MASK = 128;
+const uint16_t ACCEPT_OFFSET = 7;
+const uint16_t PRODUCE_MASK = 256;
+const uint16_t PRODUCE_OFFSET = 8;
 
-uint8_t h_to_endo[NUM_TRANS] =
-        {5, 5, 5, 5, 5, 5, 5, 5, 5, 0, 0, 5, 5, 0, 5, 5,
-         5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
-         0, 5, 5, 5, 5, 5, 5, 5, 1, 2, 5, 5, 5, 5, 5, 5,
-         3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 5, 5, 5, 5, 5,
-         5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
-         3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 5, 5, 5, 5,
-         5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
-         3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 5, 5, 5, 5,
-         5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
-         5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
-         5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
-         5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
-         5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
-         5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
-         5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
-         5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5};
-
-uint8_t h_to_state[NUM_ENDOS] = {2, 3, 4, 1, 0, 5};
-
-uint8_t h_to_token[NUM_STATES] = {4, 1, 0, 2, 3, 4};
-
-uint8_t h_compose[NUM_ENDOS * NUM_ENDOS] =
-  {0, 0, 0, 0, 0, 5,
-   1, 1, 1, 1, 1, 5,
-   2, 2, 2, 2, 2, 5,
-   3, 3, 3, 3, 3, 5,
-   0, 1, 2, 3, 4, 5,
-   5, 5, 5, 5, 5, 5};
-
-bool h_is_accepting[NUM_STATES] =
-  {false, true, true, true, true, false};
-
-uint8_t states[206] =
-  {1,1,1,1,1,1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
-   2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
-   2,2,2,2,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,
-   3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,
-   3,3,3,3,3,3,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,
-   4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,
-   4,4,4,4,4,4,4,4};
-
-uint8_t symbols[206] =
-  {9,10,13,32,40,41,40,41,48,49,50,51,52,53,54,55,56,57,65,66,67,68,
-   69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,
-   97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,112,113,
-   114,115,116,117,118,119,120,121,122,9,10,13,32,40,41,48,49,50,51,
-   52,53,54,55,56,57,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,
-   81,82,83,84,85,86,87,88,89,90,97,98,99,100,101,102,103,104,105,106,
-   107,108,109,110,111,112,113,114,115,116,117,118,119,120,121,122,9,
-   10,13,32,40,41,48,49,50,51,52,53,54,55,56,57,65,66,67,68,69,70,71,
-   72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,97,98,99,
-   100,101,102,103,104,105,106,107,108,109,110,111,112,113,114,115,
-   116,117,118,119,120,121,122};
-
-bool h_is_producing[NUM_STATES][NUM_TRANS];
-
-void init_is_producing() {
-    for (size_t i = 0; i < NUM_STATES; ++i) {
-        for (size_t j = 0; j < NUM_TRANS; ++j) {
-            h_is_producing[i][j] = false;
-        }
-    }
-  
-    for (size_t i = 0; i < sizeof(states); ++i) {
-        h_is_producing[states[i]][symbols[i]] = true;;
-    }
+__device__ __forceinline__ uint16_t get_index(uint16_t endo) {
+    return (endo & ENDO_MASK) >> ENDO_OFFSET;
 }
+
+__device__ __forceinline__ uint8_t get_terminal(uint16_t endo) {
+    return (endo & TERMINAL_MASK) >> TERMINAL_OFFSET;
+}
+
+bool is_accept(uint16_t endo) {
+    return (endo & ACCEPT_MASK) >> ACCEPT_OFFSET;
+}
+
+__device__ __forceinline__ bool is_produce(uint16_t endo) {
+    return (endo & PRODUCE_MASK) >> PRODUCE_OFFSET;
+}
+
+uint16_t h_to_endo[NUM_TRANS] =
+        {75, 75, 75, 75, 75, 75, 75, 75, 75, 128, 128, 75, 75, 128,
+         75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75,
+         75, 75, 75, 128, 75, 75, 75, 75, 75, 75, 75, 161, 178, 75,
+         75, 75, 75, 75, 75, 147, 147, 147, 147, 147, 147, 147, 147,
+         147, 147, 75, 75, 75, 75, 75, 75, 75, 147, 147, 147, 147,
+         147, 147, 147, 147, 147, 147, 147, 147, 147, 147, 147, 147,
+         147, 147, 147, 147, 147, 147, 147, 147, 147, 147, 75, 75,
+         75, 75, 75, 75, 147, 147, 147, 147, 147, 147, 147, 147, 147,
+         147, 147, 147, 147, 147, 147, 147, 147, 147, 147, 147, 147,
+         147, 147, 147, 147, 147, 75, 75, 75, 75, 75, 75, 75, 75, 75,
+         75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75,
+         75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75,
+         75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75,
+         75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75,
+         75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75,
+         75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75,
+         75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75,
+         75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75,
+         75, 75, 75, 75};
+
+uint16_t h_compose[NUM_ENDOS * NUM_ENDOS] =
+    {132, 392, 392, 392, 132, 392, 392, 392, 132, 392, 128, 75,
+     421, 421, 421, 421, 421, 421, 421, 421, 421, 421, 161, 75,
+     438, 438, 438, 438, 438, 438, 438, 438, 438, 438, 178, 75,
+     407, 407, 407, 153, 407, 407, 407, 153, 407, 153, 147, 75,
+     132, 132, 132, 132, 132, 132, 132, 132, 132, 132, 132, 75,
+     421, 421, 421, 421, 421, 421, 421, 421, 421, 421, 421, 75,
+     438, 438, 438, 438, 438, 438, 438, 438, 438, 438, 438, 75,
+     407, 407, 407, 407, 407, 407, 407, 407, 407, 407, 407, 75,
+     392, 392, 392, 392, 392, 392, 392, 392, 392, 392, 392, 75,
+     153, 153, 153, 153, 153, 153, 153, 153, 153, 153, 153, 75,
+     128, 161, 178, 147, 132, 421, 438, 407, 392, 153, 74, 75,
+     75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75};
 
 struct LexerCtx {
-    uint8_t* d_to_endo;
-    uint8_t* d_to_state;
-    uint8_t* d_to_token;
-    uint8_t* d_compose;
-    bool* d_is_producing;
+    uint16_t* d_to_endo;
+    size_t to_endo_mem_size;
+    uint16_t* d_compose;
 };
 
 typedef struct __attribute__((__packed__)) {
@@ -140,47 +119,36 @@ typedef struct __attribute__((__packed__)) {
 } token;
 
 void init_ctx(LexerCtx* ctx) {
-    init_is_producing();
     cudaMalloc(&ctx->d_to_endo, sizeof(h_to_endo));
     cudaMemcpy(ctx->d_to_endo, h_to_endo, sizeof(h_to_endo),
                cudaMemcpyHostToDevice);
-    cudaMalloc(&ctx->d_to_state, sizeof(h_to_state));
-    cudaMemcpy(ctx->d_to_state, h_to_state, sizeof(h_to_state),
-               cudaMemcpyHostToDevice);
-    cudaMalloc(&ctx->d_to_token, sizeof(h_to_token));
-    cudaMemcpy(ctx->d_to_token, h_to_token,
-               sizeof(h_to_token), cudaMemcpyHostToDevice);
     cudaMalloc(&ctx->d_compose, sizeof(h_compose));
     cudaMemcpy(ctx->d_compose, h_compose, sizeof(h_compose),
                cudaMemcpyHostToDevice);
-    cudaMalloc(&ctx->d_is_producing, sizeof(h_is_producing));
-    cudaMemcpy(ctx->d_is_producing, h_is_producing,
-               sizeof(h_is_producing), cudaMemcpyHostToDevice);
 }
 
 void cleanup_ctx(LexerCtx* ctx) {
     if (ctx->d_to_endo) cudaFree(ctx->d_to_endo);
-    if (ctx->d_to_state) cudaFree(ctx->d_to_state);
-    if (ctx->d_to_token) cudaFree(ctx->d_to_token);
     if (ctx->d_compose) cudaFree(ctx->d_compose);
-    if (ctx->d_is_producing) cudaFree(ctx->d_is_producing);
 }
 
-__global__ void to_padf_kernel(uint8_t* d_to_endo,
+__global__ void to_padf_kernel(uint16_t* d_to_endo,
                                uint8_t* d_in,
-                               uint8_t* d_out,
+                               uint16_t* d_out,
                                uint32_t* indices,
                                size_t size) {
     const uint32_t gid = blockIdx.x * blockDim.x + threadIdx.x;
+    __syncthreads();
+
     if (gid < size) {
         d_out[gid] = d_to_endo[d_in[gid]];
         indices[gid] = gid;
     }
 }
 
-void to_padf(uint8_t* d_to_endo,
+void to_padf(uint16_t* d_to_endo,
              uint8_t* d_in,
-             uint8_t* d_out,
+             uint16_t* d_out,
              uint32_t* indices,
              size_t size) {
     size_t block_size = 256;
@@ -193,47 +161,32 @@ void to_padf(uint8_t* d_to_endo,
 }
 
 struct Compose {
-    uint8_t* d_compose;
+    uint16_t* d_compose;
 
     __host__ __forceinline__
-    explicit  Compose(uint8_t* d_compose) : d_compose(d_compose) {}
+    explicit Compose(uint16_t* d_compose) : d_compose(d_compose) {}
 
     __device__ __forceinline__
-    uint8_t operator()(const uint8_t &a, const uint8_t &b) const {
-        return d_compose[b * NUM_ENDOS + a];
+    uint16_t operator()(const uint16_t &a, const uint16_t &b) const {
+        return d_compose[get_index(b) * NUM_ENDOS + get_index(a)];
     }
 };
 
 struct IsProducing {
-    uint8_t* d_str;
-    uint8_t* d_endo;
-    bool* d_is_producing;
-    uint8_t* d_to_state;
+    uint16_t* d_endo;
     size_t size;
 
     __host__ __forceinline__
-    explicit IsProducing(uint8_t* d_str,
-                         uint8_t* d_endo,
-                         bool* d_is_producing,
-                         uint8_t* d_to_state,
-                         size_t size) : d_str(d_str),
-                                        d_endo(d_endo),
-                                        d_is_producing(d_is_producing),
-                                        d_to_state(d_to_state),
-                                        size(size) {}
+    explicit IsProducing(uint16_t* d_endo, size_t size) : d_endo(d_endo), size(size) {}
   
     __device__ __forceinline__
     bool operator()(const uint32_t &i) const {
-      uint32_t j = (i + 1) % size;
-      uint32_t idx = NUM_TRANS * d_to_state[d_endo[i]] + d_str[j];
-      bool is_producing = d_is_producing[idx];
-      return i == size - 1 || is_producing;
+        uint32_t j = (i + 1) % size;
+        return i == size - 1 || is_produce(d_endo[j]);
     }
 };
 
-__global__ void to_token_kernel(uint8_t* d_to_state,
-                                uint8_t* d_to_token,
-                                uint8_t* d_endo,
+__global__ void to_token_kernel(uint16_t* d_endo,
                                 uint32_t* d_in,
                                 token* d_out,
                                 size_t size) {
@@ -245,46 +198,42 @@ __global__ void to_token_kernel(uint8_t* d_to_state,
             start = 1 + d_in[gid - 1];
         }
         uint32_t end = i + 1;
-        uint8_t token = d_to_token[d_to_state[d_endo[i]]];
         d_out[gid].start = start;
         d_out[gid].end = end;
-        d_out[gid].token = token;
+        d_out[gid].token = get_terminal(d_endo[i]);
     }
 }
 
-void to_token(uint8_t* d_to_state,
-              uint8_t* d_to_token,
-              uint8_t* d_endo,
+void to_token(uint16_t* d_endo,
               uint32_t* d_in,
               token* d_out,
               size_t size) {
     size_t block_size = 256;
     size_t grid_size = (size + block_size - 1) / block_size;
-    to_token_kernel<<<grid_size, block_size>>>(d_to_state,
-                                               d_to_token,
-                                               d_endo,
-                                               d_in,
-                                               d_out,
-                                               size);
+    to_token_kernel<<<grid_size, block_size>>>(d_endo, d_in, d_out, size);
 }
 
 struct IsIgnore {
     __device__ __forceinline__
     bool operator()(const token &t) const {
-      return t.token != 0;
+      return t.token != IGNORE_TOKEN;
     }
 };
 
 void lex(LexerCtx* ctx,
          uint8_t* d_str,
-         uint8_t* d_temp,
-         uint8_t* d_endo,
+         uint16_t* d_temp,
+         uint16_t* d_endo,
          uint32_t* d_indices_in,
          uint32_t* d_indices_out,
          token** tokens,
          size_t* num_tokens,
          size_t size) {
+    timeval prev, curr, t_diff;
+    double diff;
     assert(*tokens == NULL);
+    assert(size != 0);
+
     Compose compose(ctx->d_compose);
 
     void* d_temp_storage = NULL;
@@ -294,7 +243,14 @@ void lex(LexerCtx* ctx,
     cudaMalloc((void**) &d_num_tokens, sizeof(size_t));
     
     to_padf(ctx->d_to_endo, d_str, d_temp, d_indices_in, size);
+    /*
+    gettimeofday(&prev, NULL);
     cudaDeviceSynchronize();
+    gettimeofday(&curr, NULL);
+    timeval_subtract(&t_diff, &curr, &prev);
+    diff = t_diff.tv_sec * 1e6 + t_diff.tv_usec;
+    printf("time=%f\n", diff);
+    */
     
     cub::DeviceScan::InclusiveScan(d_temp_storage, temp_storage_bytes,
                                    d_temp, d_endo, compose, size);
@@ -307,8 +263,7 @@ void lex(LexerCtx* ctx,
     d_temp_storage = NULL;
     temp_storage_bytes = 0;
     
-    IsProducing is_producing(d_str, d_endo, ctx->d_is_producing,
-                             ctx->d_to_state, size);
+    IsProducing is_producing(d_endo, size);
     cub::DevicePartition::If(d_temp_storage, temp_storage_bytes,
                              d_indices_in, d_indices_out,
                              d_num_tokens, size, is_producing);
@@ -328,22 +283,23 @@ void lex(LexerCtx* ctx,
 
     bool is_valid = true;
     if (size != 0) {
-        uint8_t last_endo = 0;
-        cudaMemcpy(&last_endo, &d_endo[size - 1], sizeof(uint8_t),
+        uint16_t last_endo = 0;
+        cudaMemcpy(&last_endo, &d_endo[size - 1], sizeof(uint16_t),
                    cudaMemcpyDeviceToHost);
-        is_valid = h_is_accepting[h_to_state[last_endo]];
+        is_valid = is_accept(last_endo);
+        assert(is_valid);
     }
     
     if (is_valid) {
         cudaMalloc((void**) tokens, 2 * num_tokens_temp * sizeof(token));
         token* temp_tokens = &((*tokens)[num_tokens_temp]);
         
-        to_token(ctx->d_to_state, ctx->d_to_token, d_endo,
-                 d_indices_out, temp_tokens, num_tokens_temp);
+        to_token(d_endo, d_indices_out, temp_tokens, num_tokens_temp);
         cudaDeviceSynchronize();
 
         IsIgnore is_ignore;
 
+        
         cub::DevicePartition::If(d_temp_storage, temp_storage_bytes,
                                  temp_tokens, *tokens,
                                  d_num_tokens, num_tokens_temp, is_ignore);
@@ -393,36 +349,27 @@ uint8_t* read_file(const char* filename, size_t* size) {
 
 int main(int argc, char** argv) {
     assert(argc==2);
-    uint8_t* str;
     size_t size = 0;
+    uint8_t* str;
     str = read_file(argv[1], &size);
-    
+
     LexerCtx ctx;
     init_ctx(&ctx);
     uint8_t* d_in;
-    uint8_t* d_temp;
-    uint8_t* d_endo;
+    uint16_t* d_temp;
+    uint16_t* d_endo;
     uint32_t* d_indices_in;
     uint32_t* d_indices_out;
     cudaMalloc((void**) &d_indices_in, sizeof(uint32_t) * size);
     cudaMalloc((void**) &d_indices_out, sizeof(uint32_t) * size);
     cudaMalloc((void**) &d_in, sizeof(uint8_t) * size);
-    cudaMalloc((void**) &d_temp, sizeof(uint8_t) * size);
-    cudaMalloc((void**) &d_endo, sizeof(uint8_t) * size);
-    cudaMemcpy(d_in, str, sizeof(uint8_t) * size, cudaMemcpyHostToDevice);
-
-    size_t num_tokens = 0;
-    token* d_tokens = NULL;
-    lex(&ctx, d_in, d_temp, d_endo, d_indices_in, d_indices_out,
-        &d_tokens, &num_tokens, size);
-    assert(d_tokens != NULL);
-    token* h_tokens = (token*) malloc(sizeof(token) * num_tokens);
-    cudaMemcpy(h_tokens, d_tokens, sizeof(token) * num_tokens,
-               cudaMemcpyDeviceToHost);
-
+    cudaMalloc((void**) &d_temp, sizeof(uint16_t) * size);
+    cudaMalloc((void**) &d_endo, sizeof(uint16_t) * size);
+    cudaMemcpy(d_in, str, sizeof(uint8_t) * size,
+               cudaMemcpyHostToDevice);
 
     // Warmup
-    for (size_t i = 0; i < 50; ++i) {
+    for (size_t i = 0; i < 100; ++i) {
         size_t num_tokens = 0;
         token* d_tokens = NULL;
         lex(&ctx, d_in, d_temp, d_endo, d_indices_in, d_indices_out,
@@ -448,21 +395,28 @@ int main(int argc, char** argv) {
         timeval_subtract(&t_diff, &curr, &prev);
         times[i] = t_diff;
     }
-    printf("#token: %li\n", num_tokens);
+
 
     compute_descriptors(times, runs);
 
-
+    size_t num_tokens = 0;
+    token* d_tokens = NULL;
+    lex(&ctx, d_in, d_temp, d_endo, d_indices_in, d_indices_out,
+        &d_tokens, &num_tokens, size);
+    token* h_tokens = (token*) malloc(sizeof(token) * num_tokens);
+    cudaMemcpy(h_tokens, d_tokens, sizeof(token) * num_tokens,
+               cudaMemcpyDeviceToHost);
+    printf("#token: %li\n", num_tokens);
     /*
     for (size_t i = 0; i < num_tokens; i++) { 
         printf("token=%i; span=(%i,%i)\n", h_tokens[i].token,
                h_tokens[i].start, h_tokens[i].end);
     }
     */
-
-    free(str);
     free(h_tokens);
     cudaFree(d_tokens);
+
+    free(str);
     cudaFree(d_in);
     cudaFree(d_temp);
     cudaFree(d_endo);
