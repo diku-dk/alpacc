@@ -13,7 +13,7 @@ lexer-c: lexer.c
 	$(CC) -o $@ $^ $(CFLAGS)
 
 lexer-cuda: lexer.cu
-	nvcc --std=c++11 -O3 -o $@ $^
+	nvcc --std=c++14 -O3 -o $@ $^
 
 data.in: tokens
 	@printf "Creating input dataset...\n"
