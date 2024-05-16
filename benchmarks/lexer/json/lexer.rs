@@ -13,22 +13,24 @@ use std::fs;
 enum Token {
     #[regex("\"([a-zA-Z0-9_ ():/@.]|-)*\"")]
     String,
-    #[token("-?[0-9]+(.[0-9]+)?([eE](+|-)[0-9]+)?")]
+    #[regex("-?[0-9]+(.[0-9]+)?([eE]([+]|-)?[0-9]+)?")]
     Num,
-    #[token("{")]
+    #[token(r"{")]
     LCurlyParen,
-    #[token("}")]
+    #[token(r"}")]
     RCurlyParen,
-    #[token("[")]
+    #[token(r"[")]
     LSquareParen,
-    #[token("]")]
+    #[token(r"]")]
     RSquareParen,
-    #[token("true")]
+    #[token(r"true")]
     True,
-    #[token("false")]
+    #[token(r"false")]
     False,
-    #[token(",")]
+    #[token(r",")]
     Comma,
+    #[token(r":")]
+    Colon,
 }
 
 impl fmt::Display for Token {
@@ -37,12 +39,13 @@ impl fmt::Display for Token {
             Token::String => { "String" }
             Token::Num => { "Num" }
             Token::LCurlyParen => { "LCurlyParen" }
-	    Token::RCurlyParen => { "RCurlyParen" }
-	    Token::LSquareParen => { "LSquareParen" }
-	    Token::RSquareParen => { "RSquareParen" }
-	    Token::True => { "True" }
-	    Token::False => { "False" }
+	        Token::RCurlyParen => { "RCurlyParen" }
+	        Token::LSquareParen => { "LSquareParen" }
+	        Token::RSquareParen => { "RSquareParen" }
+	        Token::True => { "True" }
+	        Token::False => { "False" }
             Token::Comma => { "Comma" }
+            Token::Colon => { "Colon" }
         };
         write!(f, "{}", token)
     }
@@ -51,7 +54,7 @@ impl fmt::Display for Token {
 fn main() -> std::io::Result<()> {
     let args: Vec<String> = env::args().collect();
     let path = &args[1];
-    let name = path.strip_suffix(".in").unwrap().to_string();
+    let name = path.strip_suffix(".json").unwrap().to_string();
     let mut file = File::open(path).unwrap();
     let mut data = vec![];
     let _ = file.read_to_end(&mut data);
@@ -70,7 +73,7 @@ fn main() -> std::io::Result<()> {
             }
             Err(e) => {
                 println!("Error: {e:?}");
-		println!("{}", tokens.last());
+		        println!("({}, {})", tokens.last().unwrap().1.start, tokens.last().unwrap().1.end);
                 is_error = true;
                 break;
             }
@@ -104,13 +107,14 @@ fn main() -> std::io::Result<()> {
             let token_id = match token {
                 Token::String => { 1i32.to_le_bytes() }
                 Token::Num => { 2i32.to_le_bytes() }
-		Token::LCurlyParen => { 3i32.to_le_bytes() }
-		Token::RCurlyParen => { 4i32.to_le_bytes() }
-		Token::LSquareParen => { 5i32.to_le_bytes() }
-		Token::RSquareParen => { 6i32.to_le_bytes() }
-		Token::True => { 7i32.to_le_bytes() }
-		Token::False => { 8i32.to_le_bytes() }
-		Token::Comma => { 9i32.to_le_bytes() }
+		        Token::LCurlyParen => { 3i32.to_le_bytes() }
+		        Token::RCurlyParen => { 4i32.to_le_bytes() }
+		        Token::LSquareParen => { 5i32.to_le_bytes() }
+		        Token::RSquareParen => { 6i32.to_le_bytes() }
+		        Token::True => { 7i32.to_le_bytes() }
+		        Token::False => { 8i32.to_le_bytes() }
+		        Token::Comma => { 9i32.to_le_bytes() }
+                Token::Colon => { 10i32.to_le_bytes() }
             };
             buffer.write(&token_id)?;
             buffer.write(&(range.start as i32).to_le_bytes())?;

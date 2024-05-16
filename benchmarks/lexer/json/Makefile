@@ -20,7 +20,7 @@ data.json:
 	fi; \
 	}
 
-	mkjson >$@ 'data=replicate(1000000,object(when,randomDateTime(),what,randomDouble(0,10),status,randomInt(0,1)))'
+	mkjson >$@ 'data=replicate(10,object(when,randomDateTime(),what,randomDouble(0,10),status,randomInt(0,1)))'
 lexer-rust: lexer.rs Cargo.toml Cargo.lock
 	cargo build --release
 	@cp target/release/lexer-rust .

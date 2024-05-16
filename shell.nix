@@ -29,6 +29,7 @@ in pkg.overrideAttrs (attrs: {
         opencl-headers
         clinfo
         gcc
+        gmp
         ispc
         ocl-icd
         rustc
@@ -36,6 +37,7 @@ in pkg.overrideAttrs (attrs: {
       ]) ++
     (with unstable;
       [ futhark
+        mkjson
       ]);
   shellHook = attrs.shellHook + ''
     export CUDA_PATH=${pkgs.cudatoolkit}
