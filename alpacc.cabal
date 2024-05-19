@@ -28,7 +28,7 @@ library
     QuasiQuotes
     DeriveFunctor
     ExtendedDefaultRules
-    DeriveGeneric
+    DeriveAnyClass
     TemplateHaskell
 
   build-depends:
@@ -49,6 +49,7 @@ library
     , split
     , utf8-string
     , array
+    , random
 
   exposed-modules:
     Alpacc.CFG
@@ -57,6 +58,7 @@ library
     Alpacc.LLP
     Alpacc.Util
     Alpacc.Debug
+    Alpacc.HashTable
     Alpacc.Generator.Futhark.Lexer
     Alpacc.Generator.Futhark.Parser
     Alpacc.Generator.Futhark.Util
