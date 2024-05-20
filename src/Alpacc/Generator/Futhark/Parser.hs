@@ -90,8 +90,8 @@ toIntegerLLPTable symbol_index_map table = table'
   where
     table_index_keys = Map.mapKeys (both (fmap ((symbol_index_map Map.!) . Terminal))) table
     table' = first (fmap (fmap (symbol_index_map Map.!))) <$> table_index_keys
-    _table = Map.mapKeys (\(a, b) -> fromIntegral <$> a ++ b) table'
-    !hash_table = debug $ initHashTable 13 _table
+    -- _table = Map.mapKeys (\(a, b) -> fromIntegral <$> a ++ b) table'
+    -- !hash_table = debug $ initHashTable 13 _table
 
 declarations :: String
 declarations = [i|
