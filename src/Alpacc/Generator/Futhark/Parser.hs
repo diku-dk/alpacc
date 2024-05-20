@@ -18,6 +18,8 @@ import Data.Map qualified as Map
 import Data.String.Interpolate (i)
 import Data.Tuple.Extra
 import Alpacc.Generator.Futhark.Util
+import Alpacc.HashTable
+import Alpacc.Debug
 
 futharkParser :: String
 futharkParser = $(embedStringFile "futhark/parser.fut")
@@ -88,6 +90,8 @@ toIntegerLLPTable symbol_index_map table = table'
   where
     table_index_keys = Map.mapKeys (both (fmap ((symbol_index_map Map.!) . Terminal))) table
     table' = first (fmap (fmap (symbol_index_map Map.!))) <$> table_index_keys
+    _table = Map.mapKeys (\(a, b) -> fromIntegral <$> a ++ b) table'
+    !hash_table = debug $ initHashTable 13 _table
 
 declarations :: String
 declarations = [i|
