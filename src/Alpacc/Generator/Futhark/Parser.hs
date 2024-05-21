@@ -71,22 +71,39 @@ futharkParserTable table =
     prods = fmap (futharkProductions max_alpha_omega max_pi)
     keys = Map.mapKeys futharkParserTableKey
 
+padLLPTable ::
+  Ord t =>
+  t ->
+  ao ->
+  pi ->
+  Int ->
+  Int ->
+  Int ->
+  Int ->
+  Map ([t], [t]) ([ao], [pi]) ->
+  Map ([t], [t]) ([ao], [pi])
+padLLPTable t ao pi' q k max_ao max_pi =
+  fmap (BI.bimap aoPad piPad)
+  . Map.mapKeys (BI.bimap frontPad backPad)
+  where
+    frontPad = lpad t q
+    backPad = rpad t k
+    aoPad = rpad ao max_ao
+    piPad = rpad pi' max_pi
+
 toIntegerLLPTable ::
   (Ord nt, Ord t) =>
-  Int ->
-  Int ->
-  Int ->
   Map (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)) Int ->
-  Map ([AugmentedTerminal t], [AugmentedTerminal t]) ([Bracket (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t))], [Int]) ->
+  Map ([AugmentedTerminal t]
+      ,[AugmentedTerminal t])
+      ([Bracket (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t))]
+      ,[Int]) ->
   Map ([Int], [Int]) ([Bracket Int], [Int])
-toIntegerLLPTable empty_terminal q k symbol_index_map table = table'
+toIntegerLLPTable symbol_index_map table = table'
   where
-    table_index_keys = Map.mapKeys (BI.bimap frontPad backPad . both (fmap ((symbol_index_map Map.!) . Terminal))) table
+    table_index_keys = Map.mapKeys (both (fmap ((symbol_index_map Map.!) . Terminal))) table
     table' = first (fmap (fmap (symbol_index_map Map.!))) <$> table_index_keys
-    frontPad = lpad empty_terminal q
-    backPad = rpad empty_terminal k
     _table = Map.mapKeys (\(a, b) -> fromIntegral <$> a ++ b) table'
-    !hash_table = debug $ initHashTable 13 _table >>= hashTableMem
 
 declarations :: String
 declarations = [i|
@@ -189,7 +206,7 @@ generateParser q k grammar symbol_index_map terminal_type = do
   production_type <- findProductionIntegral $ productions grammar
   arities <- productionToArity prods
   let empty_terminal = fromInteger $ maxFutUInt terminal_type :: Int
-  let integer_table = toIntegerLLPTable empty_terminal q k symbol_index_map table
+  let integer_table = toIntegerLLPTable q k symbol_index_map table
   let (max_ao, max_pi, ne, futhark_table) =
         futharkParserTable integer_table
       brackets = List.intercalate "," $ zipWith (<>) (replicate max_ao "b") $ map show [(0 :: Int) ..]
