@@ -42,6 +42,7 @@ data HashTableMem i v =
   HashTableMem
   { offsetArray :: Array i i
   , elementArray :: Array i (Maybe ([i], v))
+  , constsArray :: Array i (Maybe [i])
   } deriving (Eq, Ord, Show)
 
 hash :: Integral a => a -> [a] -> [a] -> a
@@ -98,7 +99,7 @@ countLevelOne =
   . levelOneElements
 
 hashTableMem ::
-  (Integral i, Ix i) =>
+  (Show v, Show i, Integral i, Ix i) =>
   HashTable i v ->
   Either String (HashTableMem i v)
 hashTableMem hash_table = do
@@ -106,41 +107,37 @@ hashTableMem hash_table = do
   return $
     HashTableMem
     { offsetArray = offset_array
-    , elementArray = empty_array Array.// keys
+    , elementArray = mkElements keys
+    , constsArray = consts_array
     }
   where
     level_two_size = levelTwoSize hash_table
     level_two_consts = levelTwoConsts hash_table
     level_two_elements = levelTwoElements hash_table
-    arr = levelTwoElements hash_table
     countElems Nothing = 0
     countElems (Just a) = countLevelOne a
+    countArraySize Nothing = 0
+    countArraySize (Just a) = levelOneSize a
     offset_array =
       Array.array (0, level_two_size - 1)
       $ zip [0..]
-      $ init scan_result
-    scan_result =
-      scanl (+) 0
+      $ init
+      $ scanl (+) 0
       $ countElems
-      <$> Array.elems arr
-    array_size = last scan_result
-    nothings = replicate (fromIntegral array_size :: Int) Nothing
+      <$> Array.elems level_two_elements
+    array_size = sum $ countArraySize <$> level_two_elements
+    consts_array = fmap levelOneConsts <$> level_two_elements
+    mkElements keys =
+      Array.listArray (0, array_size - 1)
+      $ concat keys
     toIndex key = do
       level_one <-
         maybeToEither "Error: Could not create layout for hash table."
         $ level_two_elements Array.! i
-      let level_one_size = levelOneSize level_one
-      let level_one_consts = levelOneConsts level_one
       let level_one_elements = levelOneElements level_one
-      let j = hash level_one_size level_one_consts key
-      pair <-
-        maybeToEither "Error: Could not create layout for hash table."
-        $ level_one_elements Array.! j
-      return (seg_idx + j, Just pair)
+      return $ Array.elems level_one_elements
       where
         i = hash level_two_size level_two_consts key
-        seg_idx = offset_array Array.! i
-    empty_array = Array.listArray (0, array_size - 1) nothings
 
 initHashTable' ::
   StatefulGen g m =>

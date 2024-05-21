@@ -27,19 +27,12 @@ futharkParser = $(embedStringFile "futhark/parser.fut")
 -- | Given the table keys for a LLP parser create the keys which will be used
 -- in the Futhark language for pattern matching.
 futharkParserTableKey ::
-  Int ->
-  Int ->
-  Int ->
   ([Int], [Int]) ->
   String
-futharkParserTableKey empty_terminal q k =
+futharkParserTableKey =
   tupleToStr
   . both toTuple
-  . BI.bimap backPad frontPad
   . both (map show)
-  where
-    backPad = lpad (show empty_terminal) q
-    frontPad = rpad (show empty_terminal) k
 
 -- | Creates a string that is a array in the Futhark language which corresponds
 -- to the resulting productions list. This is used in the pattern matching.
@@ -58,12 +51,9 @@ tupleToStr (a, b) = [i|(#{a}, #{b})|]
 -- | Creates a string that is the resulting LLP table which is done by using
 -- pattern matching in Futhark.
 futharkParserTable ::
-  Int ->
-  Int ->
-  Int ->
   Map ([Int], [Int]) ([Bracket Int], [Int]) ->
   (Int, Int, String, String)
-futharkParserTable empty_terminal q k table =
+futharkParserTable table =
   (max_alpha_omega, max_pi, ne, )
     . (++ last_case_str)
     . cases
@@ -79,19 +69,24 @@ futharkParserTable empty_terminal q k table =
     ne = toTuple [stacks, rules]
     last_case_str = [i|\n  case _ -> #none|]
     prods = fmap (futharkProductions max_alpha_omega max_pi)
-    keys = Map.mapKeys (futharkParserTableKey empty_terminal q k)
+    keys = Map.mapKeys futharkParserTableKey
 
 toIntegerLLPTable ::
   (Ord nt, Ord t) =>
+  Int ->
+  Int ->
+  Int ->
   Map (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)) Int ->
   Map ([AugmentedTerminal t], [AugmentedTerminal t]) ([Bracket (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t))], [Int]) ->
   Map ([Int], [Int]) ([Bracket Int], [Int])
-toIntegerLLPTable symbol_index_map table = table'
+toIntegerLLPTable empty_terminal q k symbol_index_map table = table'
   where
-    table_index_keys = Map.mapKeys (both (fmap ((symbol_index_map Map.!) . Terminal))) table
+    table_index_keys = Map.mapKeys (BI.bimap frontPad backPad . both (fmap ((symbol_index_map Map.!) . Terminal))) table
     table' = first (fmap (fmap (symbol_index_map Map.!))) <$> table_index_keys
-    -- _table = Map.mapKeys (\(a, b) -> fromIntegral <$> a ++ b) table'
-    -- !hash_table = debug $ initHashTable 13 _table
+    frontPad = lpad empty_terminal q
+    backPad = rpad empty_terminal k
+    _table = Map.mapKeys (\(a, b) -> fromIntegral <$> a ++ b) table'
+    !hash_table = debug $ initHashTable 13 _table >>= hashTableMem
 
 declarations :: String
 declarations = [i|
@@ -192,10 +187,11 @@ generateParser q k grammar symbol_index_map terminal_type = do
   table <- llpParserTableWithStartsHomomorphisms q k grammar
   bracket_type <- findBracketIntegral symbol_index_map
   production_type <- findProductionIntegral $ productions grammar
-  arities <- productionToArity prods 
-  let integer_table = toIntegerLLPTable symbol_index_map table
+  arities <- productionToArity prods
+  let empty_terminal = fromInteger $ maxFutUInt terminal_type :: Int
+  let integer_table = toIntegerLLPTable empty_terminal q k symbol_index_map table
   let (max_ao, max_pi, ne, futhark_table) =
-        futharkParserTable (fromInteger $ maxFutUInt terminal_type) q k integer_table
+        futharkParserTable integer_table
       brackets = List.intercalate "," $ zipWith (<>) (replicate max_ao "b") $ map show [(0 :: Int) ..]
       productions = List.intercalate "," $ zipWith (<>) (replicate max_pi "p") $ map show [(0 :: Int) ..]
   return $
