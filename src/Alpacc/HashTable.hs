@@ -48,9 +48,9 @@ data HashTableMem i v =
 hash :: Integral a => a -> [a] -> [a] -> a
 hash size = (`mod` size) . sum .: zipWith (*)
 
-getConsts :: StatefulGen g m => Int -> g -> m [Word64]
-getConsts n g = replicateM n (uniformWord64 g)
-
+getConsts :: (StatefulGen g m, Uniform i) => Int -> g -> m [i]
+getConsts n = replicateM n . uniformM
+      
 hasCollisions :: Ord b => (a -> b) -> [a] -> Bool
 hasCollisions = auxiliary Set.empty
   where
@@ -63,9 +63,9 @@ hasCollisions = auxiliary Set.empty
 
 initLevelOne ::
   StatefulGen g m =>
-  Map [Word64] v ->
+  Map [Int] v ->
   g ->
-  m (LevelOne Word64 v)
+  m (LevelOne Int v)
 initLevelOne table g = do
   consts <- getConsts consts_size g
   if hasCollisions (hash size consts) keys
@@ -74,7 +74,7 @@ initLevelOne table g = do
   where
     keys = Map.keys table
     consts_size = if null keys then 0 else length $ head keys
-    size = (^(2 :: Int)) $ fromIntegral $ Map.size table :: Word64
+    size = (^(2 :: Int)) $ fromIntegral $ Map.size table :: Int
 
     result consts = do
       let dead_table = Map.fromList $ (,Nothing) <$> [0..size - 1]
@@ -141,9 +141,9 @@ hashTableMem hash_table = do
 
 initHashTable' ::
   StatefulGen g m =>
-  Map [Word64] v ->
+  Map [Int] v ->
   g ->
-  m (Either String (HashTable Word64 v))
+  m (Either String (HashTable Int v))
 initHashTable' table g =
   if not is_valid
   then return $ Left "Error: Every key in the Map must be of the same length."
@@ -170,7 +170,7 @@ initHashTable' table g =
   where
     ls = Map.keys table
     consts_size = if null ls then 0 else length $ head ls
-    size = fromIntegral $ Map.size table :: Word64
+    size = fromIntegral $ Map.size table :: Int
     is_valid = foldl (\b a -> b && length a == consts_size) True ls
     dead_table = Map.fromList $ (,Nothing) <$> [0..size - 1]
     toLevelOne xs = do
@@ -182,7 +182,7 @@ initHashTable' table g =
 
 initHashTable ::
   Int ->
-  Map [Word64] v ->
-  Either String (HashTable Word64 v)
+  Map [Int] v ->
+  Either String (HashTable Int v)
 initHashTable n table =
   runStateGen_ (mkStdGen n) (initHashTable' table)
