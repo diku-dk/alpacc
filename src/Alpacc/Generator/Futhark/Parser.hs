@@ -90,8 +90,6 @@ padAndStringifyTable empty_terminal q k max_ao max_pi =
   . padLLPTableKeys empty_terminal q k
   .: toIntLLPTable
 
-createTable = initHashTable 13
-
 declarations :: String
 declarations = [i|
 type terminal = terminal_module.t
@@ -174,6 +172,19 @@ productionToArity prods =
       $ List.intercalate "\n,"
       $ show <$> arities
     
+maxAoPi :: Map k ([v], [v']) -> (Int, Int)
+maxAoPi table = (max_alpha_omega, max_pi)
+  where
+    values = Map.elems table
+    max_alpha_omega = maximum $ length . fst <$> values
+    max_pi = maximum $ length . snd <$> values
+
+createNe :: Int -> Int -> String
+createNe max_alpha_omega max_pi = ne
+  where
+    stacks = toArray $ replicate max_alpha_omega "epsilon"
+    rules = toArray $ replicate max_pi "empty_production"
+    ne = toTuple [stacks, rules]
 
 -- | Creates Futhark source code which contains a parallel parser that can
 -- create the productions list for a input which is indexes of terminals.
@@ -193,11 +204,12 @@ generateParser q k grammar symbol_index_map terminal_type = do
   production_type <- findProductionIntegral $ productions grammar
   arities <- productionToArity prods
   let empty_terminal = fromInteger $ maxFutUInt terminal_type :: Int
-  let integer_table = toIntLLPTable q k symbol_index_map table
-  let (max_ao, max_pi, ne, futhark_table) =
-        futharkParserTable integer_table
-      brackets = List.intercalate "," $ zipWith (<>) (replicate max_ao "b") $ map show [(0 :: Int) ..]
-      productions = List.intercalate "," $ zipWith (<>) (replicate max_pi "p") $ map show [(0 :: Int) ..]
+  let (max_ao, max_pi) = maxAoPi table
+  let ne = createNe max_ao max_pi
+  let integer_table =
+        padAndStringifyTable empty_terminal q k max_ao max_pi symbol_index_map table
+  hash_table <- initHashTable 13 integer_table
+  hash_table_mem <- hashTableMem hash_table
   return $
     futharkParser
       <> [i|
@@ -230,13 +242,7 @@ def lookback_array_to_tuple [n] (arr: [n]terminal): lookback_type =
 def lookahead_array_to_tuple [n] (arr: [n]terminal): lookahead_type =
   #{toTupleIndexArray "arr" k}
 
-def key_to_config (key: (lookback_type, lookahead_type)):
-                  opt ([max_ao]bracket, [max_pi]production) =
-  map_opt (\\((#{brackets}),(#{productions})) ->
-    (sized max_ao [#{brackets}], sized max_pi [#{productions}])
-  ) <|
-  match key
-  #{futhark_table}
+-- #{hash_table_mem}
 
 def ne: ([max_ao]bracket, [max_pi]production) =
   let (a,b) = #{ne}
