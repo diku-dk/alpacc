@@ -18,80 +18,31 @@ import Data.Map qualified as Map
 import Data.String.Interpolate (i)
 import Data.Tuple.Extra
 import Alpacc.Generator.Futhark.Util
+import Data.Composition
 import Alpacc.HashTable
 import Alpacc.Debug
+import Data.Word
 
 futharkParser :: String
 futharkParser = $(embedStringFile "futhark/parser.fut")
 
--- | Given the table keys for a LLP parser create the keys which will be used
--- in the Futhark language for pattern matching.
-futharkParserTableKey ::
-  ([Int], [Int]) ->
-  String
-futharkParserTableKey =
-  tupleToStr
-  . both toTuple
-  . both (map show)
-
--- | Creates a string that is a array in the Futhark language which corresponds
--- to the resulting productions list. This is used in the pattern matching.
-futharkProductions :: Int -> Int -> ([Bracket Int], [Int]) -> String
-futharkProductions max_alpha_omega max_pi = ("#some " ++) . toTuple . toArr . snd' . fst'
-  where
-    toArr (a, b) = [a, b]
-    snd' = BI.second (toTuple . rpad "empty_production" max_pi . map show)
-    fst' = BI.first (toTuple . rpad "epsilon" max_alpha_omega . map auxiliary)
-    auxiliary (LBracket a) = "left " ++ show a
-    auxiliary (RBracket a) = "right " ++ show a
-
 tupleToStr :: (Show a, Show b) => (a, b) -> String
 tupleToStr (a, b) = [i|(#{a}, #{b})|]
 
--- | Creates a string that is the resulting LLP table which is done by using
--- pattern matching in Futhark.
-futharkParserTable ::
-  Map ([Int], [Int]) ([Bracket Int], [Int]) ->
-  (Int, Int, String, String)
-futharkParserTable table =
-  (max_alpha_omega, max_pi, ne, )
-    . (++ last_case_str)
-    . cases
-    . prods
-    $ keys table
-  where
-    cases = futharkTableCases . Map.toList
-    values = Map.elems table
-    max_alpha_omega = maximum $ length . fst <$> values
-    max_pi = maximum $ length . snd <$> values
-    stacks = toArray $ replicate max_alpha_omega "epsilon"
-    rules = toArray $ replicate max_pi "empty_production"
-    ne = toTuple [stacks, rules]
-    last_case_str = [i|\n  case _ -> #none|]
-    prods = fmap (futharkProductions max_alpha_omega max_pi)
-    keys = Map.mapKeys futharkParserTableKey
-
-padLLPTable ::
+padLLPTableKeys ::
   Ord t =>
   t ->
-  ao ->
-  pi ->
   Int ->
   Int ->
-  Int ->
-  Int ->
-  Map ([t], [t]) ([ao], [pi]) ->
-  Map ([t], [t]) ([ao], [pi])
-padLLPTable t ao pi' q k max_ao max_pi =
-  fmap (BI.bimap aoPad piPad)
-  . Map.mapKeys (BI.bimap frontPad backPad)
+  Map ([t], [t]) a ->
+  Map ([t], [t]) a
+padLLPTableKeys t q k =
+  Map.mapKeys (BI.bimap frontPad backPad)
   where
     frontPad = lpad t q
     backPad = rpad t k
-    aoPad = rpad ao max_ao
-    piPad = rpad pi' max_pi
 
-toIntegerLLPTable ::
+toIntLLPTable ::
   (Ord nt, Ord t) =>
   Map (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)) Int ->
   Map ([AugmentedTerminal t]
@@ -99,11 +50,47 @@ toIntegerLLPTable ::
       ([Bracket (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t))]
       ,[Int]) ->
   Map ([Int], [Int]) ([Bracket Int], [Int])
-toIntegerLLPTable symbol_index_map table = table'
+toIntLLPTable symbol_index_map table = table'
   where
     table_index_keys = Map.mapKeys (both (fmap ((symbol_index_map Map.!) . Terminal))) table
     table' = first (fmap (fmap (symbol_index_map Map.!))) <$> table_index_keys
     _table = Map.mapKeys (\(a, b) -> fromIntegral <$> a ++ b) table'
+
+llpTableToStrings ::
+  Int ->
+  Int ->
+  Map ([t], [t]) ([Bracket Int], [Int]) ->
+  Map ([t], [t]) String
+llpTableToStrings max_ao max_pi =
+  fmap (tupleToStr . BI.bimap f g)
+  where
+    auxiliary (LBracket a) = "left " ++ show a
+    auxiliary (RBracket a) = "right " ++ show a
+    aoPad = rpad "epsilon" max_ao
+    piPad = rpad "empty_terminal" max_pi
+    f = toArray . aoPad . fmap auxiliary
+    g = toArray . piPad . fmap show
+
+padAndStringifyTable ::
+  (Ord nt, Ord t) =>
+  Int ->
+  Int ->
+  Int ->
+  Int ->
+  Int ->
+  Map (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)) Int ->
+  Map ([AugmentedTerminal t]
+      ,[AugmentedTerminal t])
+      ([Bracket (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t))]
+      ,[Int]) ->
+  Map [Int] String
+padAndStringifyTable empty_terminal q k max_ao max_pi =
+  Map.mapKeys (uncurry (++))
+  . llpTableToStrings max_ao max_pi
+  . padLLPTableKeys empty_terminal q k
+  .: toIntLLPTable
+
+createTable = initHashTable 13
 
 declarations :: String
 declarations = [i|
@@ -206,7 +193,7 @@ generateParser q k grammar symbol_index_map terminal_type = do
   production_type <- findProductionIntegral $ productions grammar
   arities <- productionToArity prods
   let empty_terminal = fromInteger $ maxFutUInt terminal_type :: Int
-  let integer_table = toIntegerLLPTable q k symbol_index_map table
+  let integer_table = toIntLLPTable q k symbol_index_map table
   let (max_ao, max_pi, ne, futhark_table) =
         futharkParserTable integer_table
       brackets = List.intercalate "," $ zipWith (<>) (replicate max_ao "b") $ map show [(0 :: Int) ..]
