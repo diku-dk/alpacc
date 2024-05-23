@@ -1,5 +1,6 @@
 module Alpacc.HashTable
-  ( initHashTable
+  ( hashTable
+  , initHashTable
   , hashTableMem
   , HashTable (..)
   , LevelOne (..)
@@ -44,10 +45,23 @@ data HashTableMem i v =
   { offsetArray :: Array i i
   , elementArray :: Array i (Maybe ([i], v))
   , constsArray :: Array i (Maybe [i])
+  , initHashConsts :: [i]
   } deriving (Eq, Ord, Show)
 
 hash :: Integral i => i -> [i] -> [i] -> i
 hash size = (`mod` size) . sum .: zipWith (*)
+
+hash8 :: Word8 -> [Word8] -> [Word8] -> Word8
+hash8 = hash
+
+hash16 :: Word16 -> [Word16] -> [Word16] -> Word16
+hash16 = hash
+
+hash32 :: Word32 -> [Word32] -> [Word32] -> Word32
+hash32 = hash
+
+hash64 :: Word64 -> [Word64] -> [Word64] -> Word64
+hash64 = hash
 
 getConsts ::
   (Integral i, StatefulGen g m, Uniform i) =>
@@ -114,6 +128,7 @@ hashTableMem hash_table = do
     { offsetArray = offset_array
     , elementArray = mkElements keys
     , constsArray = consts_array
+    , initHashConsts = level_two_consts
     }
   where
     level_two_size = levelTwoSize hash_table
@@ -191,3 +206,10 @@ initHashTable ::
   Either String (HashTable Int v)
 initHashTable n table =
   runStateGen_ (mkStdGen n) (initHashTable' table)
+
+hashTable ::
+  Show v =>
+  Int ->
+  Map [Int] v ->
+  Either String (HashTableMem Int v)
+hashTable s t = initHashTable s t >>= hashTableMem
