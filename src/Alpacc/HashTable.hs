@@ -3,6 +3,7 @@ module Alpacc.HashTable
   , hashTableMem
   , HashTable (..)
   , LevelOne (..)
+  , HashTableMem (..)
   )
 where
 
