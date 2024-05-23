@@ -54,8 +54,9 @@ toIntLLPTable ::
   Map ([Int], [Int]) ([Bracket Int], [Int])
 toIntLLPTable symbol_index_map table = table'
   where
-    table_index_keys = Map.mapKeys (both (fmap ((symbol_index_map Map.!) . Terminal))) table
-    table' = first (fmap (fmap (symbol_index_map Map.!))) <$> table_index_keys
+    table_index_keys = Map.mapKeys (both (fmap (toIndex . Terminal))) table
+    table' = first (fmap (fmap toIndex)) <$> table_index_keys
+    toIndex = (symbol_index_map Map.!)
 
 llpTableToStrings ::
   Int ->
@@ -209,13 +210,17 @@ generateParser q k grammar symbol_index_map terminal_type = do
   let ne = createNe max_ao max_pi
   let integer_table =
         padAndStringifyTable empty_terminal q k max_ao max_pi symbol_index_map table
-  hash_table <- initHashTable 13 integer_table
-  hash_table_mem <- hashTableMem hash_table
-  let hash_table_size = ABase.numElements $ elementArray hash_table_mem
+  hash_table <- hashTable 13 integer_table
+  let offsets_array_str = futPrint $ offsetArray hash_table
+  let hash_table_mem_size = ABase.numElements $ elementArray hash_table
   let hash_table_str =
         futPrint
         $ fmap (first NTuple)
-        <$> elementArray hash_table_mem
+        <$> elementArray hash_table
+  let consts_array = constsArray hash_table
+  let consts_array_str = futPrint $ fmap (fmap NTuple) consts_array
+  let consts = futPrint $ NTuple $ initHashConsts hash_table
+  let hash_table_size = ABase.numElements consts_array 
   return $
     futharkParser
       <> [i|
@@ -234,6 +239,7 @@ def number_of_productions: i64 = #{number_of_productions}
 def q: i64 = #{q}
 def k: i64 = #{k}
 def hash_table_size: i64 = #{hash_table_size}
+def hash_table_mem_size: i64 = #{hash_table_mem_size}
 def max_ao: i64 = #{max_ao}
 def max_pi: i64 = #{max_pi}
 def start_terminal: terminal = #{start_terminal}
@@ -252,10 +258,17 @@ def key_to_config (_: look_type):
 def array_to_look_type [n] (arr: [n]terminal): look_type =
   #{toTupleIndexArray "arr" (q+k)}
 
--- #{hash_table}
-
 def hash_table =
-  #{hash_table_str} :> [hash_table_size](opt (look_type, ([max_ao]bracket, [max_pi]production)))
+  #{hash_table_str} :> [hash_table_mem_size](opt (look_type, ([max_ao]bracket, [max_pi]production)))
+
+def offset_array =
+  #{offsets_array_str}
+
+def consts_array =
+  #{consts_array_str}
+
+def consts =
+  #{consts}
 
 def ne: ([max_ao]bracket, [max_pi]production) =
   let (a,b) = #{ne}
