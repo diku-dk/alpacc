@@ -46,10 +46,14 @@ data HashTableMem i v =
   , constsArray :: Array i (Maybe [i])
   } deriving (Eq, Ord, Show)
 
-hash :: Integral a => a -> [a] -> [a] -> a
+hash :: Integral i => i -> [i] -> [i] -> i
 hash size = (`mod` size) . sum .: zipWith (*)
 
-getConsts :: (StatefulGen g m, Uniform i) => Int -> g -> m [i]
+getConsts ::
+  (Integral i, StatefulGen g m, Uniform i) =>
+  Int ->
+  g ->
+  m [i]
 getConsts n = replicateM n . uniformM
       
 hasCollisions :: Ord b => (a -> b) -> [a] -> Bool

@@ -212,7 +212,10 @@ generateParser q k grammar symbol_index_map terminal_type = do
   hash_table <- initHashTable 13 integer_table
   hash_table_mem <- hashTableMem hash_table
   let hash_table_size = ABase.numElements $ elementArray hash_table_mem
-  let hash_table_str = futPrint $ elementArray hash_table_mem
+  let hash_table_str =
+        futPrint
+        $ fmap (first NTuple)
+        <$> elementArray hash_table_mem
   return $
     futharkParser
       <> [i|
@@ -249,8 +252,10 @@ def key_to_config (_: look_type):
 def array_to_look_type [n] (arr: [n]terminal): look_type =
   #{toTupleIndexArray "arr" (q+k)}
 
+-- #{hash_table}
+
 def hash_table =
-  #{hash_table_str} :> [hash_table_size](opt ([q + k]i64, ([max_ao]bracket, [max_pi]production)))
+  #{hash_table_str} :> [hash_table_size](opt (look_type, ([max_ao]bracket, [max_pi]production)))
 
 def ne: ([max_ao]bracket, [max_pi]production) =
   let (a,b) = #{ne}
