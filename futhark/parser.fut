@@ -19,6 +19,7 @@ module type parser_context = {
   val max_ao: i64
   val max_pi: i64
   type look_type
+  val hash_table_size: i64
   val number_of_terminals: i64
   val number_of_productions: i64
   val production_to_terminal: [number_of_productions](opt terminal_module.t)
@@ -28,6 +29,7 @@ module type parser_context = {
   val end_terminal: terminal_module.t
   val ne: ([max_ao]bracket_module.t, [max_pi]production_module.t)
   val key_to_config: look_type -> opt ([max_ao]bracket_module.t, [max_pi]production_module.t)
+  val hash_table: [hash_table_size](opt (look_type, ([max_ao]bracket_module.t, [max_pi]production_module.t)))
 }
 
 module mk_parser(P: parser_context) = {
