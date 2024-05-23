@@ -18,10 +18,17 @@ import Data.Map qualified as Map
 import Data.String.Interpolate (i)
 import Data.Tuple.Extra
 import Alpacc.Generator.Futhark.Util
+<<<<<<< Updated upstream
+import Alpacc.HashTable
+import Alpacc.Debug
+=======
+import Alpacc.Generator.Futhark.FutPrinter
 import Data.Composition
 import Alpacc.HashTable
 import Alpacc.Debug
 import Data.Word
+import Data.Array.Base as ABase
+>>>>>>> Stashed changes
 
 futharkParser :: String
 futharkParser = $(embedStringFile "futhark/parser.fut")
@@ -54,15 +61,18 @@ toIntLLPTable symbol_index_map table = table'
   where
     table_index_keys = Map.mapKeys (both (fmap ((symbol_index_map Map.!) . Terminal))) table
     table' = first (fmap (fmap (symbol_index_map Map.!))) <$> table_index_keys
-    _table = Map.mapKeys (\(a, b) -> fromIntegral <$> a ++ b) table'
+<<<<<<< Updated upstream
+    -- _table = Map.mapKeys (\(a, b) -> fromIntegral <$> a ++ b) table'
+    -- !hash_table = debug $ initHashTable 13 _table
+=======
 
 llpTableToStrings ::
   Int ->
   Int ->
   Map ([t], [t]) ([Bracket Int], [Int]) ->
-  Map ([t], [t]) String
+  Map ([t], [t]) RawString
 llpTableToStrings max_ao max_pi =
-  fmap (tupleToStr . BI.bimap f g)
+  fmap (RawString . tupleToStr . BI.bimap f g)
   where
     auxiliary (LBracket a) = "left " ++ show a
     auxiliary (RBracket a) = "right " ++ show a
@@ -83,12 +93,13 @@ padAndStringifyTable ::
       ,[AugmentedTerminal t])
       ([Bracket (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t))]
       ,[Int]) ->
-  Map [Int] String
+  Map [Int] RawString
 padAndStringifyTable empty_terminal q k max_ao max_pi =
   Map.mapKeys (uncurry (++))
   . llpTableToStrings max_ao max_pi
   . padLLPTableKeys empty_terminal q k
   .: toIntLLPTable
+>>>>>>> Stashed changes
 
 declarations :: String
 declarations = [i|
@@ -202,6 +213,14 @@ generateParser q k grammar symbol_index_map terminal_type = do
   table <- llpParserTableWithStartsHomomorphisms q k grammar
   bracket_type <- findBracketIntegral symbol_index_map
   production_type <- findProductionIntegral $ productions grammar
+<<<<<<< Updated upstream
+  arities <- productionToArity prods 
+  let integer_table = toIntegerLLPTable symbol_index_map table
+  let (max_ao, max_pi, ne, futhark_table) =
+        futharkParserTable (fromInteger $ maxFutUInt terminal_type) q k integer_table
+      brackets = List.intercalate "," $ zipWith (<>) (replicate max_ao "b") $ map show [(0 :: Int) ..]
+      productions = List.intercalate "," $ zipWith (<>) (replicate max_pi "p") $ map show [(0 :: Int) ..]
+=======
   arities <- productionToArity prods
   let empty_terminal = fromInteger $ maxFutUInt terminal_type :: Int
   let (max_ao, max_pi) = maxAoPi table
@@ -210,6 +229,9 @@ generateParser q k grammar symbol_index_map terminal_type = do
         padAndStringifyTable empty_terminal q k max_ao max_pi symbol_index_map table
   hash_table <- initHashTable 13 integer_table
   hash_table_mem <- hashTableMem hash_table
+  let hash_table_size = ABase.numElements $ elementArray hash_table_mem
+  let hash_table_str = futPrint $ elementArray hash_table_mem
+>>>>>>> Stashed changes
   return $
     futharkParser
       <> [i|
@@ -221,13 +243,13 @@ module bracket_module = #{bracket_type}
 
 #{declarations}
 
-type lookahead_type = #{lookahead_type}
-type lookback_type = #{lookback_type}
+type look_type = #{look_type}
 
 def number_of_terminals: i64 = #{number_of_terminals}
 def number_of_productions: i64 = #{number_of_productions} 
 def q: i64 = #{q}
 def k: i64 = #{k}
+def hash_table_size: i64 = #{hash_table_size}
 def max_ao: i64 = #{max_ao}
 def max_pi: i64 = #{max_pi}
 def start_terminal: terminal = #{start_terminal}
@@ -236,13 +258,29 @@ def production_to_terminal: [number_of_productions](opt terminal) =
   #{prods_to_ters}
 #{arities}
 
-def lookback_array_to_tuple [n] (arr: [n]terminal): lookback_type =
-  #{toTupleIndexArray "arr" q}
+def key_to_config (_: look_type):
+                  opt ([max_ao]bracket, [max_pi]production) =
+    map_opt (
+      \\((a),(b)) ->
+        (sized max_ao [a], sized max_pi [b])
+    ) <| #none
 
-def lookahead_array_to_tuple [n] (arr: [n]terminal): lookahead_type =
-  #{toTupleIndexArray "arr" k}
+def array_to_look_type [n] (arr: [n]terminal): look_type =
+  #{toTupleIndexArray "arr" (q+k)}
 
 -- #{hash_table_mem}
+<<<<<<< Updated upstream
+def key_to_config (key: (lookback_type, lookahead_type)):
+                  opt ([max_ao]bracket, [max_pi]production) =
+  map_opt (\\((#{brackets}),(#{productions})) ->
+    (sized max_ao [#{brackets}], sized max_pi [#{productions}])
+  ) <|
+  match key
+  #{futhark_table}
+=======
+def hash_table =
+  #{hash_table_str} :> [hash_table_size](opt ([q + k]i64, ([max_ao]bracket, [max_pi]production)))
+>>>>>>> Stashed changes
 
 def ne: ([max_ao]bracket, [max_pi]production) =
   let (a,b) = #{ne}
@@ -258,5 +296,4 @@ def ne: ([max_ao]bracket, [max_pi]production) =
     maybe_end_terminal = Map.lookup (Terminal LeftTurnstile) symbol_index_map
     augmented_grammar = augmentGrammar grammar
     terminals' = terminals augmented_grammar
-    lookback_type = toTuple $ replicate q "terminal"
-    lookahead_type = toTuple $ replicate k "terminal"
+    look_type = toTuple $ replicate (q + k) "terminal"
