@@ -18,18 +18,16 @@ module type parser_context = {
   val k: i64
   val max_ao: i64
   val max_pi: i64
-  type lookahead_type
-  type lookback_type
+  type look_type
   val number_of_terminals: i64
   val number_of_productions: i64
   val production_to_terminal: [number_of_productions](opt terminal_module.t)
   val production_to_arity: [number_of_productions]i16
-  val lookback_array_to_tuple [n]: [n]terminal_module.t -> lookback_type
-  val lookahead_array_to_tuple [n]: [n]terminal_module.t -> lookahead_type
+  val array_to_look_type [n]: [n]terminal_module.t -> look_type
   val start_terminal: terminal_module.t
   val end_terminal: terminal_module.t
   val ne: ([max_ao]bracket_module.t, [max_pi]production_module.t)
-  val key_to_config: (lookback_type, lookahead_type) -> opt ([max_ao]bracket_module.t, [max_pi]production_module.t)
+  val key_to_config: look_type -> opt ([max_ao]bracket_module.t, [max_pi]production_module.t)
 }
 
 module mk_parser(P: parser_context) = {
@@ -49,18 +47,17 @@ module mk_parser(P: parser_context) = {
     bracket_module.get_bit (bracket_module.num_bits - 1) s
     |> bool.i32
   
-  def lookback_chunks [n] (arr: [n]terminal): [n]P.lookback_type =
-    let arr' = replicate P.q empty_terminal ++ arr
-    in iota n |> map (\i -> arr'[i:i + P.q] |> P.lookback_array_to_tuple)
-
-  def lookahead_chunks [n] (arr: [n]terminal): [n]P.lookahead_type =
-    let arr' = arr ++ replicate P.k empty_terminal
-    in iota n |> map (\i -> arr'[i:i + P.k] |> P.lookahead_array_to_tuple)
-
-  def keys [n] (arr: [n]terminal): [n](P.lookback_type, P.lookahead_type) =
-    let lookback = lookback_chunks arr
-    let lookahead = lookahead_chunks arr
-    in zip lookback lookahead
+  def keys [n] (arr: [n]terminal): [n]P.look_type =
+    let arr' =
+      (replicate P.q empty_terminal)
+      ++ arr
+      ++ (replicate P.k empty_terminal)
+    in iota (n)
+       |> map (
+            \i ->
+              arr'[i:i + P.q + P.k]
+              |> P.array_to_look_type
+          )
 
   def depths [n] (input: [n]bracket): opt ([n]i64) =
     let left_brackets =

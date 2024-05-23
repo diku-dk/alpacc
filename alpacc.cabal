@@ -62,6 +62,7 @@ library
     Alpacc.Generator.Futhark.Lexer
     Alpacc.Generator.Futhark.Parser
     Alpacc.Generator.Futhark.Util
+    Alpacc.Generator.Futhark.FutPrinter
     Alpacc.Generator.Futhark.Generator
     Alpacc.Lexer.RegularExpression
     Alpacc.Lexer.NFA
