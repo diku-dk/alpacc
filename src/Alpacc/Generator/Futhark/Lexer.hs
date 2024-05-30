@@ -4,18 +4,17 @@ module Alpacc.Generator.Futhark.Lexer
   ( generateLexer )
  where
 
-import Alpacc.Generator.Futhark.Util
 import Alpacc.Grammar
 import Alpacc.Lexer.DFA
 import Data.Map (Map)
 import Data.Map qualified as Map
--- import Data.Set qualified as Set
 import Data.String.Interpolate (i)
 import Data.FileEmbed
 import Data.Word (Word8)
 import Alpacc.Lexer.ParallelLexing
 import Data.List qualified as List
 import Data.Either.Extra
+import Alpacc.Types
 
 futharkLexer :: String
 futharkLexer = $(embedStringFile "futhark/lexer.fut")
@@ -28,26 +27,6 @@ defEndomorphismSize =
   ("def endomorphism_size: i64 = "++)
   . show
   . endomorphismsSize
-
--- isProducingArray :: ParallelLexer Word8 Int -> String
--- isProducingArray parallel_lexer =
---   ("def is_producing: [256][endomorphism_size]bool = "++)
---   $ (++"] :> [256][endomorphism_size]bool")
---   $ ("["++)
---   $ List.intercalate ",\n"
---   $ map row [0..255]
---   where
---     token_set = producesTokenSet parallel_lexer
---     state_size = endomorphismsSize parallel_lexer
---     lookup' c s =
---       if (s, c) `Set.member` token_set
---       then "true"
---       else "false"
---     row j =
---       (++"]")
---       $ ("["++)
---       $ List.intercalate ", "
---       $ map (lookup' j) [0..state_size - 1]
 
 transitionsToEndomorphismsArray :: ParallelLexer Word8 Int -> Either String String
 transitionsToEndomorphismsArray parallel_lexer = do
@@ -90,8 +69,13 @@ compositionsArray parallel_lexer = do
 
 endomorphismIntegral ::
   IntParallelLexer t ->
-  Either String FutUInt
-endomorphismIntegral = selectFutUInt . toInteger . pred . endoSize
+  Either String UInt
+endomorphismIntegral =
+  maybeToEither "Error: There are too many endomorphisms to create a Lexer."
+  . toUInt
+  . fromIntegral
+  . pred
+  . endoSize
 
 ignoreFunction :: Map T Int -> String
 ignoreFunction terminal_index_map = 
@@ -102,7 +86,7 @@ ignoreFunction terminal_index_map =
 generateLexer ::
   ParallelDFALexer Word8 Int T ->
   Map T Int ->
-  FutUInt ->
+  UInt ->
   Either String String
 generateLexer lexer terminal_index_map terminal_type = do
   int_parallel_lexer <-

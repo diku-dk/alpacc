@@ -25,7 +25,8 @@ let pkg =
                 ncurses5 binutils
                 opencl-headers
                 clinfo
-                gcc11
+           #     gcc11
+           #     stdenv.cc
                 gmp
                 ispc
                 ocl-icd
