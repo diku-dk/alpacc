@@ -10,6 +10,7 @@ import Alpacc.Grammar
 import Data.Map qualified as Map
 import Data.Map ( Map )
 import Alpacc.Generator.Futhark.Util
+import Alpacc.Types
 
 parentVectorTest :: String
 parentVectorTest =
@@ -21,7 +22,6 @@ parentVectorTest =
 entry test_previous_equal_or_smaller [n] (arr: [n]i32): bool =
   parser.test_previous_equal_or_smaller arr
 |]
-
 
 bothFunction :: String
 bothFunction = [i|
@@ -41,7 +41,7 @@ entry pre_productions s =
   case #none -> []
 |] ++ parentVectorTest
 
-lexerFunction :: FutUInt -> String
+lexerFunction :: UInt -> String
 lexerFunction t = [i|
 entry lex s =
   match lexer.lex_chunked 16777216 s
@@ -78,16 +78,16 @@ toSymbolIndexMap ts nts = Map.union aug_terminal_map nts_map
 
 findTerminalIntegral ::
   Map a Int ->
-  Either String FutUInt
-findTerminalIntegral index_map = findSize $ toInteger _max
+  Either String UInt
+findTerminalIntegral index_map = findSize _max
   where
-    _max = maximum index_map
+    _max = fromIntegral $ maximum index_map
     findSize max_size
       | max_size < 0 = Left "Max size may not be negative."
-      | max_size < maxFutUInt U8 = Right U8
-      | max_size < maxFutUInt U16 = Right U16
-      | max_size < maxFutUInt U32 = Right U32
-      | max_size < maxFutUInt U64 = Right U64
+      | max_size < toMaxBound U8 = Right U8
+      | max_size < toMaxBound U16 = Right U16
+      | max_size < toMaxBound U32 = Right U32
+      | max_size < toMaxBound U64 = Right U64
       | otherwise = Left "There are too many terminals to find a Futhark integral type."
 
 generate :: Int -> Int -> CFG -> Either String String

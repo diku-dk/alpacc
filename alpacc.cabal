@@ -59,9 +59,9 @@ library
     Alpacc.Util
     Alpacc.Debug
     Alpacc.HashTable
+    Alpacc.Types
     Alpacc.Generator.Futhark.Lexer
     Alpacc.Generator.Futhark.Parser
-    Alpacc.Generator.Futhark.Util
     Alpacc.Generator.Futhark.FutPrinter
     Alpacc.Generator.Futhark.Generator
     Alpacc.Lexer.RegularExpression

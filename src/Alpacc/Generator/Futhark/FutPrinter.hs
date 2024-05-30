@@ -11,6 +11,7 @@ import Data.String.Interpolate (i)
 import Data.Array (Array)
 import Data.Array as Array hiding (Array)
 import Data.Bits
+import Numeric.Natural
 
 newtype NTuple a = NTuple [a] deriving (Show, Eq, Ord, Read, Foldable)
 
@@ -24,8 +25,9 @@ instance FutPrinter String where
 
 instance FutPrinter Int where
   futPrint = show
-    -- where
-    --   size = finiteBitSize (zeroBits :: Int)
+
+instance FutPrinter Natural where
+  futPrint = show
 
 instance FutPrinter RawString where
   futPrint (RawString s) = s

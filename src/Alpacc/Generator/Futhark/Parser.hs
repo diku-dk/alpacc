@@ -17,19 +17,15 @@ import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.String.Interpolate (i)
 import Data.Tuple.Extra
-import Alpacc.Generator.Futhark.Util
 import Alpacc.Generator.Futhark.FutPrinter
+import Alpacc.Generator.Futhark.Util
 import Data.Composition
 import Alpacc.HashTable
-import Alpacc.Debug
-import Data.Word
 import Data.Array.Base as ABase
+import Alpacc.Types
 
 futharkParser :: String
 futharkParser = $(embedStringFile "futhark/parser.fut")
-
-tupleToStr :: (Show a, Show b) => (a, b) -> String
-tupleToStr (a, b) = [i|(#{a}, #{b})|]
 
 padLLPTableKeys ::
   Ord t =>
@@ -62,16 +58,16 @@ llpTableToStrings ::
   Int ->
   Int ->
   Map ([t], [t]) ([Bracket Int], [Int]) ->
-  Map ([t], [t]) RawString
+  Map ([t], [t]) ([RawString], [RawString])
 llpTableToStrings max_ao max_pi =
-  fmap (RawString . tupleToStr . BI.bimap f g)
+  fmap (BI.bimap f g)
   where
     auxiliary (LBracket a) = "left " ++ show a
     auxiliary (RBracket a) = "right " ++ show a
     aoPad = rpad "epsilon" max_ao
     piPad = rpad "empty_terminal" max_pi
-    f = toArray . aoPad . fmap auxiliary
-    g = toArray . piPad . fmap show
+    f = fmap RawString . aoPad . fmap auxiliary
+    g = fmap RawString . piPad . fmap show
 
 padAndStringifyTable ::
   (Ord nt, Ord t) =>
@@ -85,7 +81,7 @@ padAndStringifyTable ::
       ,[AugmentedTerminal t])
       ([Bracket (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t))]
       ,[Int]) ->
-  Map [Int] RawString
+  Map [Int] ([RawString], [RawString])
 padAndStringifyTable empty_terminal q k max_ao max_pi =
   Map.mapKeys (uncurry (++))
   . llpTableToStrings max_ao max_pi
@@ -111,31 +107,27 @@ def right (s : bracket) : bracket =
 
 findBracketIntegral ::
   Map (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)) Int ->
-  Either String FutUInt
-findBracketIntegral index_map = findSize _max
+  Either String UInt
+findBracketIntegral index_map
+  | max_size < 0 = Left "Max size may not be negative."
+  | max_size < 2 ^ (8 - 1 :: Int) - 1 = Right U8
+  | max_size < 2 ^ (16 - 1 :: Int) - 1 = Right U16
+  | max_size < 2 ^ (32 - 1 :: Int) - 1 = Right U32
+  | max_size < 2 ^ (64 - 1 :: Int) - 1 = Right U64
+  | otherwise = Left "Error: There are too many symbols to find a Futhark integral type."
   where
-    _max = maximum index_map
-    findSize max_size
-      | max_size < 0 = Left "Max size may not be negative."
-      | max_size < 2 ^ (8 - 1 :: Integer) - 1 = Right U8
-      | max_size < 2 ^ (16 - 1 :: Integer) - 1 = Right U16
-      | max_size < 2 ^ (32 - 1 :: Integer) - 1 = Right U32
-      | max_size < 2 ^ (64 - 1 :: Integer) - 1 = Right U64
-      | otherwise = Left "There are too many symbols to find a Futhark integral type."
+    max_size = toInteger $ maximum index_map 
 
 findProductionIntegral ::
   [Production nt t] ->
-  Either String FutUInt
-findProductionIntegral ps = findSize _max
+  Either String UInt
+findProductionIntegral =
+  maybeToEither err
+  . toUInt
+  . fromIntegral
+  . length
   where
-    _max = toInteger $ length ps
-    findSize max_size
-      | max_size < 0 = Left "Max size may not be negative."
-      | max_size < maxFutUInt U8 = Right U8
-      | max_size < maxFutUInt U16 = Right U16
-      | max_size < maxFutUInt U32 = Right U32
-      | max_size < maxFutUInt U64 = Right U64
-      | otherwise = Left "There are too many productions to find a Futhark integral type."
+    err = "Error: There are too many productions to find a Futhark integral type."
 
 productionToTerminal ::
   (Ord nt, Ord t) =>
@@ -182,11 +174,20 @@ maxAoPi table = (max_alpha_omega, max_pi)
     max_pi = maximum $ length . snd <$> values
 
 createNe :: Int -> Int -> String
-createNe max_alpha_omega max_pi = ne
+createNe max_alpha_omega max_pi = futPrint ne
   where
-    stacks = toArray $ replicate max_alpha_omega "epsilon"
-    rules = toArray $ replicate max_pi "empty_production"
-    ne = toTuple [stacks, rules]
+    stacks = replicate max_alpha_omega (RawString "epsilon")
+    rules = replicate max_pi (RawString "empty_production")
+    ne = NTuple [stacks, rules]
+
+-- | Creates a string that is a tuple where a variable is indexed from 0 to
+-- n - 1 in the Futhark language.
+toTupleIndexArray :: (Show a, Num a, Enum a) => String -> a -> String
+toTupleIndexArray name n = futPrint $ NTuple $ map (indexArray name) [0 .. n - 1]
+
+-- | Creates a string that indexes an array in the Futhark language.
+indexArray :: Show a => String -> a -> RawString
+indexArray name = RawString . (name ++) . ("[" ++) . (++"]") . show
 
 -- | Creates Futhark source code which contains a parallel parser that can
 -- create the productions list for a input which is indexes of terminals.
@@ -196,7 +197,7 @@ generateParser ::
   Int ->
   Grammar (Either nt t) t ->
   Map (Symbol (AugmentedNonterminal (Either nt t)) (AugmentedTerminal t)) Int ->
-  FutUInt ->
+  UInt ->
   Either String String
 generateParser q k grammar symbol_index_map terminal_type = do
   start_terminal <- maybeToEither "The left turnstile \"⊢\" terminal could not be found, you should complain to a developer." maybe_start_terminal
@@ -205,12 +206,12 @@ generateParser q k grammar symbol_index_map terminal_type = do
   bracket_type <- findBracketIntegral symbol_index_map
   production_type <- findProductionIntegral $ productions grammar
   arities <- productionToArity prods 
-  let empty_terminal = fromInteger $ maxFutUInt terminal_type :: Int
+  let empty_terminal = fromIntegral $ toMaxBound terminal_type
   let (max_ao, max_pi) = maxAoPi table
   let ne = createNe max_ao max_pi
   let integer_table =
         padAndStringifyTable empty_terminal q k max_ao max_pi symbol_index_map table
-  hash_table <- hashTable 13 integer_table
+  (hash_table, table_type) <- hashTable 13 $ Map.mapKeys (fmap fromIntegral) integer_table
   let offsets_array_str = futPrint $ offsetArray hash_table
   let hash_table_mem_size = ABase.numElements $ elementArray hash_table
   let hash_table_str =
@@ -284,4 +285,7 @@ def ne: ([max_ao]bracket, [max_pi]production) =
     maybe_end_terminal = Map.lookup (Terminal LeftTurnstile) symbol_index_map
     augmented_grammar = augmentGrammar grammar
     terminals' = terminals augmented_grammar
-    look_type = toTuple $ replicate (q + k) "terminal"
+    look_type =
+      futPrint
+      $ NTuple
+      $ replicate (q + k) (RawString "terminal")
