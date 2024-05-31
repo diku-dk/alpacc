@@ -11,6 +11,7 @@ import Data.String.Interpolate (i)
 import Data.Array (Array)
 import Data.Array as Array hiding (Array)
 import Data.Bits
+import Alpacc.Types
 import Numeric.Natural
 
 newtype NTuple a = NTuple [a] deriving (Show, Eq, Ord, Read, Foldable)
@@ -19,6 +20,12 @@ newtype RawString = RawString String deriving (Show, Eq, Ord, Read)
 
 class FutPrinter a where
   futPrint :: a -> String
+
+instance FutPrinter UInt where
+  futPrint U8 = "u8"
+  futPrint U16 = "u16"
+  futPrint U32 = "u32"
+  futPrint U64 = "u64"
 
 instance FutPrinter String where
   futPrint = show

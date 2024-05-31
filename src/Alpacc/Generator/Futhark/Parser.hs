@@ -206,7 +206,7 @@ generateParser q k grammar symbol_index_map terminal_type = do
   bracket_type <- findBracketIntegral symbol_index_map
   production_type <- findProductionIntegral $ productions grammar
   arities <- productionToArity prods 
-  let empty_terminal = fromIntegral $ toMaxBound terminal_type
+  let empty_terminal = fromIntegral $ toMaxUBound terminal_type
   let (max_ao, max_pi) = maxAoPi table
   let ne = createNe max_ao max_pi
   let integer_table =
@@ -227,9 +227,9 @@ generateParser q k grammar symbol_index_map terminal_type = do
       <> [i|
 module parser = mk_parser {
 
-module terminal_module = #{terminal_type}
-module production_module = #{production_type}
-module bracket_module = #{bracket_type}
+module terminal_module = #{futPrint terminal_type}
+module production_module = #{futPrint production_type}
+module bracket_module = #{futPrint bracket_type}
 
 #{declarations}
 
@@ -263,7 +263,7 @@ def hash_table =
   #{hash_table_str} :> [hash_table_mem_size](opt (look_type, ([max_ao]bracket, [max_pi]production)))
 
 def offset_array =
-  #{offsets_array_str}
+  #{offsets_array_str} :> [hash_table_size]#{futPrint table_type}
 
 def consts_array =
   #{consts_array_str}

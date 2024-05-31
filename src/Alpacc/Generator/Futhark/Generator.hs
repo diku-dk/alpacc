@@ -84,10 +84,10 @@ findTerminalIntegral index_map = findSize _max
     _max = fromIntegral $ maximum index_map
     findSize max_size
       | max_size < 0 = Left "Max size may not be negative."
-      | max_size < toMaxBound U8 = Right U8
-      | max_size < toMaxBound U16 = Right U16
-      | max_size < toMaxBound U32 = Right U32
-      | max_size < toMaxBound U64 = Right U64
+      | max_size < toMaxUBound U8 = Right U8
+      | max_size < toMaxUBound U16 = Right U16
+      | max_size < toMaxUBound U32 = Right U32
+      | max_size < toMaxUBound U64 = Right U64
       | otherwise = Left "There are too many terminals to find a Futhark integral type."
 
 generate :: Int -> Int -> CFG -> Either String String

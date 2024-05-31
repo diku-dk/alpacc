@@ -19,7 +19,6 @@ import Data.Array qualified as Array
 import Data.List qualified as List
 import Data.Either.Extra
 import Data.Maybe
-import Alpacc.Debug
 import Data.String.Interpolate (i)
 import Alpacc.Types
 import Numeric.Natural
@@ -189,7 +188,7 @@ initHashTable' ::
   m (Either String (HashTable Natural v))
 initHashTable' uint table g
   | not is_valid = return $ Left "Error: Every key in the Map must be of the same length."
-  | uint' <= Just uint && isJust uint' = return $ Left [i|Error: #{uint} is too small to create a hash table.|]
+  | Just uint < uint' && isJust uint' = return $ Left [i|Error: #{uint} is too small to create a hash table.|]
   | otherwise = do
     consts <- getConsts uint consts_size g
     elements <-
