@@ -65,7 +65,7 @@ llpTableToStrings max_ao max_pi =
     auxiliary (LBracket a) = "left " ++ show a
     auxiliary (RBracket a) = "right " ++ show a
     aoPad = rpad "epsilon" max_ao
-    piPad = rpad "empty_terminal" max_pi
+    piPad = rpad "empty_production" max_pi
     f = fmap RawString . aoPad . fmap auxiliary
     g = fmap RawString . piPad . fmap show
 
@@ -123,7 +123,7 @@ findProductionIntegral ::
   Either String UInt
 findProductionIntegral =
   maybeToEither err
-  . toUInt
+  . toIntType
   . fromIntegral
   . length
   where
@@ -185,6 +185,32 @@ createNe max_alpha_omega max_pi = futPrint ne
 toTupleIndexArray :: (Show a, Num a, Enum a) => String -> a -> String
 toTupleIndexArray name n = futPrint $ NTuple $ map (indexArray name) [0 .. n - 1]
 
+createHashFunction :: IInt -> Int -> Int -> String
+createHashFunction int q k = 
+  [i|
+def hash #{a_arg} #{b_arg} =
+  #{body}
+|]
+  where
+    qk = q + k
+    a_arg = futPrint $ NTuple $ map RawString as
+    b_arg = futPrint $ NTuple $ map RawString bs
+    as = ["a" ++ show j | j <- [0..(qk - 1)]]
+    bs = ["b" ++ show j | j <- [0..(qk - 1)]]
+    concatWith a b c = b ++ a ++ c
+    body =
+      if qk <= 0
+      then ""
+      else
+        ("("++)
+        $ (++[i|) terminal_module.% #{futPrint int}.i64 hash_table_size|])
+        $ List.foldl1 (concatWith " terminal_module.* ")
+        $ zipWith (
+            ("("++)
+            . (++")")
+            .: concatWith " terminal_module.+ "
+          ) as bs
+
 -- | Creates a string that indexes an array in the Futhark language.
 indexArray :: Show a => String -> a -> RawString
 indexArray name = RawString . (name ++) . ("[" ++) . (++"]") . show
@@ -197,7 +223,7 @@ generateParser ::
   Int ->
   Grammar (Either nt t) t ->
   Map (Symbol (AugmentedNonterminal (Either nt t)) (AugmentedTerminal t)) Int ->
-  UInt ->
+  IInt ->
   Either String String
 generateParser q k grammar symbol_index_map terminal_type = do
   start_terminal <- maybeToEither "The left turnstile \"⊢\" terminal could not be found, you should complain to a developer." maybe_start_terminal
@@ -206,12 +232,12 @@ generateParser q k grammar symbol_index_map terminal_type = do
   bracket_type <- findBracketIntegral symbol_index_map
   production_type <- findProductionIntegral $ productions grammar
   arities <- productionToArity prods 
-  let empty_terminal = fromIntegral $ toMaxUBound terminal_type
+  let empty_terminal = fromIntegral $ intTypeMaxBound terminal_type
   let (max_ao, max_pi) = maxAoPi table
   let ne = createNe max_ao max_pi
   let integer_table =
         padAndStringifyTable empty_terminal q k max_ao max_pi symbol_index_map table
-  (hash_table, table_type) <- hashTable 13 $ Map.mapKeys (fmap fromIntegral) integer_table
+  hash_table <- hashTable terminal_type 13 $ Map.mapKeys (fmap fromIntegral) integer_table
   let offsets_array_str = futPrint $ offsetArray hash_table
   let hash_table_mem_size = ABase.numElements $ elementArray hash_table
   let hash_table_str =
@@ -249,6 +275,8 @@ def production_to_terminal: [number_of_productions](opt terminal) =
   #{prods_to_ters}
 #{arities}
 
+#{createHashFunction terminal_type q k}
+
 def key_to_config (_: look_type):
                   opt ([max_ao]bracket, [max_pi]production) =
     map_opt (
@@ -263,13 +291,13 @@ def hash_table =
   #{hash_table_str} :> [hash_table_mem_size](opt (look_type, ([max_ao]bracket, [max_pi]production)))
 
 def offset_array =
-  #{offsets_array_str} :> [hash_table_size]#{futPrint table_type}
+  #{offsets_array_str} :> [hash_table_size]terminal
 
 def consts_array =
-  #{consts_array_str}
+  #{consts_array_str} :> [hash_table_size](opt look_type)
 
 def consts =
-  #{consts}
+  #{consts} :> look_type
 
 def ne: ([max_ao]bracket, [max_pi]production) =
   let (a,b) = #{ne}

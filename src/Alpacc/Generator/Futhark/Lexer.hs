@@ -72,7 +72,7 @@ endomorphismIntegral ::
   Either String UInt
 endomorphismIntegral =
   maybeToEither "Error: There are too many endomorphisms to create a Lexer."
-  . toUInt
+  . toIntType
   . fromIntegral
   . pred
   . endoSize
@@ -86,7 +86,7 @@ ignoreFunction terminal_index_map =
 generateLexer ::
   ParallelDFALexer Word8 Int T ->
   Map T Int ->
-  UInt ->
+  IInt ->
   Either String String
 generateLexer lexer terminal_index_map terminal_type = do
   int_parallel_lexer <-

@@ -10,7 +10,6 @@ import Data.List qualified as List
 import Data.String.Interpolate (i)
 import Data.Array (Array)
 import Data.Array as Array hiding (Array)
-import Data.Bits
 import Alpacc.Types
 import Numeric.Natural
 
@@ -27,6 +26,12 @@ instance FutPrinter UInt where
   futPrint U32 = "u32"
   futPrint U64 = "u64"
 
+instance FutPrinter IInt where
+  futPrint I8 = "i8"
+  futPrint I16 = "i16"
+  futPrint I32 = "i32"
+  futPrint I64 = "i64"
+
 instance FutPrinter String where
   futPrint = show
 
@@ -35,6 +40,10 @@ instance FutPrinter Int where
 
 instance FutPrinter Natural where
   futPrint = show
+
+instance FutPrinter Integer where
+  futPrint = show
+
 
 instance FutPrinter RawString where
   futPrint (RawString s) = s

@@ -9,8 +9,10 @@ import Alpacc.CFG
 import Alpacc.Grammar
 import Data.Map qualified as Map
 import Data.Map ( Map )
-import Alpacc.Generator.Futhark.Util
 import Alpacc.Types
+import Alpacc.HashTable (hashTableSize)
+import Data.Either.Extra
+import Alpacc.Generator.Futhark.FutPrinter
 
 parentVectorTest :: String
 parentVectorTest =
@@ -41,12 +43,12 @@ entry pre_productions s =
   case #none -> []
 |] ++ parentVectorTest
 
-lexerFunction :: UInt -> String
+lexerFunction :: IInt -> String
 lexerFunction t = [i|
 entry lex s =
   match lexer.lex_chunked 16777216 s
   case #some r ->
-    map (\\(a, (b, c)) -> [i32.#{t} a, b, c]) r
+    map (\\(a, (b, c)) -> [i32.#{futPrint t} a, b, c]) r
   case #none -> []
 |]
 
@@ -76,20 +78,6 @@ toSymbolIndexMap ts nts = Map.union aug_terminal_map nts_map
     nts' = (++[Nonterminal Start]) $ Nonterminal . AugmentedNonterminal <$> nts
     nts_map = Map.fromList $ zip nts' [max_index+3..]
 
-findTerminalIntegral ::
-  Map a Int ->
-  Either String UInt
-findTerminalIntegral index_map = findSize _max
-  where
-    _max = fromIntegral $ maximum index_map
-    findSize max_size
-      | max_size < 0 = Left "Max size may not be negative."
-      | max_size < toMaxUBound U8 = Right U8
-      | max_size < toMaxUBound U16 = Right U16
-      | max_size < toMaxUBound U32 = Right U32
-      | max_size < toMaxUBound U64 = Right U64
-      | otherwise = Left "There are too many terminals to find a Futhark integral type."
-
 generate :: Int -> Int -> CFG -> Either String String
 generate q k cfg = do
   grammar <- extendByTerminals <$> cfgToGrammar cfg
@@ -98,7 +86,7 @@ generate q k cfg = do
   let nts = nonterminals grammar
   let symbol_index_map = toSymbolIndexMap ts nts
   let terminal_map = Map.filterWithKey (\k' _ -> isTerminal k') symbol_index_map
-  terminal_type <- findTerminalIntegral terminal_map
+  terminal_type :: IInt <- maybeToEither "Error: Too many terminals." $ hashTableSize $ Map.size terminal_map
   lexer <- cfgToDFALexer cfg
   parser <- Parser.generateParser q k grammar symbol_index_map terminal_type
   lexer_str <- Lexer.generateLexer lexer terminal_index_map terminal_type
@@ -113,7 +101,7 @@ generateLexer :: CFG -> Either String String
 generateLexer cfg = do
   t_rules <- everyTRule cfg
   let terminal_index_map = toTerminalIndexMap (ruleT <$> t_rules)
-  terminal_type <- findTerminalIntegral terminal_index_map
+  terminal_type :: IInt <- maybeToEither "Error: Too many terminals." $ hashTableSize $ Map.size terminal_index_map
   lexer <- cfgToDFALexer cfg
   lexer_str <- Lexer.generateLexer lexer terminal_index_map terminal_type
   return $
@@ -127,7 +115,7 @@ generateParser q k cfg = do
   grammar <- extendByTerminals <$> cfgToGrammar cfg
   let symbol_index_map = toSymbolIndexMap (terminals grammar) (nonterminals grammar)
   let terminal_map = Map.filterWithKey (\k' _ -> isTerminal k') symbol_index_map
-  terminal_type <- findTerminalIntegral terminal_map
+  terminal_type :: IInt <- maybeToEither "Error: Too many terminals." $ hashTableSize $ Map.size terminal_map
   parser <- Parser.generateParser q k grammar symbol_index_map terminal_type
   return $
     unlines

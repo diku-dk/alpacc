@@ -24,14 +24,11 @@ module Alpacc.LL
     firstAndFollow,
     lastAndBefore,
     firstMap,
-    leftFactorNonterminals,
-    isLeftRecursive,
     truncatedProduct,
     llTableM
   )
 where
 
-import Control.Monad (foldM, zipWithM)
 import Control.Monad.State hiding (state)
 import qualified Data.List as List
 import Data.Map (Map)
@@ -619,57 +616,3 @@ llParse k grammar = parse
       parse (input, symbols production ++ ys, index : parsed)
     parse ([], [], parsed) = Just ([], [], reverse parsed)
     parse (_, _, _) = Nothing
-
--- Note: I am not sure if this is one hundred percent correct.
-leftFactorNonterminals :: (Ord nt, Ord t) => Grammar nt t -> [nt]
-leftFactorNonterminals grammar = Map.keys left_factor_map
-  where
-    productions_map = toProductionsMap $ productions grammar
-    left_factor_map = Map.filter (auxiliary []) productions_map
-    commonLeftFactor [] [] = False
-    commonLeftFactor [] _ = False
-    commonLeftFactor _ [] = False
-    commonLeftFactor (a:_) (b:_) = a == b
-    auxiliary _ [] = False
-    auxiliary ys (x:xs)
-      | any (x `commonLeftFactor`) xs || any (x `commonLeftFactor`) ys = True 
-      | otherwise = auxiliary (x:ys) xs
-
-data Mark = Unmarked | Temporary | Permanent deriving (Eq, Ord, Show)
-
--- | Checks if a grammar contains left recursion.
--- It uses dfs topological sorting https://en.wikipedia.org/wiki/Topological_sorting
-isLeftRecursive :: (Ord nt, Ord t, Show nt, Show t) => Grammar nt t -> Bool
-isLeftRecursive grammar = isNothing $ foldM dfs unmarked_map nonterminals'
-  where
-    nonterminals' = nonterminals grammar
-    nullableOne' = nullableOne grammar
-    left_rec_graph = Map.unionsWith Set.union $ makeRecGraph <$> productions grammar
-
-    makeRecGraph (Production nt []) = Map.singleton nt Set.empty
-    makeRecGraph (Production nt ((Terminal _):_)) = Map.singleton nt Set.empty
-    makeRecGraph (Production nt s@((Nonterminal nt'):_)) = all_nodes
-      where
-        toMap a b = Map.singleton a $ Set.singleton b
-        first_node = toMap nt nt'
-        tail' = tail s
-        init' = init s
-        zipped = takeWhile (uncurry predicate) $ zip init' tail'
-        predicate a b = isNonterminal a && isNonterminal b && nullableOne' a
-        other_maps = toMap nt . unpackNonterminal . snd <$> zipped
-        other_nodes = Map.unionsWith Set.union other_maps
-        all_nodes = Map.unionWith Set.union first_node other_nodes
-
-    unmarked_map = Map.fromList $ map (, Unmarked) nonterminals'
-
-    dfs marks node
-      | node_mark == Permanent = Just marks
-      | node_mark == Temporary = Nothing
-      | otherwise = do
-        new_marks <- mapM (dfs marks_with_temp) neighbours
-        let pre_perm_marks = Map.unionsWith max new_marks `Map.union` marks
-        return $ Map.insert node Permanent pre_perm_marks
-      where
-        node_mark = marks Map.! node
-        marks_with_temp = Map.insert node Temporary marks
-        neighbours = toList $ left_rec_graph Map.! node

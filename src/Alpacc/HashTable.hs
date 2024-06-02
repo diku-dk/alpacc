@@ -1,5 +1,6 @@
 module Alpacc.HashTable
-  ( hashTable
+  ( hashTableSize
+  , hashTable
   , HashTableMem (..)
   , UInt (..)
   )
@@ -10,18 +11,16 @@ import System.Random.Stateful
 import Control.Monad
 import Data.Map (Map)
 import Data.Map qualified as Map
-import Data.Word
 import Data.Composition
 import Data.Set (Set)
 import Data.Set qualified as Set
-import Data.Array (Array, Ix)
+import Data.Array (Array)
 import Data.Array qualified as Array
 import Data.List qualified as List
 import Data.Either.Extra
 import Data.Maybe
 import Data.String.Interpolate (i)
 import Alpacc.Types
-import Numeric.Natural
 
 data LevelOne i v =
   LevelOne
@@ -46,47 +45,21 @@ data HashTableMem i v =
   , initHashConsts :: [i]
   } deriving (Eq, Ord, Show)
 
-hash :: Integral i => i -> [i] -> [i] -> i
-hash size = (`mod` size) . sum .: zipWith (*)
-
-hash8 :: Word8 -> [Word8] -> [Word8] -> Word8
-hash8 = hash
-
-hash16 :: Word16 -> [Word16] -> [Word16] -> Word16
-hash16 = hash
-
-hash32 :: Word32 -> [Word32] -> [Word32] -> Word32
-hash32 = hash
-
-hash64 :: Word64 -> [Word64] -> [Word64] -> Word64
-hash64 = hash
-
-hashConvert ::
-  Integral i =>
-  (i -> [i] -> [i] -> i) ->
-  Natural ->
-  [Natural] ->
-  [Natural] ->
-  Natural
-hashConvert h s =
-  fromIntegral .: h (fromIntegral s) `on` map fromIntegral
-
-hashT :: UInt -> Natural -> [Natural] -> [Natural] -> Natural
-hashT U8 = hashConvert hash8
-hashT U16 = hashConvert hash16
-hashT U32 = hashConvert hash32
-hashT U64 = hashConvert hash64
+hash :: IntType t => t -> Integer -> [Integer] -> [Integer] -> Integer
+hash t size = (`modAux` size) . sumIntType .: zipWith (mulIntType t)
+  where
+    sumIntType = List.foldl' (addIntType t) 0
+    modAux = modIntType t
 
 getConsts ::
-  (StatefulGen g m) =>
-  UInt ->
+  (StatefulGen g m, IntType t) =>
+  t ->
   Int ->
   g ->
-  m [Natural]
-getConsts U8 n = replicateM n . fmap fromIntegral . uniformWord8
-getConsts U16 n = replicateM n . fmap fromIntegral . uniformWord16
-getConsts U32 n = replicateM n . fmap fromIntegral . uniformWord32
-getConsts U64 n = replicateM n . fmap fromIntegral . uniformWord64
+  m [Integer]
+getConsts t n =
+  replicateM n
+  . uniformRM (intTypeMinBound t, intTypeMaxBound t)
 
 hasCollisions :: Ord b => (a -> b) -> [a] -> Bool
 hasCollisions = auxiliary Set.empty
@@ -99,26 +72,26 @@ hasCollisions = auxiliary Set.empty
         set' = Set.insert y set
 
 initLevelOne ::
-  StatefulGen g m =>
-  UInt ->
-  Map [Natural] v ->
+  (StatefulGen g m, IntType t) =>
+  t ->
+  Map [Integer] v ->
   g ->
-  m (LevelOne Natural v)
-initLevelOne uint table g = do
-  consts <- getConsts uint consts_size g
-  if hasCollisions (hashT uint size consts) keys
-    then initLevelOne uint table g
+  m (LevelOne Integer v)
+initLevelOne int table g = do
+  consts <- getConsts int consts_size g
+  if hasCollisions (hash int size consts) keys
+    then initLevelOne int table g
     else result consts
   where
     keys = Map.keys table
     consts_size = if null keys then 0 else length $ head keys
-    size = (fromIntegral (Map.size table) :: Natural)^(2 :: Int)
+    size = (fromIntegral (Map.size table) :: Integer)^(2 :: Int)
 
     result consts = do
       let dead_table = Map.fromList $ (,Nothing) <$> [0..size - 1]
       let new_table =
             flip Map.union dead_table
-            $ Map.mapKeys (hash size consts)
+            $ Map.mapKeys (hash int size consts)
             $ Map.mapWithKey (curry Just) table 
       let elements =
             Array.array (0, size - 1)
@@ -137,11 +110,12 @@ countLevelOne =
   . levelOneElements
 
 hashTableMem ::
-  Show v =>
-  HashTable Natural v ->
-  Either String (HashTableMem Natural v)
-hashTableMem hash_table
-  | array_size <= 4 * fromIntegral level_two_size = do
+  (Show v, IntType t) =>
+  t ->
+  HashTable Integer v ->
+  Either String (HashTableMem Integer v)
+hashTableMem int hash_table
+  | array_size <= intTypeMaxBound int = do
       keys <- mapM toIndex $ Set.toList $ levelTwoKeys hash_table
       return $
         HashTableMem
@@ -150,7 +124,7 @@ hashTableMem hash_table
         , constsArray = consts_array
         , initHashConsts = level_two_consts
         }
-  | otherwise = hashTableMem hash_table
+  | otherwise = hashTableMem int hash_table
   where
     level_two_size = levelTwoSize hash_table
     level_two_consts = levelTwoConsts hash_table
@@ -178,19 +152,19 @@ hashTableMem hash_table
       let level_one_elements = levelOneElements level_one
       return $ Array.elems level_one_elements
       where
-        i' = hash level_two_size level_two_consts key
+        i' = hash int level_two_size level_two_consts key
 
 initHashTable' ::
-  StatefulGen g m =>
-  UInt ->
-  Map [Natural] v ->
+  (StatefulGen g m, IntType t, Show t, Ord t) =>
+  t ->
+  Map [Integer] v ->
   g ->
-  m (Either String (HashTable Natural v))
-initHashTable' uint table g
+  m (Either String (HashTable Integer v))
+initHashTable' int table g
   | not is_valid = return $ Left "Error: Every key in the Map must be of the same length."
-  | Just uint < uint' && isJust uint' = return $ Left [i|Error: #{uint} is too small to create a hash table.|]
+  | Just int < int' && isJust int' = return $ Left [i|Error: #{int} is too small to create a hash table.|]
   | otherwise = do
-    consts <- getConsts uint consts_size g
+    consts <- getConsts int consts_size g
     elements <-
       fmap (Array.array (0, size - 1)
             . Map.toAscList
@@ -199,7 +173,7 @@ initHashTable' uint table g
       $ mapM toLevelOne
       $ List.groupBy ((==) `on` fst)
       $ List.sortOn fst
-      $ (\a -> (hash size consts $ fst a,a))
+      $ (\a -> (hash int size consts $ fst a,a))
       <$> Map.toList table
     return $
       Right $
@@ -213,32 +187,37 @@ initHashTable' uint table g
     ls = Map.keys table
     consts_size = if null ls then 0 else length $ head ls
     size = fromIntegral $ Map.size table
-    uint' = toUInt size
+    int' = toIntType (2 * size)
     is_valid = foldl (\b a -> b && length a == consts_size) True ls
     dead_table = Map.fromList $ (,Nothing) <$> [0..size - 1]
     toLevelOne xs = do
       let table' = Map.fromList $ map snd xs
-      hash_table <- initLevelOne uint table' g
+      hash_table <- initLevelOne int table' g
       return $ (k,) $ Just hash_table
       where
         (k, _) = head xs
 
 initHashTable ::
-  UInt ->
+  (IntType t, Show t, Ord t) =>
+  t ->
   Int ->
-  Map [Natural] v ->
-  Either String (HashTable Natural v)
-initHashTable uint n table =
-  runStateGen_ (mkStdGen n) (initHashTable' uint table)
+  Map [Integer] v ->
+  Either String (HashTable Integer v)
+initHashTable int n table =
+  runStateGen_ (mkStdGen n) (initHashTable' int table)
 
-hashTableSize :: Int -> Maybe UInt
-hashTableSize = toUInt . (4*) . fromIntegral
+hashTableSize :: IntType t => Int -> Maybe t
+hashTableSize = toIntType . (4*) . fromIntegral
 
+-- | To use this function for generating a hash table you should use
+-- the function hashTableSize to determine the correct size for your
+-- hash table. There is some lead way in choosing a type but it might
+-- take more time.
 hashTable ::
-  Show v =>
+  (Show v, IntType t, Show t, Ord t, IntType t) =>
+  t ->
   Int ->
-  Map [Natural] v ->
-  Either String (HashTableMem Natural v, UInt)
-hashTable s t = do
-  uint <- maybeToEither "Error: The table was too large to create a hash table from." $ hashTableSize $ Map.size t
-  fmap (,uint) $ initHashTable uint s t >>= hashTableMem
+  Map [Integer] v ->
+  Either String (HashTableMem Integer v)
+hashTable int s t =
+  initHashTable int s t >>= hashTableMem int
