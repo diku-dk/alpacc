@@ -29,6 +29,7 @@ module Alpacc.LL
   )
 where
 
+import Control.Monad (foldM, zipWithM)
 import Control.Monad.State hiding (state)
 import qualified Data.List as List
 import Data.Map (Map)
