@@ -223,21 +223,24 @@ generateParser ::
   Int ->
   Grammar (Either nt t) t ->
   Map (Symbol (AugmentedNonterminal (Either nt t)) (AugmentedTerminal t)) Int ->
-  IInt ->
-  Either String String
-generateParser q k grammar symbol_index_map terminal_type = do
+  Either String (String, IInt)
+generateParser q k grammar symbol_index_map = do
   start_terminal <- maybeToEither "The left turnstile \"⊢\" terminal could not be found, you should complain to a developer." maybe_start_terminal
   end_terminal <- maybeToEither "The right turnstile \"⊣\" terminal could not be found, you should complain to a developer." maybe_end_terminal
   table <- llpParserTableWithStartsHomomorphisms q k grammar
   bracket_type <- findBracketIntegral symbol_index_map
   production_type <- findProductionIntegral $ productions grammar
   arities <- productionToArity prods 
-  let empty_terminal = fromIntegral $ intTypeMaxBound terminal_type
   let (max_ao, max_pi) = maxAoPi table
-  let ne = createNe max_ao max_pi
+  terminal_type <-
+    maybeToEither "Error: The LLP table is too large."
+    $ hashTableSize
+    $ Map.size table
+  let empty_terminal = fromIntegral $ intTypeMaxBound terminal_type
   let integer_table =
         padAndStringifyTable empty_terminal q k max_ao max_pi symbol_index_map table
   hash_table <- hashTable terminal_type 13 $ Map.mapKeys (fmap fromIntegral) integer_table
+  let ne = createNe max_ao max_pi
   let offsets_array_str = futPrint $ offsetArray hash_table
   let hash_table_mem_size = ABase.numElements $ elementArray hash_table
   let hash_table_str =
@@ -248,9 +251,9 @@ generateParser q k grammar symbol_index_map terminal_type = do
   let consts_array_str = futPrint $ fmap (fmap NTuple) consts_array
   let consts = futPrint $ NTuple $ initHashConsts hash_table
   let hash_table_size = ABase.numElements consts_array 
-  return $
+  return . (,terminal_type) $
     futharkParser
-      <> [i|
+          <> [i|
 module parser = mk_parser {
 
 module terminal_module = #{futPrint terminal_type}

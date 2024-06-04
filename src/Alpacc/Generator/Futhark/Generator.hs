@@ -10,7 +10,6 @@ import Alpacc.Grammar
 import Data.Map qualified as Map
 import Data.Map ( Map )
 import Alpacc.Types
-import Alpacc.HashTable (hashTableSize)
 import Data.Either.Extra
 import Alpacc.Generator.Futhark.FutPrinter
 
@@ -85,10 +84,8 @@ generate q k cfg = do
   let ts = terminals grammar
   let nts = nonterminals grammar
   let symbol_index_map = toSymbolIndexMap ts nts
-  let terminal_map = Map.filterWithKey (\k' _ -> isTerminal k') symbol_index_map
-  terminal_type :: IInt <- maybeToEither "Error: Too many terminals." $ hashTableSize $ Map.size terminal_map
+  (parser, terminal_type) <- Parser.generateParser q k grammar symbol_index_map
   lexer <- cfgToDFALexer cfg
-  parser <- Parser.generateParser q k grammar symbol_index_map terminal_type
   lexer_str <- Lexer.generateLexer lexer terminal_index_map terminal_type
   return $
     unlines
@@ -101,7 +98,11 @@ generateLexer :: CFG -> Either String String
 generateLexer cfg = do
   t_rules <- everyTRule cfg
   let terminal_index_map = toTerminalIndexMap (ruleT <$> t_rules)
-  terminal_type :: IInt <- maybeToEither "Error: Too many terminals." $ hashTableSize $ Map.size terminal_index_map
+  terminal_type :: IInt <-
+    maybeToEither "Error: Too many terminals."
+    $ toIntType
+    $ fromIntegral
+    $ Map.size terminal_index_map
   lexer <- cfgToDFALexer cfg
   lexer_str <- Lexer.generateLexer lexer terminal_index_map terminal_type
   return $
@@ -114,9 +115,7 @@ generateParser :: Int -> Int -> CFG -> Either String String
 generateParser q k cfg = do
   grammar <- extendByTerminals <$> cfgToGrammar cfg
   let symbol_index_map = toSymbolIndexMap (terminals grammar) (nonterminals grammar)
-  let terminal_map = Map.filterWithKey (\k' _ -> isTerminal k') symbol_index_map
-  terminal_type :: IInt <- maybeToEither "Error: Too many terminals." $ hashTableSize $ Map.size terminal_map
-  parser <- Parser.generateParser q k grammar symbol_index_map terminal_type
+  (parser, _) <- Parser.generateParser q k grammar symbol_index_map
   return $
     unlines
       [ parser

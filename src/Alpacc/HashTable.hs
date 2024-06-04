@@ -1,6 +1,6 @@
 module Alpacc.HashTable
-  ( hashTableSize
-  , hashTable
+  ( hashTable
+  , hashTableSize
   , HashTableMem (..)
   , UInt (..)
   )
@@ -162,7 +162,7 @@ initHashTable' ::
   m (Either String (HashTable Integer v))
 initHashTable' int table g
   | not is_valid = return $ Left "Error: Every key in the Map must be of the same length."
-  | Just int < int' && isJust int' = return $ Left [i|Error: #{int} is too small to create a hash table.|]
+  | Just int < int' || isNothing int' = return $ Left [i|Error: #{int} is too small to create a hash table.|]
   | otherwise = do
     consts <- getConsts int consts_size g
     elements <-
@@ -206,7 +206,7 @@ initHashTable ::
 initHashTable int n table =
   runStateGen_ (mkStdGen n) (initHashTable' int table)
 
-hashTableSize :: IntType t => Int -> Maybe t
+hashTableSize :: (Show t, IntType t) => Int -> Maybe t
 hashTableSize = toIntType . (4*) . fromIntegral
 
 -- | To use this function for generating a hash table you should use
@@ -219,5 +219,5 @@ hashTable ::
   Int ->
   Map [Integer] v ->
   Either String (HashTableMem Integer v)
-hashTable int s t =
+hashTable int s t = do
   initHashTable int s t >>= hashTableMem int

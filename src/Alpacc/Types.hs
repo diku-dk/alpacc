@@ -10,8 +10,8 @@ import Data.Int
 import Data.Function
 import Data.Composition
 
-data UInt = U8 | U16 | U32 | U64 deriving (Eq, Ord, Show, Enum, Bounded)
-data IInt = I8 | I16 | I32 | I64 deriving (Eq, Ord, Show, Enum, Bounded)
+data UInt = U64 | U32 | U16 | U8 deriving (Eq, Ord, Show, Enum, Bounded)
+data IInt = I64 | I32 | I16 | I8 deriving (Eq, Ord, Show, Enum, Bounded)
 
 class IntType a where
   intTypeMaxBound :: a -> Integer
