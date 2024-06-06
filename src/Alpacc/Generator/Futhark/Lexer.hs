@@ -15,6 +15,7 @@ import Alpacc.Lexer.ParallelLexing
 import Data.List qualified as List
 import Data.Either.Extra
 import Alpacc.Types
+import Alpacc.Generator.Futhark.FutPrinter
 
 futharkLexer :: String
 futharkLexer = $(embedStringFile "futhark/lexer.fut")
@@ -104,8 +105,8 @@ generateLexer lexer terminal_index_map terminal_type = do
     futharkLexer
       <> [i|
 module lexer = mk_lexer {
-  module terminal_module = #{terminal_type}
-  module endomorphism_module = #{endomorphism_type}
+  module terminal_module = #{futPrint terminal_type}
+  module endomorphism_module = #{futPrint endomorphism_type}
 
   type endomorphism = endomorphism_module.t
   type terminal = terminal_module.t

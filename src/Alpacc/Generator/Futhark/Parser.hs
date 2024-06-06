@@ -264,6 +264,8 @@ module bracket_module = #{futPrint bracket_type}
 
 type look_type = #{look_type}
 
+def look_eq: look_type -> look_type -> bool = (==)
+
 def number_of_terminals: i64 = #{number_of_terminals}
 def number_of_productions: i64 = #{number_of_productions} 
 def q: i64 = #{q}
@@ -279,13 +281,6 @@ def production_to_terminal: [number_of_productions](opt terminal) =
 #{arities}
 
 #{createHashFunction terminal_type q k}
-
-def key_to_config (_: look_type):
-                  opt ([max_ao]bracket, [max_pi]production) =
-    map_opt (
-      \\((a),(b)) ->
-        (sized max_ao [a], sized max_pi [b])
-    ) <| #none
 
 def array_to_look_type [n] (arr: [n]terminal): look_type =
   #{toTupleIndexArray "arr" (q+k)}

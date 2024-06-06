@@ -29,12 +29,12 @@ module type parser_context = {
   val start_terminal: terminal_module.t
   val end_terminal: terminal_module.t
   val ne: ([max_ao]bracket_module.t, [max_pi]production_module.t)
-  val key_to_config: look_type -> opt ([max_ao]bracket_module.t, [max_pi]production_module.t)
   val hash_table: [hash_table_mem_size](opt (look_type, ([max_ao]bracket_module.t, [max_pi]production_module.t)))
   val offset_array: [hash_table_size]terminal_module.t
   val consts_array: [hash_table_size](opt look_type)
   val consts: look_type
   val hash: look_type -> look_type -> terminal_module.t
+  val look_eq: look_type -> look_type -> bool
 }
 
 module mk_parser(P: parser_context) = {
@@ -104,9 +104,20 @@ module mk_parser(P: parser_context) = {
          |> and
     case #none -> false
 
+  def key_to_config (key: P.look_type): opt ([P.max_ao]bracket_module.t, [P.max_pi]production_module.t) =
+    let idx = P.hash P.consts key
+    let offset = P.offset_array[terminal_module.to_i64 idx]
+    in copy P.consts_array[terminal_module.to_i64 offset]
+       |> map_opt (P.hash key)
+       |> bind_opt (\i -> copy P.hash_table[terminal_module.to_i64 i])
+       |> bind_opt (
+            \(key', value) ->
+              if key `P.look_eq` key' then #some value else #none
+          )
+
   def pre_productions [n] (arr: [n]terminal): []production =
     let arr' = [P.start_terminal] ++ arr ++ [P.end_terminal]
-    let configs = keys arr' |> map P.key_to_config
+    let configs = keys arr' |> map key_to_config
     in if any (is_none) configs
        then []
        else
