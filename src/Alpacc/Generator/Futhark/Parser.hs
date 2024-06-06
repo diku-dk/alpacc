@@ -188,7 +188,7 @@ toTupleIndexArray name n = futPrint $ NTuple $ map (indexArray name) [0 .. n - 1
 createHashFunction :: IInt -> Int -> Int -> String
 createHashFunction int q k = 
   [i|
-def hash #{a_arg} #{b_arg} =
+def hash_no_mod #{a_arg} #{b_arg} =
   #{body}
 |]
   where
@@ -202,9 +202,7 @@ def hash #{a_arg} #{b_arg} =
       if qk <= 0
       then ""
       else
-        ("("++)
-        $ (++[i|) terminal_module.% #{futPrint int}.i64 hash_table_size|])
-        $ List.foldl1 (concatWith " terminal_module.* ")
+        List.foldl1 (concatWith " terminal_module.* ")
         $ zipWith (
             ("("++)
             . (++")")
@@ -249,6 +247,7 @@ generateParser q k grammar symbol_index_map = do
         <$> elementArray hash_table
   let consts_array = constsArray hash_table
   let consts_array_str = futPrint $ fmap (fmap NTuple) consts_array
+  let size_array = futPrint $ sizeArray hash_table
   let consts = futPrint $ NTuple $ initHashConsts hash_table
   let hash_table_size = ABase.numElements consts_array 
   return . (,terminal_type) $
@@ -289,7 +288,10 @@ def hash_table =
   #{hash_table_str} :> [hash_table_mem_size](opt (look_type, ([max_ao]bracket, [max_pi]production)))
 
 def offset_array =
-  #{offsets_array_str} :> [hash_table_size]terminal
+  #{offsets_array_str} :> [hash_table_size]i64
+
+let size_array =
+  #{size_array} :> [hash_table_size]i64
 
 def consts_array =
   #{consts_array_str} :> [hash_table_size](opt look_type)

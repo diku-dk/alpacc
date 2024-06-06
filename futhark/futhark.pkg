@@ -1,4 +1,4 @@
 require {
   github.com/diku-dk/sorts 0.6.0 #f448cd990c86c566715915a8fc4182c8c2ff5400
-  github.com/diku-dk/containers 0.0.0-20240201231208+d867084c0748f9b9b9e268df074a18604f8cf4c4 #d867084c0748f9b9b9e268df074a18604f8cf4c4
+  github.com/diku-dk/containers 0.0.0-20240606092309+efbe2d8b74cf291c7058bbc09d11bd40a9c4516f
 }
