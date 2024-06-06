@@ -202,11 +202,11 @@ def hash_no_mod #{a_arg} #{b_arg} =
       if qk <= 0
       then ""
       else
-        List.foldl1 (concatWith " terminal_module.* ")
+        List.foldl1 (concatWith " terminal_module.+ ")
         $ zipWith (
             ("("++)
             . (++")")
-            .: concatWith " terminal_module.+ "
+            .: concatWith " terminal_module.* "
           ) as bs
 
 -- | Creates a string that indexes an array in the Futhark language.

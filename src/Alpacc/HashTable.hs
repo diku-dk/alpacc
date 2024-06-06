@@ -1,6 +1,7 @@
 module Alpacc.HashTable
   ( hashTable
   , hashTableSize
+  , hash
   , HashTableMem (..)
   , UInt (..)
   )
