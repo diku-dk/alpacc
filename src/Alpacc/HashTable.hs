@@ -42,6 +42,7 @@ data HashTableMem i v =
   { offsetArray :: Array i i
   , elementArray :: Array i (Maybe ([i], v))
   , constsArray :: Array i (Maybe [i])
+  , sizeArray :: Array i i
   , initHashConsts :: [i]
   } deriving (Eq, Ord, Show)
 
@@ -103,12 +104,6 @@ initLevelOne int table g = do
         , levelOneElements = elements
         }
 
-countLevelOne :: Integral i => LevelOne i v -> i
-countLevelOne =
-  sum
-  . fmap (fromIntegral . fromEnum . isJust)
-  . levelOneElements
-
 hashTableMem ::
   (Show v, IntType t) =>
   t ->
@@ -123,24 +118,23 @@ hashTableMem int hash_table
         , elementArray = mkElements keys
         , constsArray = consts_array
         , initHashConsts = level_two_consts
+        , sizeArray = size_array
         }
   | otherwise = hashTableMem int hash_table
   where
     level_two_size = levelTwoSize hash_table
     level_two_consts = levelTwoConsts hash_table
     level_two_elements = levelTwoElements hash_table
-    countElems Nothing = 0
-    countElems (Just a) = countLevelOne a
     countArraySize Nothing = 0
     countArraySize (Just a) = levelOneSize a
+    size_array = countArraySize <$> level_two_elements
     offset_array =
       Array.array (0, level_two_size - 1)
       $ zip [0..]
       $ init
       $ scanl (+) 0
-      $ countElems
-      <$> Array.elems level_two_elements
-    array_size = sum $ countArraySize <$> level_two_elements
+      $ Array.elems size_array
+    array_size = sum size_array
     consts_array = fmap levelOneConsts <$> level_two_elements
     mkElements keys =
       Array.listArray (0, fromIntegral (array_size - 1))
