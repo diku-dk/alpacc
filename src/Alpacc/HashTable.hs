@@ -18,7 +18,6 @@ import Data.Set qualified as Set
 import Data.Array (Array)
 import Data.Array qualified as Array
 import Data.List qualified as List
-import Data.Either.Extra
 import Data.Maybe
 import Data.String.Interpolate (i)
 import Alpacc.Types
@@ -112,11 +111,10 @@ hashTableMem ::
   Either String (HashTableMem Integer v)
 hashTableMem int hash_table
   | array_size <= intTypeMaxBound int = do
-      keys <- mapM toIndex $ Set.toList $ levelTwoKeys hash_table
       return $
         HashTableMem
         { offsetArray = offset_array
-        , elementArray = mkElements keys
+        , elementArray = elements_array
         , constsArray = consts_array
         , initHashConsts = level_two_consts
         , sizeArray = size_array
@@ -136,21 +134,15 @@ hashTableMem int hash_table
       $ scanl (+) 0
       $ Array.elems size_array
     array_size = sum size_array
+    elements_array =
+      Array.listArray (0, array_size - 1)
+      $ concat
+      $ mapMaybe (fmap (Array.elems . levelOneElements))
+      $ Array.elems level_two_elements
     consts_array = fmap levelOneConsts <$> level_two_elements
-    mkElements keys =
-      Array.listArray (0, fromIntegral (array_size - 1))
-      $ concat keys
-    toIndex key = do
-      level_one <-
-        maybeToEither "Error: Could not create layout for hash table."
-        $ level_two_elements Array.! i'
-      let level_one_elements = levelOneElements level_one
-      return $ Array.elems level_one_elements
-      where
-        i' = hash int level_two_size level_two_consts key
 
 initHashTable' ::
-  (StatefulGen g m, IntType t, Show t, Ord t) =>
+  (StatefulGen g m, IntType t, Show t, Show v, Ord t) =>
   t ->
   Map [Integer] v ->
   g ->
@@ -193,7 +185,7 @@ initHashTable' int table g
         (k, _) = head xs
 
 initHashTable ::
-  (IntType t, Show t, Ord t) =>
+  (IntType t, Show t, Ord t, Show v) =>
   t ->
   Int ->
   Map [Integer] v ->

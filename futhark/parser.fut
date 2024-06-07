@@ -114,7 +114,7 @@ module mk_parser(P: parser_context) = {
     let size = P.size_array[seg_idx]
     in copy P.consts_array[seg_idx]
        |> map_opt (hash size key)
-       |> bind_opt (\i -> copy P.hash_table[seg_off + i])
+       |> bind_opt (\i -> copy P.hash_table[(seg_off + i) % P.hash_table_mem_size])
        |> bind_opt (
             \(key', value) ->
               if key `P.look_eq` key' then #some value else #none

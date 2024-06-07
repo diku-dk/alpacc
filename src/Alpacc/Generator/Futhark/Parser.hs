@@ -185,8 +185,8 @@ createNe max_alpha_omega max_pi = futPrint ne
 toTupleIndexArray :: (Show a, Num a, Enum a) => String -> a -> String
 toTupleIndexArray name n = futPrint $ NTuple $ map (indexArray name) [0 .. n - 1]
 
-createHashFunction :: IInt -> Int -> Int -> String
-createHashFunction int q k = 
+createHashFunction :: Int -> Int -> String
+createHashFunction q k = 
   [i|
 def hash_no_mod #{a_arg} #{b_arg} =
   #{body}
@@ -279,7 +279,7 @@ def production_to_terminal: [number_of_productions](opt terminal) =
   #{prods_to_ters}
 #{arities}
 
-#{createHashFunction terminal_type q k}
+#{createHashFunction q k}
 
 def array_to_look_type [n] (arr: [n]terminal): look_type =
   #{toTupleIndexArray "arr" (q+k)}
