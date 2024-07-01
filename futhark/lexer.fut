@@ -20,7 +20,7 @@ module type lexer_context = {
   val produce_offset: endomorphism_module.t
   val is_ignore: terminal_module.t -> bool
   val transitions_to_endomorphisms: [256]endomorphism_module.t
-  val compositions: [endomorphism_size][endomorphism_size]endomorphism_module.t
+  val compositions: [endomorphism_size * endomorphism_size]endomorphism_module.t
   val dead_terminal: terminal_module.t
 }
 
@@ -58,7 +58,7 @@ module mk_lexer(L: lexer_context) = {
     #[unsafe]
     let a' = to_index a
     let b' = to_index b
-    in copy L.compositions[b', a']
+    in copy L.compositions[b' * L.endomorphism_size + a']
     
   def trans_to_endo (c: u8): endomorphism =
     copy L.transitions_to_endomorphisms[u8.to_i64 c]

@@ -50,8 +50,8 @@ compositionsArray parallel_lexer = do
     maybeToEither errorMessage
     $ mapM row [0..endomorphisms_size - 1]
   let result =
-        ("def compositions : [endomorphism_size][endomorphism_size]endomorphism = "++)
-        $ (++"] :> [endomorphism_size][endomorphism_size]endomorphism")
+        ("def compositions : [endomorphism_size * endomorphism_size]endomorphism = "++)
+        $ (++"] :> [endomorphism_size * endomorphism_size]endomorphism")
         $ ("["++)
         $ List.intercalate ",\n" vals
   return result
@@ -62,10 +62,7 @@ compositionsArray parallel_lexer = do
       vals <-
         mapM (\k -> show <$> Map.lookup (k, j) _compositions)
         [0..endomorphisms_size - 1]
-      let result =
-            (++"]")
-            $ ("["++)
-            $ List.intercalate ", " vals
+      let result = List.intercalate ", " vals
       return result
 
 endomorphismIntegral ::
