@@ -33,14 +33,14 @@ type S = Int
 type E = Int
 
 data Endomorphism =
-  Endomorphism (UArray S S) (UArray S Bool) deriving (Eq, Ord, Show)
+  Endomorphism !(UArray S S) !(UArray S Bool) deriving (Eq, Ord, Show)
 
 data EndoData t =
   EndoData
-  { endo :: E
-  , token :: Maybe t
-  , isAccepting :: Bool
-  , isProducing :: Bool
+  { endo :: !E
+  , token :: !(Maybe t)
+  , isAccepting :: !Bool
+  , isProducing :: !Bool
   } deriving (Show, Eq, Ord)
 
 maskSizes ::
