@@ -26,7 +26,7 @@ lexer-rust: lexer.rs Cargo.toml Cargo.lock
 	@cp target/release/lexer-rust .
 
 json.fut: json.alp data.json
-	alpacc json.alp --lexer
+	alpacc futhark json.alp --lexer
 	@printf -- "\n-- ==\n-- entry: lex\n-- script input { \$$loadbytes \"data.json\" }\n-- output @ data.out\n" >> json.fut
 	futhark pkg sync
 
