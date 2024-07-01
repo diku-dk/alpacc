@@ -1,5 +1,5 @@
 CC?=cc
-CFLAGS=-O3
+CFLAGS=-O3 -Werror -Wall -Wextra
 H=\x1B[32m\033[1m
 E=\033[0m\x1B[0m
 FUTHARK_BACKEND?=cuda
@@ -13,7 +13,7 @@ lexer-c: lexer.c
 	$(CC) -o $@ $^ $(CFLAGS)
 
 lexer-cuda: lexer.cu
-	nvcc --std=c++14 -O3 -o $@ $^
+	nvcc --std=c++14 -o $@ $^ $(CFLAG)
 
 data.in: tokens
 	@printf "Creating input dataset...\n"
@@ -25,7 +25,7 @@ lexer-rust: lexer.rs Cargo.toml Cargo.lock
 	@cp target/release/lexer-rust .
 
 sexp.fut: sexp.alp data.in
-	alpacc sexp.alp --lexer
+	alpacc futhark sexp.alp --lexer
 	@printf -- "\n-- ==\n-- entry: lex\n-- script input { \$$loadbytes \"data.in\" }\n-- output @ data.out\n" >> sexp.fut
 	futhark pkg sync
 
