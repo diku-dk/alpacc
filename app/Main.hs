@@ -10,8 +10,12 @@ import System.FilePath.Posix (stripExtension, takeFileName)
 import System.Exit (exitFailure)
 import Alpacc.CFG
 
+data Backend
+  = Futhark
+  | CUDA deriving (Show)
+
 data Input
-  = FileInput FilePath
+  = FileInput !FilePath
   | StdInput deriving (Show)
 
 data Generator
@@ -27,11 +31,12 @@ instance Semigroup Generator where
   GenerateParser <> _ = GenerateBoth
 
 data Parameters = Parameters
-  { input     :: Input
-  , output    :: Maybe String
-  , lookback  :: Int
-  , lookahead :: Int
-  , generator :: Generator} deriving (Show)
+  { input     :: !Input
+  , output    :: !(Maybe String)
+  , lookback  :: !Int
+  , lookahead :: !Int
+  , generator :: !Generator
+  , backend   :: !Backend} deriving (Show)
 
 lookbackParameter :: Parser Int
 lookbackParameter =
@@ -96,16 +101,23 @@ lexerParserParametar = liftA2 (<>) parserParameter lexerParameter
 generateParametar :: Parser Generator
 generateParametar = lexerParserParametar <|> pure GenerateBoth
 
-parameters :: Parser Parameters
-parameters = Parameters
+parameters :: Backend -> Parser Parameters
+parameters backend = Parameters
   <$> inputParameter
   <*> outputParameter
   <*> lookbackParameter
   <*> lookaheadParameter
   <*> generateParametar
+  <*> pure backend
+
+commands :: Parser Parameters
+commands =
+  subparser
+  (command "futhark" (info (parameters Futhark) (progDesc "Generate parsers written in CUDA."))
+  <> command "cuda" (info (parameters CUDA) (progDesc "Generate parsers written in Futhark.")))
 
 options :: ParserInfo Parameters
-options = info (parameters <**> helper)
+options = info (commands <**> helper)
   ( fullDesc
   <> progDesc "Creates a parallel parser in Futhark using FILE."
   <> header "Alpacc" )
@@ -129,7 +141,11 @@ main = do
           Just path -> path
           Nothing -> case input_method of
             StdInput -> "parser.fut"
-            FileInput path -> (++".fut") . fromJust . stripExtension "alp" $ takeFileName path
+            FileInput path ->
+              (++".fut")
+              . fromJust
+              . stripExtension "alp"
+              $ takeFileName path
 
   contents <- case input_method of
         StdInput -> TextIO.getContents
