@@ -1,54 +1,10 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <math.h>
-#include <cuda_runtime.h>
 #include <stdint.h>
-#include <time.h>
-#include <assert.h>
-#include <stdlib.h>
-#include <limits.h>
-#include <sys/time.h>
-#include <stdint.h>
-#include <iostream>
-#include <random>
-#include <utility>
-#include <cub/cub.cuh>
 
 using Token = uint8_t;
 using State = uint16_t;
 using Index = uint32_t;
 using Char = uint8_t;
 using Size = size_t;
-
-int timeval_subtract(struct timeval *result, struct timeval *t2, struct timeval *t1) {
-    unsigned int resolution = 1000000;
-    long int diff = (t2->tv_usec + resolution * t2->tv_sec) - (t1->tv_usec + resolution * t1->tv_sec);
-    result->tv_sec = diff / resolution;
-    result->tv_usec = diff % resolution;
-    return (diff < 0);
-}
-
-void compute_descriptors(timeval* measurements, Size size) {   
-    double sample_mean = 0.0;
-    double sample_variance = 0.0;
-    double d_size = (double) size;
-    double diff;
-    timeval t_diff;
-    
-    for (Size i = 0; i < size; i++) {
-        t_diff = measurements[i];
-        diff = t_diff.tv_sec * 1e6 + t_diff.tv_usec;
-        sample_mean += diff / d_size;
-        sample_variance += (diff * diff) / d_size;
-    }
-
-    double sample_std = sqrt(sample_variance);
-    double bound = (0.95 * sample_std) / sqrt(d_size - 1);
-
-    printf("Average time: %.0lfμs", sample_mean);
-    printf(" (95%% CI: [%.0lfμs, %.0lfμs])\n", sample_mean - bound, sample_mean + bound);
-}
 
 const Size NUM_STATES = 12;
 const Size NUM_TRANS = 256;
@@ -61,22 +17,6 @@ const State ACCEPT_MASK = 128;
 const State ACCEPT_OFFSET = 7;
 const State PRODUCE_MASK = 256;
 const State PRODUCE_OFFSET = 8;
-
-__device__ __forceinline__ State get_index(State state) {
-    return (state & ENDO_MASK) >> ENDO_OFFSET;
-}
-
-__device__ __forceinline__ Token get_terminal(State state) {
-    return (state & TERMINAL_MASK) >> TERMINAL_OFFSET;
-}
-
-bool is_accept(State state) {
-    return (state & ACCEPT_MASK) >> ACCEPT_OFFSET;
-}
-
-__device__ __forceinline__ bool is_produce(State state) {
-    return (state & PRODUCE_MASK) >> PRODUCE_OFFSET;
-}
 
 State h_to_state[NUM_TRANS] =
         {75, 75, 75, 75, 75, 75, 75, 75, 75, 128, 128, 75, 75, 128,
@@ -112,6 +52,67 @@ State h_compose[NUM_STATES * NUM_STATES] =
      153, 153, 153, 153, 153, 153, 153, 153, 153, 153, 153, 75,
      128, 161, 178, 147, 132, 421, 438, 407, 392, 153, 74, 75,
      75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75};
+
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <math.h>
+#include <cuda_runtime.h>
+#include <stdint.h>
+#include <time.h>
+#include <assert.h>
+#include <stdlib.h>
+#include <limits.h>
+#include <sys/time.h>
+#include <iostream>
+#include <random>
+#include <utility>
+#include <cub/cub.cuh>
+
+int timeval_subtract(struct timeval *result, struct timeval *t2, struct timeval *t1) {
+    unsigned int resolution = 1000000;
+    long int diff = (t2->tv_usec + resolution * t2->tv_sec) - (t1->tv_usec + resolution * t1->tv_sec);
+    result->tv_sec = diff / resolution;
+    result->tv_usec = diff % resolution;
+    return (diff < 0);
+}
+
+void compute_descriptors(timeval* measurements, Size size) {   
+    double sample_mean = 0.0;
+    double sample_variance = 0.0;
+    double d_size = (double) size;
+    double diff;
+    timeval t_diff;
+    
+    for (Size i = 0; i < size; i++) {
+        t_diff = measurements[i];
+        diff = t_diff.tv_sec * 1e6 + t_diff.tv_usec;
+        sample_mean += diff / d_size;
+        sample_variance += (diff * diff) / d_size;
+    }
+
+    double sample_std = sqrt(sample_variance);
+    double bound = (0.95 * sample_std) / sqrt(d_size - 1);
+
+    printf("Average time: %.0lfμs", sample_mean);
+    printf(" (95%% CI: [%.0lfμs, %.0lfμs])\n", sample_mean - bound, sample_mean + bound);
+}
+
+__device__ __forceinline__ State get_index(State state) {
+    return (state & ENDO_MASK) >> ENDO_OFFSET;
+}
+
+__device__ __forceinline__ Token get_terminal(State state) {
+    return (state & TERMINAL_MASK) >> TERMINAL_OFFSET;
+}
+
+bool is_accept(State state) {
+    return (state & ACCEPT_MASK) >> ACCEPT_OFFSET;
+}
+
+__device__ __forceinline__ bool is_produce(State state) {
+    return (state & PRODUCE_MASK) >> PRODUCE_OFFSET;
+}
 
 struct LexerCtx {
     State* d_to_state;
@@ -235,8 +236,6 @@ void lex(LexerCtx* ctx,
          TokenSpan** tokens,
          Size* num_tokens,
          Size size) {
-    timeval prev, curr, t_diff;
-    double diff;
     assert(*tokens == NULL);
     assert(size != 0);
 
@@ -249,14 +248,6 @@ void lex(LexerCtx* ctx,
     cudaMalloc((void**) &d_num_tokens, sizeof(Size));
     
     to_padf(ctx->d_to_state, d_str, d_temp, d_indices_in, size);
-    /*
-    gettimeofday(&prev, NULL);
-    cudaDeviceSynchronize();
-    gettimeofday(&curr, NULL);
-    timeval_subtract(&t_diff, &curr, &prev);
-    diff = t_diff.tv_sec * 1e6 + t_diff.tv_usec;
-    printf("time=%f\n", diff);
-    */
     
     cub::DeviceScan::InclusiveScan(d_temp_storage, temp_storage_bytes,
                                    d_temp, d_state, compose, size);
