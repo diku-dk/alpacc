@@ -1,10 +1,8 @@
-#include <stdint.h>
-
-using Token = uint8_t;
-using State = uint16_t;
-using Index = uint32_t;
-using Char = uint8_t;
-using Size = size_t;
+using Token = unsigned char;
+using State = unsigned short;
+using Index = unsigned int;
+using Char = unsigned char;
+using Size = unsigned long;
 
 const Size NUM_STATES = 12;
 const Size NUM_TRANS = 256;
@@ -53,20 +51,7 @@ State h_compose[NUM_STATES * NUM_STATES] =
      128, 161, 178, 147, 132, 421, 438, 407, 392, 153, 74, 75,
      75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75};
 
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <math.h>
-#include <cuda_runtime.h>
-#include <stdint.h>
-#include <time.h>
-#include <assert.h>
-#include <stdlib.h>
-#include <limits.h>
 #include <sys/time.h>
-#include <iostream>
-#include <random>
-#include <utility>
 #include <cub/cub.cuh>
 
 int timeval_subtract(struct timeval *result, struct timeval *t2, struct timeval *t1) {
