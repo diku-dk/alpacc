@@ -1,4 +1,4 @@
-using Token = unsigned char;
+using Token = char;
 using State = unsigned short;
 using Index = unsigned int;
 using Char = unsigned char;
@@ -130,7 +130,6 @@ __global__ void to_padf_kernel(State* d_to_state,
                                Index* indices,
                                Size size) {
     const Index gid = blockIdx.x * blockDim.x + threadIdx.x;
-    __syncthreads();
 
     if (gid < size) {
         d_out[gid] = d_to_state[d_in[gid]];
@@ -297,6 +296,35 @@ void lex(LexerCtx* ctx,
     }
     
     cudaFree(d_num_tokens);
+}
+
+const Token EMPTY_TOKEN = 127;
+
+__global__ void to_config_kernel(State* d_to_state,
+                                 Char* d_in,
+                                 State* d_out,
+                                 Index* indices,
+                                 Size size) {
+    const Index gid = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (gid < size) {
+        d_out[gid] = d_to_state[d_in[gid]];
+        indices[gid] = gid;
+    }
+}
+
+void to_config(State* d_to_state,
+              Char* d_in,
+              State* d_out,
+              Index* indices,
+              Size size) {
+    Size block_size = 256;
+    Size grid_size = (size + block_size - 1) / block_size;
+    to_config_kernel<<<grid_size, block_size>>>(d_to_state,
+                                                d_in,
+                                                d_out,
+                                                indices,
+                                                size);
 }
 
 Char* read_file(const char* filename, Size* size) {
