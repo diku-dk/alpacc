@@ -84,6 +84,7 @@ def generate_tests_from_json(json_source) -> None:
     
     p = subprocess.Popen(
         ['alpacc',
+         'futhark',
          '--stdin',
          '--lexer',
          f'--output={filename}'],
