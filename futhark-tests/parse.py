@@ -240,6 +240,7 @@ def generate_random_llp_grammar(
         could_create = False
         p = subprocess.Popen(
             ['alpacc',
+             'futhark',
              '--stdin',
              f'--output={filename}',
              f'--lookback={q}',
