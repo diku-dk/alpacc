@@ -44,8 +44,8 @@ transitionsToEndomorphismsArray parallel_lexer = do
   where
     to_endo = endomorphisms parallel_lexer
     
-compositionsArray :: ParallelLexer Word8 Int -> Either String String
-compositionsArray parallel_lexer = do
+compositionsArray :: UInt -> ParallelLexer Word8 Int -> Either String String
+compositionsArray int parallel_lexer = do
   vals <-
     maybeToEither errorMessage
     $ mapM row [0..endomorphisms_size - 1]
@@ -60,7 +60,7 @@ compositionsArray parallel_lexer = do
     endomorphisms_size = endomorphismsSize parallel_lexer
     row j = do
       vals <-
-        mapM (\k -> show <$> Map.lookup (k, j) _compositions)
+        mapM (\k -> (++ futPrint int) . show <$> Map.lookup (k, j) _compositions)
         [0..endomorphisms_size - 1]
       let result = List.intercalate ", " vals
       return result
@@ -97,7 +97,7 @@ generateLexer lexer terminal_index_map terminal_type = do
   let _identity = identity parallel_lexer
   endomorphism_type <- endomorphismIntegral int_parallel_lexer
   transitions_to_endo <- transitionsToEndomorphismsArray parallel_lexer
-  compositions_table <- compositionsArray parallel_lexer
+  compositions_table <- compositionsArray endomorphism_type parallel_lexer
   Right $
     futharkLexer
       <> [i|
