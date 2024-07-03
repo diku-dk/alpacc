@@ -313,11 +313,11 @@ __global__ void to_config_kernel(State* d_to_state,
     }
 }
 
-void to_config(State* d_to_state,
-              Char* d_in,
-              State* d_out,
-              Index* indices,
-              Size size) {
+void to_config(TokenType* d_tokens,
+               Char* d_in,
+               State* d_out,
+               Index* indices,
+               Size size) {
     Size block_size = 256;
     Size grid_size = (size + block_size - 1) / block_size;
     to_config_kernel<<<grid_size, block_size>>>(d_to_state,
