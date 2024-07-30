@@ -63,30 +63,23 @@ module mk_lexer(L: lexer_context) = {
   def trans_to_endo (c: u8): endomorphism =
     copy L.transitions_to_endomorphisms[u8.to_i64 c]
 
-  def traverse [n] (str: [n]u8): *[n](bool, endomorphism) =
-    let endos =
-      map trans_to_endo str
-      |> scan compose L.identity_endomorphism
-    let produces = map is_produce endos
-    let produces =
-      if n == 0
-      then produces
-      else let produces[0] = true in produces
-    in zip produces endos
-  
+  def traverse [n] (str: [n]u8): *[n]endomorphism =
+    map trans_to_endo str
+    |> scan compose L.identity_endomorphism
+    
   def lex_with_dead [n'] (offset: i32)
                          (str: [n']u8):
                          [](terminal, (i32, i32)) =
     let n = i32.i64 n'
-    let ends_endos = if n == 0 then [] else traverse str
-    let is = filter (\i -> ends_endos[i].0) (0i32..<n)
+    let endos = traverse str
+    let is = filter (\i -> i == 0 || is_produce endos[i]) (0i32..<n)
     let new_size = length is
     in tabulate new_size (
                   \i ->
                     let start = is[i]
                     let end = if i == new_size - 1 then n else is[i + 1]
                     let span = (offset + start, offset + end)
-                    let (_, endo) = ends_endos[end - 1]
+                    let endo = endos[end - 1]
                     in (to_terminal endo, span)
                 )
     
