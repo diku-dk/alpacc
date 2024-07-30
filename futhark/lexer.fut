@@ -63,6 +63,17 @@ module mk_lexer(L: lexer_context) = {
   def trans_to_endo (c: u8): endomorphism =
     copy L.transitions_to_endomorphisms[u8.to_i64 c]
 
+  def traverse [n] (str: [n]u8): *[n](bool, endomorphism) =
+    let endos =
+      map trans_to_endo str
+      |> scan compose L.identity_endomorphism
+    let produces = map is_produce endos
+    let produces =
+      if n == 0
+      then produces
+      else let produces[0] = true in produces
+    in zip produces endos
+  
   def lex_with_dead [n'] (offset: i32)
                          (str: [n']u8):
                          [](terminal, (i32, i32)) =
@@ -78,16 +89,6 @@ module mk_lexer(L: lexer_context) = {
                     let (_, endo) = ends_endos[end - 1]
                     in (to_terminal endo, span)
                 )
-    
-  def lex [n'] (str: [n']u8): opt ([](terminal, (i32, i32))) =
-    let result = lex_with_dead 0 str
-    let is_valid =
-      length result == 0 ||
-      (last result).0 L.terminal_module.!= L.dead_terminal
-    let result = filter (not <-< L.is_ignore <-< (.0)) result
-    in if is_valid
-       then some result
-       else #none
     
   def lex [n'] (str: [n']u8): opt ([](terminal, (i32, i32))) =
     let result = lex_with_dead 0 str
