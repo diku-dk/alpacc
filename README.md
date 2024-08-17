@@ -28,7 +28,7 @@ T = a | "[" E "]" ;
 ```
 To construct an LLP(1, 1) grammar from this file the following command can be used.
 ```
-cabal run alpacc -- grammars/paper_grammar.alp -q 1 -k 1
+cabal run alpacc -- futhark grammars/paper_grammar.alp -q 1 -k 1
 ```
 This will create the Futhark source file `paper_grammar.fut` which contains the actual parser which is a function `parse`. 
 
