@@ -57,6 +57,11 @@ data Mask64 =
 
 newtype Masks64 = Masks64 (NonEmpty Mask64)
 
+findSize :: Int -> Int
+findSize = (int_size-) . countLeadingZeros . max 1 . (-1)
+  where
+    int_size = finiteBitSize (zeroBits :: Int)
+
 masks :: [Int] -> Either String Masks64
 masks sizes = do
   unless (any (0<) sizes) $ Left "Error: Negative sizes were used to encode the masks for the states in a data parallel lexer. This should not happen, contact a maintainer."
@@ -65,8 +70,6 @@ masks sizes = do
   let _masks = zipWith shift offsets bit_sizes
   pure $ Masks64 $ NonEmpty.fromList $ zipWith Mask64 _masks offsets
   where
-    int_size = finiteBitSize (zeroBits :: Int)
-    findSize = (int_size-) . countLeadingZeros . max 1 . (-1)
     bit_sizes = findSize <$> sizes
 
 data ParallelLexerMasks =
@@ -79,14 +82,26 @@ data ParallelLexerMasks =
   , producingOffset :: !Int
   } deriving (Eq, Ord, Show)
 
-extEndoType :: ParallelLexer -> Either String UInt
-extEndoType lexer = do
-  let 
+extEndoType :: ParallelLexer t k -> Either String UInt
+extEndoType (ParallelLexer { endomorphismsSize = a, tokenSize = b }) =
+  toIntType $ (2^) . findSize <$> [a, b, 1]
 
-lexerMasks :: ParallelLexer -> Either String ParallelLexerMasks
-lexerMasks lexer = do
-  unless 
-
+lexerMasks :: ParallelLexer t k -> Either String ParallelLexerMasks
+lexerMasks (ParallelLexer { endomorphismsSize = e, tokenSize = t }) = do
+  Masks64 ls <- masks [e, t, 1]
+  let [(index_mask, index_off),
+       (toke_mask, token_off),
+       (produce_mask, produce_off)] = toList ls
+  pure $
+    ParallelLexerMasks
+    { tokenMask = token_mask
+    , tokenOffset = token_off
+    , indexMask = index_mask
+    , indexOffset = index_off
+    , producingMask = produce_mask
+    , producingOffset = produce_off
+    }
+  
 newtype ExtEndoEncoded = ExtEndoEncoded Int
 
 endoDataToInt ::
@@ -185,13 +200,10 @@ intParallelLexer to_int lexer = do
   return $
     IntParallelLexer
     { parLexer = new_parallel_lexer
-    , endoMask = endo_mask
-    , tokenMask = token_mask
-    , produceMask = produce_mask
-    , endoSize =  shift 1 (a + b + c)
+    , parMasks = undefined
     }
   
-data ExtEndoCtx t =
+data ExtEndoCtx k =
   ExtEndoCtx
   { comps :: Map (E, E) E
   , endoMap :: Map ExtEndo E
@@ -207,7 +219,7 @@ data ExtEndoCtx t =
 endoInsert ::
   E ->
   ExtEndo ->
-  State ExtEndoCtx t ()
+  State (ExtEndoCtx k) ()
 endoInsert e endo = do
   inv_map <- gets inverseEndoMap
   let new_inv_map = IntMap.insert e endo inv_map
@@ -220,17 +232,17 @@ endoInsert e endo = do
       s { inverseEndoMap = new_inv_map
         , endoMap = new_map }
 
-eLookup :: E -> State ExtEndoCtx (Maybe ExtEndo)
+eLookup :: E -> State (ExtEndoCtx k) (Maybe ExtEndo)
 eLookup e = do
   inv_map <- gets inverseEndoMap
   return $ IntMap.lookup e inv_map
 
-connectedLookup :: E -> State ExtEndoCtx (Maybe IntSet)
+connectedLookup :: E -> State (ExtEndoCtx k) (Maybe IntSet)
 connectedLookup e = do
   _map <- gets connectedMap
   return $ IntMap.lookup e _map
 
-connectedUpdate :: E -> IntSet -> State ExtEndoCtx ()
+connectedUpdate :: E -> IntSet -> State (ExtEndoCtx k) ()
 connectedUpdate e e_set = do
   _map <- gets connectedMap
   inv_map <- gets inverseConnectedMap
@@ -243,17 +255,17 @@ connectedUpdate e e_set = do
     s { connectedMap = new_map
       , inverseConnectedMap = new_inverse_map }
 
-connectedUpdateAll :: IntMap IntSet -> State ExtEndoCtx ()
+connectedUpdateAll :: IntMap IntSet -> State (ExtEndoCtx k) ()
 connectedUpdateAll _map =
   mapM_ (uncurry connectedUpdate) $ IntMap.assocs _map
 
-insertComposition :: E -> E -> E -> State ExtEndoCtx ()
+insertComposition :: E -> E -> E -> State (ExtEndoCtx k) ()
 insertComposition e e' e'' = do
   _map <- gets comps
   let new_map = Map.insert (e, e') e'' _map
   modify $ \s -> s { comps = new_map }
 
-preSets :: E -> E -> State ExtEndoCtx (IntMap IntSet)
+preSets :: E -> E -> State (ExtEndoCtx k) (IntMap IntSet)
 preSets e'' e = do
   _map <- gets connectedMap
   inv_map <- gets inverseConnectedMap
@@ -268,7 +280,7 @@ preSets e'' e = do
           IntMap.fromList
           $ (,set) <$> IntSet.toList _set
 
-postSets :: E -> E -> State ExtEndoCtx (IntMap IntSet)
+postSets :: E -> E -> State (ExtEndoCtx k) (IntMap IntSet)
 postSets e'' e' = do
   _map <- gets connectedMap
   e_set' <- fromMaybe IntSet.empty <$> connectedLookup e'
@@ -277,7 +289,7 @@ postSets e'' e' = do
 
 endomorphismLookup ::
   ExtEndo ->
-  State ExtEndoCtx (Maybe E)
+  State (ExtEndoCtx k) (Maybe E)
 endomorphismLookup endomorphism = do
   _map <- gets endoMap
   return $ Map.lookup endomorphism _map
@@ -292,7 +304,7 @@ compose (ExtEndo a a') (ExtEndo b b') = ExtEndo c c'
     auxiliary i = (i, b UArray.! (a UArray.! i))
     auxiliary' i = (i, b' UArray.! (a UArray.! i))
 
-endoNext :: State ExtEndoCtx E
+endoNext :: State (ExtEndoCtx k) E
 endoNext = do
   max_e <- gets maxE
   let new_max_e = succ max_e
@@ -302,7 +314,7 @@ endoNext = do
 endoCompose ::
   E ->
   E ->
-  State ExtEndoCtx (IntMap IntSet)
+  State (ExtEndoCtx k) (IntMap IntSet)
 endoCompose e e' = do
   maybe_endo <- eLookup e
   maybe_endo' <- eLookup e'
@@ -339,7 +351,7 @@ popElement _map =
 
 endoCompositionsTable ::
   IntMap IntSet ->
-  State ExtEndoCtx ()
+  State (ExtEndoCtx k) ()
 endoCompositionsTable _map =
   case popElement _map of
     Just ((e, e'), map') -> do
@@ -449,7 +461,7 @@ connectedTable lexer =
 initExtEndoCtx ::
   (Enum t, Bounded t, IsTransition t, Ord k) =>
   ParallelDFALexer t S k ->
-  ExtEndoCtx
+  ExtEndoCtx k
 initExtEndoCtx lexer =
   ExtEndoCtx
   { comps = Map.empty
