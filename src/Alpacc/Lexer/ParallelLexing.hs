@@ -8,6 +8,7 @@ where
 import Alpacc.Types
 import Alpacc.Lexer.FSA
 import Alpacc.Lexer.DFA
+import Data.Function
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map hiding (Map)
 import Data.IntMap.Strict (IntMap)
@@ -72,6 +73,18 @@ masks sizes = do
   where
     bit_sizes = findSize <$> sizes
 
+      
+data ParallelLexer t e =
+  ParallelLexer
+  { compositions :: Map (E, E) e 
+  , endomorphisms :: Map t e 
+  , identity :: e
+  , tokenSize :: Int
+  , endomorphismsSize :: Int
+  , acceptArray :: UArray E Bool 
+  } deriving (Show, Eq, Ord)
+
+
 data ParallelLexerMasks =
   ParallelLexerMasks
   { tokenMask :: !Int
@@ -84,48 +97,78 @@ data ParallelLexerMasks =
 
 extEndoType :: ParallelLexer t k -> Either String UInt
 extEndoType (ParallelLexer { endomorphismsSize = a, tokenSize = b }) =
-  toIntType $ (2^) . findSize <$> [a, b, 1]
+  maybeToEither errorMessage . toIntType . (2^)  . sum $ findSize <$> [a, b, 1]
 
-lexerMasks :: ParallelLexer t k -> Either String ParallelLexerMasks
-lexerMasks (ParallelLexer { endomorphismsSize = e, tokenSize = t }) = do
-  Masks64 ls <- masks [e, t, 1]
-  let [(index_mask, index_off),
-       (toke_mask, token_off),
-       (produce_mask, produce_off)] = toList ls
+parallelLexerToMasks64 :: ParallelLexer t k -> Either String Masks64
+parallelLexerToMasks64 (ParallelLexer { endomorphismsSize = e, tokenSize = t }) =
+  masks [e, t, 1]
+
+encodeMasks64 :: Masks64 -> NonEmpty Int -> Either String Int
+encodeMasks64 (Masks64 masks) elems
+  | NonEmpty.length masks == NonEmpty.length elems =
+    let x offset <$> masks
+    in pure $ sum $ NonEmpty.zipWith (flip shift) elems x 
+  | otherwise = fail errorMessage
+
+masks64ToParallelLexerMasks :: Masks64 -> Either String (ParallelLexerMasks) 
+masks64ToParallelLexerMasks (Masks64 ls) = do
+  let ls0 = NonEmpty.toList ls
+  (index, ls1) <- aux ls0
+  (token, ls2) <- aux ls1
+  (produce, _ls3) <- aux ls2
   pure $
     ParallelLexerMasks
-    { tokenMask = token_mask
-    , tokenOffset = token_off
-    , indexMask = index_mask
-    , indexOffset = index_off
-    , producingMask = produce_mask
-    , producingOffset = produce_off
+    { tokenMask = mask token
+    , tokenOffset = offset token
+    , indexMask = mask index
+    , indexOffset = offset index
+    , producingMask = mask produce
+    , producingOffset = offset produce
     }
+  where
+    aux = maybeToEither errorMessage . List.uncons
+
+parallelLexerMasksToMasks64 :: ParallelLexerMasks -> Masks64
+parallelLexerMasksToMasks64 lexer_masks =
+  Masks64 $ NonEmpty.fromList elems
+  where
+    ParallelLexerMasks
+      { indexMask = mask_index
+      , indexOffset = offset_index
+      , tokenMask = mask_token
+      , tokenOffset = offset_token
+      , producingMask = mask_produce
+      , producingOffset = offset_produce
+      } = lexer_masks
+    elems =
+      [(mask_index, offset_index)
+      ,(mask_token, offset_token)
+      ,(mask_produce, offset_produce)]
+
+lexerMasks :: ParallelLexer t k -> Either String ParallelLexerMasks
+lexerMasks lexer = do
+  ms <- parallelLexerToMasks64 lexer
+  pure $ masks64ToParallelLexerMasks ms
   
 newtype ExtEndoEncoded = ExtEndoEncoded Int
 
-endoDataToInt ::
+encodeEndoData ::
   Ord k =>
-  (Int, Int, Int) ->
+  ParallelLexerMasks ->
   Map (Maybe k) Int ->
   ExtEndoData k ->
-  Either String Int
-endoDataToInt (endo_mask_size
-              ,token_mask_size
-              ,_) to_int endo_data = do
-  t_int <- findInt maybe_token
-  return $
-    e +
-    shift t_int token_off +
-    shift p_int produce_off
+  Either String ExtEndoEncoded
+encodeEndoData lexer_masks to_int endo_data = do
+  t <- findInt maybe_token 
+  extEndoEncoded <$> encodeMasks64 masks (NonEmpty.fromList [e, t, p])
   where
-    token_off = endo_mask_size
-    produce_off = token_off + token_mask_size
-    ExtEndoData { endo = e
-             , token = maybe_token
-             , isProducing = produce
-             } = endo_data
-    p_int = fromEnum produce
+    masks = parallelLexerMasksToMasks64 lexer_masks
+    ExtEndoData
+      { endo = e
+      , token = maybe_token
+      , isProducing = produce
+      } = endo_data
+    p = fromEnum produce
     findInt = maybeToEither errorMessage . flip Map.lookup to_int
 
 toExtEndoData ::
@@ -149,23 +192,12 @@ toExtEndoData lexer to_endo e = do
     toState e' = do
       ExtEndo endo' producing <- IntMap.lookup e' to_endo
       let (a, b) = bounds endo'
-      if a <= initial_state && initial_state <= b
-        then return (producing UArray.! initial_state
-                    ,endo' UArray.! initial_state)
-        else Nothing
+      unless  (a <= initial_state && initial_state <= b) (fail errorMessage)
+      pure (producing UArray.! initial_state
+           ,endo' UArray.! initial_state)
     token_map = terminalMap $ parDFALexer lexer
     toToken s = Map.lookup s token_map
     accept_states = accepting $ fsa $ parDFALexer lexer
-      
-data ParallelLexer t e =
-  ParallelLexer
-  { compositions :: Map (E, E) e 
-  , endomorphisms :: Map t e 
-  , identity :: e
-  , tokenSize :: Int
-  , endomorphismsSize :: Int
-  , acceptArray :: UArray E Bool 
-  } deriving (Show, Eq, Ord)
 
 data IntParallelLexer t =
   IntParallelLexer
@@ -208,7 +240,7 @@ data ExtEndoCtx k =
   { comps :: Map (E, E) E
   , endoMap :: Map ExtEndo E
   , inverseEndoMap :: IntMap ExtEndo
-  , endoData :: IntMap (ExtEndoData t)
+  , endoData :: IntMap (ExtEndoData k)
   , initialStateCtx :: S
   , deadStateCtx :: S
   , connectedMap :: IntMap IntSet
@@ -596,3 +628,5 @@ parallelLexer lexer = do
      , identity = identity_e
      , endomorphismsSize = endo_size
      })
+
+  
