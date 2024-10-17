@@ -42,10 +42,10 @@ type E = Int
 data ExtEndo =
   ExtEndo !(UArray S S) !(UArray S Bool) deriving (Eq, Ord, Show)
 
-data ExtEndoData t =
+data ExtEndoData k =
   ExtEndoData
   { endo :: !E
-  , token :: !(Maybe t)
+  , token :: !(Maybe k)
   , isAccepting :: !Bool
   , isProducing :: !Bool
   } deriving (Show, Eq, Ord)
@@ -59,7 +59,7 @@ data Mask64 =
 newtype Masks64 = Masks64 (NonEmpty Mask64)
 
 findSize :: Int -> Int
-findSize = (int_size-) . countLeadingZeros . max 1 . (-1)
+findSize = (int_size-) . countLeadingZeros . max 1 . pred
   where
     int_size = finiteBitSize (zeroBits :: Int)
 
@@ -104,13 +104,13 @@ parallelLexerToMasks64 (ParallelLexer { endomorphismsSize = e, tokenSize = t }) 
   masks [e, t, 1]
 
 encodeMasks64 :: Masks64 -> NonEmpty Int -> Either String Int
-encodeMasks64 (Masks64 masks) elems
-  | NonEmpty.length masks == NonEmpty.length elems =
-    let x offset <$> masks
+encodeMasks64 (Masks64 ms) elems
+  | NonEmpty.length ms == NonEmpty.length elems =
+    let x = offset <$> ms
     in pure $ sum $ NonEmpty.zipWith (flip shift) elems x 
-  | otherwise = fail errorMessage
+  | otherwise = Left errorMessage
 
-masks64ToParallelLexerMasks :: Masks64 -> Either String (ParallelLexerMasks) 
+masks64ToParallelLexerMasks :: Masks64 -> Either String ParallelLexerMasks 
 masks64ToParallelLexerMasks (Masks64 ls) = do
   let ls0 = NonEmpty.toList ls
   (index, ls1) <- aux ls0
@@ -141,28 +141,26 @@ parallelLexerMasksToMasks64 lexer_masks =
       , producingOffset = offset_produce
       } = lexer_masks
     elems =
-      [(mask_index, offset_index)
-      ,(mask_token, offset_token)
-      ,(mask_produce, offset_produce)]
+      [Mask64 {mask = mask_index, offset = offset_index}
+      ,Mask64 {mask = mask_token, offset = offset_token}
+      ,Mask64 {mask = mask_produce, offset = offset_produce}]
 
 lexerMasks :: ParallelLexer t k -> Either String ParallelLexerMasks
 lexerMasks lexer = do
   ms <- parallelLexerToMasks64 lexer
-  pure $ masks64ToParallelLexerMasks ms
-  
-newtype ExtEndoEncoded = ExtEndoEncoded Int
+  masks64ToParallelLexerMasks ms
 
 encodeEndoData ::
   Ord k =>
   ParallelLexerMasks ->
   Map (Maybe k) Int ->
   ExtEndoData k ->
-  Either String ExtEndoEncoded
+  Either String Int
 encodeEndoData lexer_masks to_int endo_data = do
   t <- findInt maybe_token 
-  extEndoEncoded <$> encodeMasks64 masks (NonEmpty.fromList [e, t, p])
+  encodeMasks64 ms (NonEmpty.fromList [e, t, p])
   where
-    masks = parallelLexerMasksToMasks64 lexer_masks
+    ms = parallelLexerMasksToMasks64 lexer_masks
     ExtEndoData
       { endo = e
       , token = maybe_token
@@ -192,7 +190,7 @@ toExtEndoData lexer to_endo e = do
     toState e' = do
       ExtEndo endo' producing <- IntMap.lookup e' to_endo
       let (a, b) = bounds endo'
-      unless  (a <= initial_state && initial_state <= b) (fail errorMessage)
+      unless (a <= initial_state && initial_state <= b) (fail errorMessage)
       pure (producing UArray.! initial_state
            ,endo' UArray.! initial_state)
     token_map = terminalMap $ parDFALexer lexer
@@ -201,8 +199,8 @@ toExtEndoData lexer to_endo e = do
 
 data IntParallelLexer t =
   IntParallelLexer
-  { parLexer :: ParallelLexer t Int
-  , parMasks :: ParallelLexerMasks
+  { parLexer :: !(ParallelLexer t Int)
+  , parMasks :: !ParallelLexerMasks
   } deriving (Show, Eq, Ord)
 
 intParallelLexer ::
@@ -211,18 +209,12 @@ intParallelLexer ::
   ParallelDFALexer t S k ->
   Either String (IntParallelLexer t)
 intParallelLexer to_int lexer = do
-  (endo_size, parallel_lexer) <- parallelLexer lexer
-  let token_size = Map.size to_int
-  size_tuple@(a, b, c) <- maskSizes endo_size token_size
-  let _masks = masks size_tuple
-  let endoDataToInt' = endoDataToInt size_tuple to_int
-  let (endo_mask, token_mask, produce_mask) = masks size_tuple
-  new_compositions <-
-    mapM endoDataToInt' (compositions parallel_lexer)
-  new_endomorphims <-
-    mapM endoDataToInt' (endomorphisms parallel_lexer)
-  new_identity <-
-    endoDataToInt' $ identity parallel_lexer
+  parallel_lexer <- parallelLexer lexer
+  ms <- lexerMasks parallel_lexer
+  let encode = encodeEndoData ms to_int
+  new_compositions <- mapM encode $ compositions parallel_lexer
+  new_endomorphims <- mapM encode $ endomorphisms parallel_lexer
+  new_identity <- encode $ identity parallel_lexer
   let new_parallel_lexer =
         parallel_lexer
         { compositions = new_compositions
@@ -232,53 +224,47 @@ intParallelLexer to_int lexer = do
   return $
     IntParallelLexer
     { parLexer = new_parallel_lexer
-    , parMasks = undefined
+    , parMasks = ms
     }
   
-data ExtEndoCtx k =
-  ExtEndoCtx
-  { comps :: Map (E, E) E
-  , endoMap :: Map ExtEndo E
-  , inverseEndoMap :: IntMap ExtEndo
-  , endoData :: IntMap (ExtEndoData k)
-  , initialStateCtx :: S
-  , deadStateCtx :: S
-  , connectedMap :: IntMap IntSet
-  , inverseConnectedMap :: IntMap IntSet
-  , maxE :: E
+data EndoCtx t k =
+  EndoCtx
+  { comps :: !(Map (E, E) E)
+  , endoMap :: !(Map t E)
+  , inverseEndoMap :: !(IntMap t)
+  , endoData :: !(IntMap (ExtEndoData k))
+  , initialStateCtx :: !S
+  , deadStateCtx :: !S
+  , connectedMap :: !(IntMap IntSet)
+  , inverseConnectedMap :: !(IntMap IntSet)
+  , maxE :: !E
+  , ecParallelLexer :: !(ParallelDFALexer t S k)
   } deriving (Show, Eq, Ord)
 
 endoInsert ::
+  (IsTransition t) =>
   E ->
-  ExtEndo ->
-  State (ExtEndoCtx k) ()
+  t ->
+  State (EndoCtx t k) ()
 endoInsert e endo = do
-  inv_map <- gets inverseEndoMap
-  let new_inv_map = IntMap.insert e endo inv_map
-
-  _map <- gets endoMap
-  let new_map = Map.insert endo e _map
+  new_inv_map <- IntMap.insert e endo <$> gets inverseEndoMap
+  new_map <- Map.insert endo e <$> gets endoMap
   
   modify $
     \s ->
       s { inverseEndoMap = new_inv_map
         , endoMap = new_map }
 
-eLookup :: E -> State (ExtEndoCtx k) (Maybe ExtEndo)
-eLookup e = do
-  inv_map <- gets inverseEndoMap
-  return $ IntMap.lookup e inv_map
+eLookup :: E -> State (EndoCtx t k) (Maybe t)
+eLookup e = IntMap.lookup e <$> gets inverseEndoMap
 
-connectedLookup :: E -> State (ExtEndoCtx k) (Maybe IntSet)
-connectedLookup e = do
-  _map <- gets connectedMap
-  return $ IntMap.lookup e _map
+connectedLookup :: E -> State (EndoCtx t k) (Maybe IntSet)
+connectedLookup e = IntMap.lookup e <$> gets connectedMap
 
-connectedUpdate :: E -> IntSet -> State (ExtEndoCtx k) ()
+connectedUpdate :: E -> IntSet -> State (EndoCtx t k) ()
 connectedUpdate e e_set = do
-  _map <- gets connectedMap
   inv_map <- gets inverseConnectedMap
-  let new_map = IntMap.insertWith IntSet.union e e_set _map
+  new_map <- IntMap.insertWith IntSet.union e e_set <$> gets connectedMap
   let new_inverse_map =
         IntMap.unionWith IntSet.union inv_map
         $ IntMap.fromList
@@ -287,17 +273,15 @@ connectedUpdate e e_set = do
     s { connectedMap = new_map
       , inverseConnectedMap = new_inverse_map }
 
-connectedUpdateAll :: IntMap IntSet -> State (ExtEndoCtx k) ()
-connectedUpdateAll _map =
-  mapM_ (uncurry connectedUpdate) $ IntMap.assocs _map
+connectedUpdateAll :: IntMap IntSet -> State (EndoCtx t k) ()
+connectedUpdateAll =
+  mapM_ (uncurry connectedUpdate) . IntMap.assocs
 
-insertComposition :: E -> E -> E -> State (ExtEndoCtx k) ()
+insertComposition :: E -> E -> E -> State (EndoCtx t k) ()
 insertComposition e e' e'' = do
-  _map <- gets comps
-  let new_map = Map.insert (e, e') e'' _map
-  modify $ \s -> s { comps = new_map }
+  modify $ \s -> s { comps = Map.insert (e, e') e'' $ comps s }
 
-preSets :: E -> E -> State (ExtEndoCtx k) (IntMap IntSet)
+preSets :: E -> E -> State (EndoCtx t k) (IntMap IntSet)
 preSets e'' e = do
   _map <- gets connectedMap
   inv_map <- gets inverseConnectedMap
@@ -312,41 +296,40 @@ preSets e'' e = do
           IntMap.fromList
           $ (,set) <$> IntSet.toList _set
 
-postSets :: E -> E -> State (ExtEndoCtx k) (IntMap IntSet)
+postSets :: E -> E -> State (EndoCtx t k) (IntMap IntSet)
 postSets e'' e' = do
-  _map <- gets connectedMap
   e_set' <- fromMaybe IntSet.empty <$> connectedLookup e'
   e_set'' <- fromMaybe IntSet.empty <$> connectedLookup e''
   return $ IntMap.singleton e'' (IntSet.difference e_set' e_set'')
 
 endomorphismLookup ::
-  ExtEndo ->
-  State (ExtEndoCtx k) (Maybe E)
+  (IsTransition t) =>
+  t ->
+  State (EndoCtx t k) (Maybe E)
 endomorphismLookup endomorphism = do
-  _map <- gets endoMap
-  return $ Map.lookup endomorphism _map
+  Map.lookup endomorphism <$> gets endoMap
 
-compose :: ExtEndo -> ExtEndo -> ExtEndo
-compose (ExtEndo a a') (ExtEndo b b') = ExtEndo c c'
-  where
-    c = UArray.array (0, numElements a - 1)
-      $ map auxiliary [0..(numElements a - 1)]
-    c' = UArray.array (0, numElements a' - 1)
-      $ map auxiliary' [0..(numElements a' - 1)]
-    auxiliary i = (i, b UArray.! (a UArray.! i))
-    auxiliary' i = (i, b' UArray.! (a UArray.! i))
+instance Semigroup ExtEndo where
+  (ExtEndo a a') <> (ExtEndo b b') = ExtEndo c c'
+    where
+      c = UArray.array (0, numElements a - 1)
+        $ map auxiliary [0..(numElements a - 1)]
+      c' = UArray.array (0, numElements a' - 1)
+        $ map auxiliary' [0..(numElements a' - 1)]
+      auxiliary i = (i, b UArray.! (a UArray.! i))
+      auxiliary' i = (i, b' UArray.! (a UArray.! i))
 
-endoNext :: State (ExtEndoCtx k) E
+endoNext :: State (EndoCtx t k) E
 endoNext = do
-  max_e <- gets maxE
-  let new_max_e = succ max_e
+  new_max_e <- succ <$> gets maxE
   modify $ \s -> s { maxE = new_max_e }
-  return new_max_e
+  pure new_max_e
 
 endoCompose ::
+  (IsTransition t, Semigroup t) =>
   E ->
   E ->
-  State (ExtEndoCtx k) (IntMap IntSet)
+  State (EndoCtx t k) (IntMap IntSet)
 endoCompose e e' = do
   maybe_endo <- eLookup e
   maybe_endo' <- eLookup e'
@@ -356,7 +339,7 @@ endoCompose e e' = do
       case Map.lookup (e, e') _comps of
         Just _ -> return IntMap.empty
         Nothing -> do
-          let endo'' = endo `compose` endo'
+          let endo'' = endo <> endo'
           maybe_e'' <- endomorphismLookup endo''
           e'' <- maybe endoNext return maybe_e''
           endoInsert e'' endo''
@@ -369,7 +352,7 @@ endoCompose e e' = do
           return new_sets
     _ -> error errorMessage -- This should never happen.
 
-popElement :: IntMap IntSet -> Maybe ((Int, Int), IntMap IntSet)
+popElement :: IntMap IntSet -> Maybe ((E, E), IntMap IntSet)
 popElement _map =
   case IntMap.lookupMin _map of
     Just (key, set) ->
@@ -382,8 +365,9 @@ popElement _map =
     Nothing -> Nothing
 
 endoCompositionsTable ::
+  (Semigroup t, IsTransition t) =>
   IntMap IntSet ->
-  State (ExtEndoCtx k) ()
+  State (EndoCtx t k) ()
 endoCompositionsTable _map =
   case popElement _map of
     Just ((e, e'), map') -> do
@@ -393,7 +377,7 @@ endoCompositionsTable _map =
     Nothing -> return ()
 
 compositionsTable ::
-  (Enum t, Bounded t, IsTransition t, Ord k) =>
+  (Enum t, Bounded t, IsTransition t, Ord k, Semigroup t) =>
   ParallelDFALexer t S k ->
   Either String (Map ExtEndo (ExtEndoData k)
                 ,Map (E, E) (ExtEndoData k))
@@ -402,10 +386,10 @@ compositionsTable lexer = do
   b <- _compositions
   return (a, b)
   where
-    ctx = initExtEndoCtx lexer
+    ctx = initEndoCtx lexer
     toExtEndoData' = toExtEndoData lexer inv_to_endo
     connected_map = connectedMap ctx
-    (ExtEndoCtx
+    (EndoCtx
       { comps = _compositions'
       , endoMap = to_endo'
       , inverseEndoMap = inv_to_endo'
@@ -433,37 +417,29 @@ compositionsTable lexer = do
       $ addIdentity _identity _compositions'
 
 endomorphismTable ::
-  (Enum t, Bounded t, IsTransition t, Ord k) =>
-  ParallelDFALexer t S k ->
+  (Enum t, Bounded t, IsTransition t, IsState s, Ord k) =>
+  ParallelDFALexer t s k ->
   Map t ExtEndo
 endomorphismTable lexer =
   Map.fromList
   $ map statesFromChar
-  $ Set.toList _alphabet
+  $ Set.toList
+  $ alphabet dfa
   where
     dfa = fsa $ parDFALexer lexer
     produces_set = producesToken lexer
-    dead_state = deadState lexer
-    _transitions = transitions' dfa
-    _states = states dfa
-    _alphabet = alphabet dfa
-    first_index = minimum _states
-    last_index = maximum _states
-    tableLookUp key =
-      fromMaybe dead_state
-      $ Map.lookup key _transitions
+    states_list = Set.toList $ states dfa
+    states_size = Set.size $ states dfa
+    state_to_int = Map.fromList $ zip states_list [0..states_size - 1]
+    stateToInt = (state_to_int Map.!)
     statesFromChar t = (t, ExtEndo ss bs)
       where
-        ss =
-          UArray.array (first_index, last_index)
-          $ zip [first_index..last_index]
-          $ map (tableLookUp . (, t))
-          $ Set.toAscList _states
-        bs =
-          UArray.array (first_index, last_index)
-          $ zip [first_index..last_index]
-          $ map ((`Set.member` produces_set) . (, t))
-          $ Set.toAscList _states
+        ss = auxiliary $ stateToInt . uncurry (transition lexer) . (, t)
+        bs = auxiliary $ (`Set.member` produces_set) . (, t)
+        auxiliary f =
+          UArray.array (0, states_size - 1)
+          $ zip [0..states_size - 1]
+          $ f <$> states_list
 
 connectedTable :: IsTransition t => ParallelDFALexer t S k -> Map t (Set t)
 connectedTable lexer =
@@ -490,12 +466,50 @@ connectedTable lexer =
       Set.fromList
       $ mapMaybe (transitionLookup s) _alphabet
 
-initExtEndoCtx ::
+enumerate :: Ord a => Set a -> IntMap a
+enumerate = IntMap.fromList . zip [0 ..] . Set.toList
+
+invertBijection :: (Ord a, Ord b) => Map a b -> Map b a
+invertBijection = Map.fromList . fmap swap . Map.assocs
+
+enumerateByMap :: (Functor f, Ord a) => Map a Int -> f a -> f Int
+enumerateByMap _map = fmap (_map Map.!)
+
+enumerateKeysByMap :: Ord a => Map a Int -> Map a b -> Map Int b
+enumerateKeysByMap _map = Map.mapKeys (_map Map.!)
+
+intMapToMap :: IntMap a -> Map Int a
+intMapToMap = Map.fromList . IntMap.toList
+
+mapToIntMap :: Map Int a -> IntMap a
+mapToIntMap = IntMap.fromList . Map.toList
+
+setToIntSet :: Set Int -> IntSet
+setToIntSet = IntSet.fromList . Set.toList
+
+enumerateSetMapByMap :: Ord a => Map a Int -> Map a (Set a) -> IntMap IntSet
+enumerateSetMapByMap _map =
+  mapToIntMap
+  . enumerateKeysByMap _map
+  . fmap (setToIntSet . enumerateByMap _map)
+
+invertIntSetMap :: IntMap IntSet -> IntMap IntSet 
+invertIntSetMap =
+  IntMap.unionsWith IntSet.union
+  . IntMap.mapWithKey toMap
+  where
+    toMap k =
+      IntMap.fromList
+      . fmap (,IntSet.singleton k)
+      . IntSet.toList
+
+initEndoCtx ::
   (Enum t, Bounded t, IsTransition t, Ord k) =>
   ParallelDFALexer t S k ->
-  ExtEndoCtx k
-initExtEndoCtx lexer =
-  ExtEndoCtx
+  (ParallelDFALexer t S k -> t -> ExtEndoData k) ->
+  EndoCtx t k
+initEndoCtx lexer toData =
+  EndoCtx
   { comps = Map.empty
   , endoMap = endo_to_e
   , inverseEndoMap = e_to_endo
@@ -504,34 +518,20 @@ initExtEndoCtx lexer =
   , maxE = maximum endo_to_e
   , initialStateCtx = initial $ fsa $ parDFALexer lexer
   , deadStateCtx = deadState lexer
+  , endoData = endo_data
+  , ecParallelLexer = lexer
   }
   where
-    endo_table = endomorphismTable lexer
-    e_to_endo =
-      IntMap.fromList
-      $ zip [0 :: E ..]
-      $ List.nub
-      $ Map.elems endo_table
-    endo_to_e =
-      Map.fromList
-      $ swap
-      <$> IntMap.assocs e_to_endo
-    endoToE = (endo_to_e Map.!)
-    t_to_e = endoToE <$> endo_table
-    tToE = (t_to_e Map.!)
-    connected_table =
-      IntMap.unionsWith IntSet.union
-      $ fmap (uncurry IntMap.singleton . first tToE)
-      $ Map.toList
-      $ IntSet.fromList . fmap tToE . Set.toList
-      <$> connectedTable lexer
-    toMap k =
-      IntMap.fromList
-      . fmap (,IntSet.singleton k)
-      . IntSet.toList
-    inverse_connected_table =
-      IntMap.unionsWith IntSet.union
-      $ IntMap.mapWithKey toMap connected_table
+    alpha = alphabet $ fsa $ parDFALexer lexer
+    endo_data =
+      mapToIntMap
+      $ enumerateKeysByMap endo_to_e
+      $ Map.fromList
+      $ (\t -> (t, toData lexer t)) <$> Set.toList alpha
+    e_to_endo = enumerate alpha
+    endo_to_e = invertBijection $ intMapToMap e_to_endo
+    connected_table = enumerateSetMapByMap endo_to_e $ connectedTable lexer
+    inverse_connected_table = invertIntSetMap connected_table
 
 endosInTable :: Ord t => Map (t, t) t -> Set t
 endosInTable table = endos
@@ -606,7 +606,7 @@ identityExtEndo lexer = ExtEndo s b
 parallelLexer ::
   (IsTransition t, Enum t, Bounded t, Ord k, Show k) =>
   ParallelDFALexer t S k ->
-  Either String (Int, ParallelLexer t (ExtEndoData k))
+  Either String (ParallelLexer t (ExtEndoData k))
 parallelLexer lexer = do
   (to_endo, _compositions) <- compositionsTable lexer
   let endo_size = Map.size to_endo
@@ -621,12 +621,9 @@ parallelLexer lexer = do
         $ mapM toEndo
         $ endomorphismTable lexer
   return
-    (endo_size
-    ,ParallelLexer
-     { compositions = _compositions
-     , endomorphisms = _transitions_to_endo
-     , identity = identity_e
-     , endomorphismsSize = endo_size
-     })
-
-  
+    $ ParallelLexer
+    { compositions = _compositions
+    , endomorphisms = _transitions_to_endo
+    , identity = identity_e
+    , endomorphismsSize = endo_size
+    }

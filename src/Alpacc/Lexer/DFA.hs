@@ -8,6 +8,7 @@ module Alpacc.Lexer.DFA
   , transitions'
   , ParallelDFALexer (parDFALexer, producesToken, deadState)
   , parallelLexerDFA
+  , transition
   )
 where
 
@@ -27,7 +28,7 @@ import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Foldable
 import Data.Either.Extra
-import Data.Maybe (mapMaybe)
+import Data.Maybe (mapMaybe, fromMaybe)
 
 type DFA t s = FSA Identity Identity t s
 type DFALexer t s k = Lexer Identity Identity t s k 
@@ -168,6 +169,15 @@ isMatch dfa = runDFA' start_state
         x = Text.head str'
         xs = Text.tail str'
         maybe_state = Map.lookup (s, x) trans
+
+transition :: (IsTransition t, IsState s) => ParallelDFALexer t s k -> s -> t -> s
+transition lexer s t =
+  fromMaybe dead_state
+  $ Map.lookup (s, t)
+  $ transitions' dfa
+  where
+    dfa = fsa $ parDFALexer lexer
+    dead_state = deadState lexer
 
 invertSetMap :: (Ord t, Ord s) => Map t (Set s) -> Map s (Set t)
 invertSetMap mapping = Map.fromList $ setMap <$> codomain
