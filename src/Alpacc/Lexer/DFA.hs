@@ -6,7 +6,7 @@ module Alpacc.Lexer.DFA
   , DFALexer
   , fromRegExToDFA
   , transitions'
-  , ParallelDFALexer (parDFALexer, producesToken, deadState)
+  , ParallelDFALexer (parDFALexer, producesToken)
   , parallelLexerDFA
   , transition
   )
@@ -27,8 +27,7 @@ import Data.Set qualified as Set hiding (Set)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Foldable
-import Data.Either.Extra
-import Data.Maybe (mapMaybe, fromMaybe)
+import Data.Maybe (mapMaybe)
 
 type DFA t s = FSA Identity Identity t s
 type DFALexer t s k = Lexer Identity Identity t s k 
@@ -36,7 +35,6 @@ type DFALexer t s k = Lexer Identity Identity t s k
 data ParallelDFALexer t s k = ParallelDFALexer
     { parDFALexer :: DFALexer t s k
     , producesToken :: Set (s, t)
-    , deadState :: s
     } deriving (Eq, Ord, Show)
 
 transitions' :: (IsState s, IsTransition t) => DFA t s -> Map (s, t) s
@@ -170,14 +168,12 @@ isMatch dfa = runDFA' start_state
         xs = Text.tail str'
         maybe_state = Map.lookup (s, x) trans
 
-transition :: (IsTransition t, IsState s) => ParallelDFALexer t s k -> s -> t -> s
+transition :: (IsTransition t, IsState s) => ParallelDFALexer t s k -> s -> t -> Maybe s
 transition lexer s t =
-  fromMaybe dead_state
-  $ Map.lookup (s, t)
+  Map.lookup (s, t)
   $ transitions' dfa
   where
     dfa = fsa $ parDFALexer lexer
-    dead_state = deadState lexer
 
 invertSetMap :: (Ord t, Ord s) => Map t (Set s) -> Map s (Set t)
 invertSetMap mapping = Map.fromList $ setMap <$> codomain
@@ -310,26 +306,19 @@ tokenProducingTransitions dfa = new_transitions
 toParallelDFALexer ::
   (Enum s, IsState s, IsTransition t) =>
   DFALexer t s k ->
-  Either String (ParallelDFALexer t s k)
-toParallelDFALexer lexer = do
-  dead_state <-
-    maybeToEither "Error: Can not add a dead state to an empty DFA."
-    maybe_dead_state
-  return $
-    ParallelDFALexer
-    { parDFALexer = new_lexer
-    , producesToken = produces_token
-    , deadState = dead_state
-    }
+  ParallelDFALexer t s k
+toParallelDFALexer lexer =
+  ParallelDFALexer
+  { parDFALexer = new_lexer
+  , producesToken = produces_token
+  }
   where
     dfa = fsa lexer
     token_producing_trans = tokenProducingTransitions dfa
     _transitions = transitions' dfa
     produces_token = Map.keysSet token_producing_trans
     new_trans = Map.union _transitions token_producing_trans
-    (new_dfa, maybe_dead_state) =
-      mkDFATotal
-      $ dfa { transitions = addIdentity new_trans }
+    new_dfa = dfa { transitions = addIdentity new_trans }
     new_lexer = lexer { fsa = new_dfa }
 
 parallelLexerDFA ::
@@ -337,7 +326,7 @@ parallelLexerDFA ::
   Map k o ->
   s ->
   Map k (RegEx (NonEmpty t)) ->
-  Either String (ParallelDFALexer t s k)
+  ParallelDFALexer t s k
 parallelLexerDFA terminal_to_order start_state regex_map =
   toParallelDFALexer
   $ lexerDFA terminal_to_order start_state regex_map
