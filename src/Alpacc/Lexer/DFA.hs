@@ -9,6 +9,7 @@ module Alpacc.Lexer.DFA
   , ParallelDFALexer (parDFALexer, producesToken)
   , parallelLexerDFA
   , transition
+  , enumerateParLexer
   )
 where
 
@@ -40,10 +41,10 @@ data ParallelDFALexer t s k = ParallelDFALexer
 transitions' :: (Ord s, Ord t) => DFA t s -> Map (s, t) s
 transitions' = Map.mapKeys (second runIdentity) . fmap runIdentity . transitions
 
-addIdentity :: (IsState s, IsTransition t) => Map (s, t) s -> Map (s, Identity t) (Identity s)
+addIdentity :: (Ord s, Ord t) => Map (s, t) s -> Map (s, Identity t) (Identity s)
 addIdentity = Map.mapKeys (second Identity) . fmap Identity
 
-stateTransitions :: (IsState s, IsTransition t) => Transition t -> s -> State (NFA t s) (Set s)
+stateTransitions :: (Ord s, Ord t) => Transition t -> s -> State (NFA t s) (Set s)
 stateTransitions c s = do
   nfa <- get
   let trans = transitions nfa
@@ -52,13 +53,13 @@ stateTransitions c s = do
   where
     isSymbolTransition (s', c') = s == s' && c == c'
 
-epsilonTransitions :: (IsState s, IsTransition t) => s -> State (NFA t s) (Set s)
+epsilonTransitions :: (Ord s, Ord t) => s -> State (NFA t s) (Set s)
 epsilonTransitions = stateTransitions Eps
 
-statesTransitions :: (IsState s, IsTransition t) => Set s -> Transition t -> State (NFA t s) (Set s)
+statesTransitions :: (Ord s, Ord t) => Set s -> Transition t -> State (NFA t s) (Set s)
 statesTransitions set c = Set.unions <$> mapM (stateTransitions c) (toList set)
 
-epsilonClosure :: (IsState s, IsTransition t) => Set s -> State (NFA t s) (Set s)
+epsilonClosure :: (Ord s, Ord t) => Set s -> State (NFA t s) (Set s)
 epsilonClosure set = do
   new_set <- Set.unions <$> mapM epsilonTransitions (toList set)
   let set' = new_set `Set.union` set
@@ -67,7 +68,7 @@ epsilonClosure set = do
     else epsilonClosure set'
 
 mkDFATransitionEntry ::
-  (IsState s, IsTransition t) =>
+  (Ord s, Ord t) =>
   Set s ->
   t ->
   State (NFA t s) (Map (Set s, t) (Set s))
@@ -77,7 +78,7 @@ mkDFATransitionEntry set t = do
   return $ Map.singleton (set, t) eps_states
 
 mkDFATransitionEntries ::
-  (IsState s, IsTransition t) =>
+  (Ord s, Ord t) =>
   Set s ->
   State (NFA t s) (Map (Set s, t) (Set s))
 mkDFATransitionEntries set = do
@@ -86,7 +87,7 @@ mkDFATransitionEntries set = do
   return $ Map.unionsWith Set.union new_table_entry
 
 mkDFATransitions ::
-  (IsState s, IsTransition t) =>
+  (Ord s, Ord t) =>
   Set (Set s) ->
   Map (Set s, t) (Set s) ->
   [Set s] ->
@@ -115,7 +116,7 @@ dfaFilter p dfa =
         then initial dfa
         else error "Can not filter states since the initial state is removed."
 
-fromNFAtoDFAState :: (IsState s, IsTransition t) => State (NFA t s) (DFA t (Set s))
+fromNFAtoDFAState :: (Ord s, Ord t) => State (NFA t s) (DFA t (Set s))
 fromNFAtoDFAState = do
   nfa <- get
   new_initial <- epsilonClosure . Set.singleton $ initial nfa
@@ -146,13 +147,13 @@ fromNFAtoDFAState = do
   where
     newStates new_states' set = Set.filter (any (`Set.member` set)) new_states'
 
-fromNFAtoDFA :: (IsState s, IsTransition t) => NFA t s -> DFA t (Set s)
+fromNFAtoDFA :: (Ord s, Ord t) => NFA t s -> DFA t (Set s)
 fromNFAtoDFA = evalState fromNFAtoDFAState
 
-fromRegExToDFA :: (IsState s, IsTransition t, Enum s) => s -> RegEx (NonEmpty t) -> DFA t (Set s)
+fromRegExToDFA :: (Ord s, Ord t, Enum s) => s -> RegEx (NonEmpty t) -> DFA t (Set s)
 fromRegExToDFA s = fromNFAtoDFA . fromRegExToNFA s
 
-isMatch :: (IsState s) => DFA Char s -> Text -> Bool
+isMatch :: (Ord s) => DFA Char s -> Text -> Bool
 isMatch dfa = runDFA' start_state
   where
     start_state = initial dfa
@@ -168,7 +169,7 @@ isMatch dfa = runDFA' start_state
         xs = Text.tail str'
         maybe_state = Map.lookup (s, x) trans
 
-transition :: (IsTransition t, IsState s) => ParallelDFALexer t s k -> s -> t -> Maybe s
+transition :: (Ord t, Ord s) => ParallelDFALexer t s k -> s -> t -> Maybe s
 transition lexer s t =
   Map.lookup (s, t)
   $ transitions' dfa
@@ -186,7 +187,7 @@ invertSetMap mapping = Map.fromList $ setMap <$> codomain
           filter ((s `Set.member`) . (mapping Map.!)) domain
 
 -- | http://www.cs.um.edu.mt/gordon.pace/Research/Software/Relic/Transformations/FSA/remove-useless.html
-removeUselessStates :: (IsState s, IsTransition t) => DFA t s -> DFA t s
+removeUselessStates :: (Ord s, Ord t) => DFA t s -> DFA t s
 removeUselessStates dfa = dfaFilter (`Set.member` useful_states) dfa
   where
     initial_useful = accepting dfa
@@ -203,7 +204,7 @@ removeUselessStates dfa = dfaFilter (`Set.member` useful_states) dfa
     useful_states = fixedPointIterate (/=) usefulStates initial_useful
 
 -- | http://www.cs.um.edu.mt/gordon.pace/Research/Software/Relic/Transformations/FSA/to-total.html
-mkDFATotal :: (IsState s, IsTransition t, Enum s) => DFA t s -> (DFA t s, Maybe s)
+mkDFATotal :: (Ord s, Ord t, Enum s) => DFA t s -> (DFA t s, Maybe s)
 mkDFATotal dfa'
   | null $ states dfa' = (dfa', Nothing)
   | otherwise = (new_dfa, Just dead_state)
@@ -228,7 +229,7 @@ mkDFATotal dfa'
         ((s,) <$> toList _alphabet)
 
 -- | http://www.cs.um.edu.mt/gordon.pace/Research/Software/Relic/Transformations/FSA/minimise.html
-minimize :: (IsState s, IsTransition t, Enum s) => DFA t s -> DFA t (Set s)
+minimize :: (Ord s, Ord t, Enum s) => DFA t s -> DFA t (Set s)
 minimize dfa' = removeUselessStates new_dfa
   where
     new_dfa = fsaSecond (state_map Map.!) dfa
@@ -270,7 +271,7 @@ minimize dfa' = removeUselessStates new_dfa
     newMatrix matrix = Map.mapWithKey (\k _ -> newMatrixValue matrix k) matrix
     newMatrixValue matrix st@(s, s') = matrix Map.! st || isDistinguishable matrix s s'
 
-dfaToNFA :: (IsState s, IsTransition t) => DFA t s -> NFA t s
+dfaToNFA :: (Ord s, Ord t) => DFA t s -> NFA t s
 dfaToNFA dfa = dfa { transitions = new_transitions }
   where
     new_transitions =
@@ -278,7 +279,7 @@ dfaToNFA dfa = dfa { transitions = new_transitions }
       $ Set.singleton <$> transitions' dfa
 
 tokenProducingTransitions ::
-  (IsState s, IsTransition t) =>
+  (Ord s, Ord t) =>
   DFA t s ->
   Map (s, t) s
 tokenProducingTransitions dfa = new_transitions
@@ -304,7 +305,7 @@ tokenProducingTransitions dfa = new_transitions
           return ((q, t), q') 
 
 toParallelDFALexer ::
-  (Enum s, IsState s, IsTransition t) =>
+  (Enum s, Ord s, Ord t) =>
   DFALexer t s k ->
   ParallelDFALexer t s k
 toParallelDFALexer lexer =
@@ -322,7 +323,7 @@ toParallelDFALexer lexer =
     new_lexer = lexer { fsa = new_dfa }
 
 parallelLexerDFA ::
-  (Show k, IsTransition t, IsState s, Enum s, Ord k, Ord o) =>
+  (Show k, Ord t, Ord s, Enum s, Ord k, Ord o) =>
   Map k o ->
   s ->
   Map k (RegEx (NonEmpty t)) ->
@@ -330,9 +331,23 @@ parallelLexerDFA ::
 parallelLexerDFA terminal_to_order start_state regex_map =
   toParallelDFALexer
   $ lexerDFA terminal_to_order start_state regex_map
-    
+
+enumerateParLexer ::
+  (Ord t, Ord s, Ord s', Enum s') =>
+  s' ->
+  ParallelDFALexer t s k ->
+  ParallelDFALexer t s' k
+enumerateParLexer s lexer =
+  ParallelDFALexer
+  { parDFALexer = fsaLexerSecond toPrime $ parDFALexer lexer
+  , producesToken = Set.map (first toPrime) $ producesToken lexer
+  }
+  where
+    toPrime = (mapping Map.!)
+    mapping = Map.fromList $ flip zip [s..] $ Set.toList $ states $ fsa $ parDFALexer lexer
+
 lexerDFA ::
-  (Show k, IsTransition t, IsState s, Enum s, Ord k, Ord o) =>
+  (Show k, Ord t, Ord s, Enum s, Ord k, Ord o) =>
   Map k o ->
   s ->
   Map k (RegEx (NonEmpty t)) ->
