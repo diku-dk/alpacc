@@ -37,7 +37,7 @@ data ParallelDFALexer t s k = ParallelDFALexer
     , producesToken :: Set (s, t)
     } deriving (Eq, Ord, Show)
 
-transitions' :: (IsState s, IsTransition t) => DFA t s -> Map (s, t) s
+transitions' :: (Ord s, Ord t) => DFA t s -> Map (s, t) s
 transitions' = Map.mapKeys (second runIdentity) . fmap runIdentity . transitions
 
 addIdentity :: (IsState s, IsTransition t) => Map (s, t) s -> Map (s, Identity t) (Identity s)
