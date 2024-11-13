@@ -1,6 +1,5 @@
 module Alpacc.Lexer.SimulateDFA
-  ( 
-  )
+  ( intDfaParallelLexer )
 where
 
 import Alpacc.Lexer.FSA
@@ -83,6 +82,8 @@ dfaParallelLexer lexer' =
 
 intDfaParallelLexer ::
   (Enum t, Bounded t, Ord t, Ord s, Ord k) =>
+  Map (Maybe k) Int ->
   ParallelDFALexer t s k ->
-  Either String (IntParallelLexer k)
-intDfaParallelLexer = intParallelLexer 
+  Either String (IntParallelLexer t)
+intDfaParallelLexer mapping lexer =
+  dfaParallelLexer lexer >>= intParallelLexer mapping 

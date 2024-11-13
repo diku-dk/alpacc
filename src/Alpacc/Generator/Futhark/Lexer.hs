@@ -6,6 +6,8 @@ module Alpacc.Generator.Futhark.Lexer
 
 import Alpacc.Grammar
 import Alpacc.Lexer.DFA
+import Alpacc.Lexer.SimulateDFA
+import Alpacc.Lexer.Encode
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.String.Interpolate (i)
@@ -65,16 +67,6 @@ compositionsArray int parallel_lexer = do
       let result = List.intercalate ", " vals
       return result
 
-endomorphismIntegral ::
-  IntParallelLexer t ->
-  Either String UInt
-endomorphismIntegral =
-  maybeToEither "Error: There are too many endomorphisms to create a Lexer."
-  . toIntType
-  . fromIntegral
-  . pred
-  . endoSize
-
 ignoreFunction :: Map T Int -> String
 ignoreFunction terminal_index_map = 
   case T "ignore" `Map.lookup` terminal_index_map of
@@ -87,15 +79,18 @@ generateLexer ::
   IInt ->
   Either String String
 generateLexer lexer terminal_index_map terminal_type = do
-  int_parallel_lexer <-
-    intParallelLexer new_token_map lexer
-  let (token_mask, token_offset) = tokenMask int_parallel_lexer
-  let (endo_mask, endo_offset) = endoMask int_parallel_lexer
-  let (accept_mask, accept_offset) = acceptMask int_parallel_lexer
-  let (produce_mask, produce_offset) = produceMask int_parallel_lexer
+  int_parallel_lexer <- intDfaParallelLexer new_token_map lexer
+  let ParallelLexerMasks
+        { tokenMask = token_mask
+        , tokenOffset = token_offset
+        , indexMask = index_mask
+        , indexOffset = index_offset
+        , producingMask = produce_mask
+        , producingOffset = produce_offset
+        } = parMasks int_parallel_lexer
   let parallel_lexer = parLexer int_parallel_lexer
   let _identity = identity parallel_lexer
-  endomorphism_type <- endomorphismIntegral int_parallel_lexer
+  endomorphism_type <- extEndoType parallel_lexer
   transitions_to_endo <- transitionsToEndomorphismsArray parallel_lexer
   compositions_table <- compositionsArray endomorphism_type parallel_lexer
   Right $
@@ -110,12 +105,10 @@ module lexer = mk_lexer {
   
   def identity_endomorphism: endomorphism = #{_identity}
   def dead_terminal: terminal = #{dead_token}
-  def endo_mask: endomorphism = #{endo_mask}
-  def endo_offset: endomorphism = #{endo_offset}
+  def endo_mask: endomorphism = #{index_mask}
+  def endo_offset: endomorphism = #{index_offset}
   def terminal_mask: endomorphism = #{token_mask}
   def terminal_offset: endomorphism = #{token_offset}
-  def accept_mask: endomorphism = #{accept_mask}
-  def accept_offset: endomorphism = #{accept_offset}
   def produce_mask: endomorphism = #{produce_mask}
   def produce_offset: endomorphism = #{produce_offset}
 

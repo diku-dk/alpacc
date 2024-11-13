@@ -1,6 +1,8 @@
 module Alpacc.Lexer.Encode
   ( intParallelLexer
-  , IntParallelLexer
+  , IntParallelLexer (..)
+  , ParallelLexerMasks (..)
+  , extEndoType
   )
 where
 
@@ -26,8 +28,8 @@ data Mask64 =
 
 newtype Masks64 = Masks64 (NonEmpty Mask64)
 
-findSize :: Int -> Int
-findSize = (int_size-) . countLeadingZeros . max 1 . pred
+findBitSize :: Int -> Int
+findBitSize = (int_size-) . countLeadingZeros . max 1 . pred
   where
     int_size = finiteBitSize (zeroBits :: Int)
 
@@ -39,7 +41,7 @@ masks sizes = do
   let _masks = zipWith shift offsets bit_sizes
   pure $ Masks64 $ NonEmpty.fromList $ zipWith Mask64 _masks offsets
   where
-    bit_sizes = findSize <$> sizes
+    bit_sizes = findBitSize <$> sizes
 
 data ParallelLexerMasks =
   ParallelLexerMasks
@@ -53,7 +55,7 @@ data ParallelLexerMasks =
 
 extEndoType :: ParallelLexer t k -> Either String UInt
 extEndoType (ParallelLexer { endomorphismsSize = a, tokenSize = b }) =
-  maybeToEither errorMessage . toIntType . (2^)  . sum $ findSize <$> [a, b, 1]
+  maybeToEither errorMessage . toIntType . (2^)  . sum $ findBitSize <$> [a, b, 1]
 
 parallelLexerToMasks64 :: ParallelLexer t k -> Either String Masks64
 parallelLexerToMasks64 (ParallelLexer { endomorphismsSize = e, tokenSize = t }) =
