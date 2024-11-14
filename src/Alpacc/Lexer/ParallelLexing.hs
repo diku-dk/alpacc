@@ -19,7 +19,7 @@ import Data.Set qualified as Set hiding (Set)
 import Data.Maybe
 import Data.Array.Base (UArray (..))
 import Data.Tuple (swap)
-import Control.Monad.State.Strict
+import Control.Monad.State
 import Control.Monad.Except (throwError)
 import Data.Foldable (Foldable (..))
 import Data.Array.Unboxed qualified as UArray hiding (UArray)
