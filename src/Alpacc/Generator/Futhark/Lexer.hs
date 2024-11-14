@@ -4,6 +4,7 @@ module Alpacc.Generator.Futhark.Lexer
   ( generateLexer )
  where
 
+import Data.Maybe
 import Alpacc.Grammar
 import Alpacc.Lexer.DFA
 import Alpacc.Lexer.SimulateDFA
@@ -46,26 +47,20 @@ transitionsToEndomorphismsArray parallel_lexer = do
   where
     to_endo = endomorphisms parallel_lexer
     
-compositionsArray :: UInt -> ParallelLexer Word8 Int -> Either String String
-compositionsArray int parallel_lexer = do
-  vals <-
-    maybeToEither errorMessage
-    $ mapM row [0..endomorphisms_size - 1]
-  let result =
-        ("def compositions : [endomorphism_size * endomorphism_size]endomorphism = "++)
-        $ (++"] :> [endomorphism_size * endomorphism_size]endomorphism")
-        $ ("["++)
-        $ List.intercalate ",\n" vals
-  return result
+compositionsArray :: UInt -> ParallelLexer Word8 Int -> String
+compositionsArray int parallel_lexer =
+  ("def compositions : [endomorphism_size * endomorphism_size]endomorphism = "++)
+  $ (++"] :> [endomorphism_size * endomorphism_size]endomorphism")
+  $ ("["++)
+  $ List.intercalate ",\n" vals
   where
+    vals = map row [0..endomorphisms_size - 1]
     _compositions = compositions parallel_lexer
+    dead' = dead parallel_lexer
     endomorphisms_size = endomorphismsSize parallel_lexer
-    row j = do
-      vals <-
-        mapM (\k -> (++ futPrint int) . show <$> Map.lookup (k, j) _compositions)
-        [0..endomorphisms_size - 1]
-      let result = List.intercalate ", " vals
-      return result
+    row j = List.intercalate ", " vals'
+      where
+        vals' = map (\k -> (++ futPrint int) . show . fromMaybe dead'  $ Map.lookup (k, j) _compositions) [0..endomorphisms_size - 1]
 
 ignoreFunction :: Map T Int -> String
 ignoreFunction terminal_index_map = 
@@ -92,7 +87,7 @@ generateLexer lexer terminal_index_map terminal_type = do
   let _identity = identity parallel_lexer
   endomorphism_type <- extEndoType parallel_lexer
   transitions_to_endo <- transitionsToEndomorphismsArray parallel_lexer
-  compositions_table <- compositionsArray endomorphism_type parallel_lexer
+  let compositions_table = compositionsArray endomorphism_type parallel_lexer
   Right $
     futharkLexer
       <> [i|

@@ -35,8 +35,8 @@ findBitSize = (int_size-) . countLeadingZeros . max 1 . pred
 
 masks :: [Int] -> Either String Masks64
 masks sizes = do
-  unless (any (0<) sizes) $ Left "Error: Negative sizes were used to encode the masks for the states in a data parallel lexer. This should not happen, contact a maintainer."
-  unless (sum bit_sizes > 64) $ Left "Error: There are too many tokens and/or states to create a data parallel lexer."
+  unless (all (0<) sizes) $ Left "Error: Negative sizes were used to encode the masks for the states in a data parallel lexer. This should not happen, contact a maintainer."
+  unless (sum bit_sizes <= 64) $ Left "Error: There are too many tokens and/or states to create a data parallel lexer."
   let offsets = init $ List.scanl' (+) 0 bit_sizes -- Exclusive scan.
   let _masks = zipWith shift offsets bit_sizes
   pure $ Masks64 $ NonEmpty.fromList $ zipWith Mask64 _masks offsets
@@ -144,11 +144,13 @@ intParallelLexer to_int parallel_lexer = do
   new_compositions <- mapM encode $ compositions parallel_lexer
   new_endomorphims <- mapM encode $ endomorphisms parallel_lexer
   new_identity <- encode $ identity parallel_lexer
+  new_dead <- encode $ dead parallel_lexer
   let new_parallel_lexer =
         parallel_lexer
         { compositions = new_compositions
         , endomorphisms = new_endomorphims
         , identity = new_identity
+        , dead = new_dead
         }
   pure $
     IntParallelLexer

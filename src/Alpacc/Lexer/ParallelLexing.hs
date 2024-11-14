@@ -71,20 +71,11 @@ data ParallelLexer t e =
   { compositions :: !(Map (E, E) e) 
   , endomorphisms :: !(Map t e)
   , identity :: !e
+  , dead :: !e
   , tokenSize :: !Int
   , endomorphismsSize :: !Int
   , acceptArray :: !(UArray E Bool) 
   } deriving (Show, Eq, Ord)
-
-data ParallelLexerMasks =
-  ParallelLexerMasks
-  { tokenMask :: !Int
-  , tokenOffset :: !Int
-  , indexMask :: !Int
-  , indexOffset :: !Int
-  , producingMask :: !Int
-  , producingOffset :: !Int
-  } deriving (Eq, Ord, Show)
 
 class (Semigroup t, Ord t, Ord s) => Sim t s where
   toState :: s -> t -> Maybe (Bool, s)
@@ -299,6 +290,7 @@ parallelLexer lexer f =
       , tokenSize = token_size
       , endomorphismsSize = endo_size
       , identity = identityEndoData
+      , dead = deadEndoData
       , acceptArray = toAcceptArray endo_data
       }
   where
