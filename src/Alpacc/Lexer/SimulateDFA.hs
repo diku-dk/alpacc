@@ -10,8 +10,9 @@ import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map hiding (Map)
 import Data.Set qualified as Set hiding (Set)
 import Data.Maybe
-import Data.Array.Base (IArray (..), UArray (..))
+import Data.Array.Base (IArray (..))
 import Data.Array.Unboxed qualified as UArray hiding (UArray)
+import Data.Array.Unboxed (UArray)
 import Control.Monad
 
 errorMessage :: String
@@ -73,7 +74,7 @@ endomorphismTable lexer' =
 dfaParallelLexer ::
   (Enum t, Bounded t, Ord t, Ord s, Ord k) =>
   ParallelDFALexer t s k ->
-  Either String (ParallelLexer t (ExtEndoData k))
+  ParallelLexer t (ExtEndoData k)
 dfaParallelLexer lexer' =
   parallelLexer lexer toEndo
   where
@@ -85,5 +86,5 @@ intDfaParallelLexer ::
   Map (Maybe k) Int ->
   ParallelDFALexer t s k ->
   Either String (IntParallelLexer t)
-intDfaParallelLexer mapping lexer =
-  dfaParallelLexer lexer >>= intParallelLexer mapping 
+intDfaParallelLexer mapping =
+  intParallelLexer mapping . dfaParallelLexer

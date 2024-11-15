@@ -1,3 +1,4 @@
+
 module Alpacc.Lexer.ParallelLexing
   ( ParallelLexer (..)
   , parallelLexer
@@ -19,8 +20,7 @@ import Data.Set qualified as Set hiding (Set)
 import Data.Maybe
 import Data.Array.Base (UArray (..))
 import Data.Tuple (swap)
-import Control.Monad.State
-import Control.Monad.Except (throwError)
+import Control.Monad.State.Strict
 import Data.Foldable (Foldable (..))
 import Data.Array.Unboxed qualified as UArray hiding (UArray)
 
@@ -56,7 +56,7 @@ identityEndoData =
 initEndo :: E
 initEndo = 2
 
-type EndoState t s k a = StateT (EndoCtx t s k) (Either String) a
+type EndoState t s k a = State (EndoCtx t s k) a
 
 data ExtEndoData k =
   ExtEndoData
@@ -119,8 +119,8 @@ endoInsert ::
   t ->
   EndoState t s k ()
 endoInsert e endo = do
-  new_inv_map <- IntMap.insert e endo <$> gets inverseEndoMap
-  new_map <- Map.insert endo e <$> gets endoMap
+  new_inv_map <- gets (IntMap.insert e endo . inverseEndoMap)
+  new_map <- gets (Map.insert endo e . endoMap)
   
   modify $
     \s ->
@@ -128,15 +128,15 @@ endoInsert e endo = do
         , endoMap = new_map }
 
 eLookup :: E -> EndoState t s k (Maybe t)
-eLookup e = IntMap.lookup e <$> gets inverseEndoMap
+eLookup e = gets $ IntMap.lookup e . inverseEndoMap
 
 connectedLookup :: E -> EndoState t s k (Maybe IntSet)
-connectedLookup e = IntMap.lookup e <$> gets connectedMap
+connectedLookup e = gets $ IntMap.lookup e . connectedMap
 
 connectedUpdate :: E -> IntSet -> EndoState t s k ()
 connectedUpdate e e_set = do
   inv_map <- gets inverseConnectedMap
-  new_map <- IntMap.insertWith IntSet.union e e_set <$> gets connectedMap
+  new_map <- gets $ IntMap.insertWith IntSet.union e e_set . connectedMap
   let new_inverse_map =
         IntMap.unionWith IntSet.union inv_map
         $ IntMap.fromList
@@ -190,7 +190,7 @@ endomorphismLookup ::
   t ->
   EndoState t s k (Maybe E)
 endomorphismLookup endomorphism = do
-  Map.lookup endomorphism <$> gets endoMap
+  gets $ Map.lookup endomorphism . endoMap
 
 endoToData ::
   (Sim t s, Ord k) =>
@@ -206,7 +206,7 @@ endoToData e endo = do
 
 endoNext :: (Sim t s, Ord k) => t -> EndoState t s k E
 endoNext endo = do
-  e <- succ <$> gets maxE
+  e <- gets $ succ . maxE
   insertDeadIdentity e
   endoToData e endo
   endoInsert e endo
@@ -237,7 +237,7 @@ endoCompose e e' = do
                 IntMap.unionWith IntSet.union pre_sets post_sets
           connectedUpdateAll new_sets
           pure new_sets
-    _any -> throwError errorMessage -- This should never happen.
+    _any -> error errorMessage -- This should never happen.
 
 popElement :: IntMap IntSet -> Maybe ((E, E), IntMap IntSet)
 popElement _map =
@@ -257,7 +257,7 @@ endoCompositionsTable ::
 endoCompositionsTable = gets connectedMap >>= auxiliary
   where
     auxiliary connected_map =
-      case popElement connected_map of
+      case ({-# SCC popElement #-} popElement connected_map) of
         Just ((e, e'), map') -> do
           map'' <- endoCompose e e'
           let !map''' = IntMap.unionWith IntSet.union map' map''
@@ -275,9 +275,9 @@ parallelLexer ::
   (Enum t, Bounded t, Sim t' s, Ord t, Ord t', Ord s, Ord k) =>
   ParallelDFALexer t s k ->
   (t -> t') ->
-  Either String (ParallelLexer t (ExtEndoData k))
+  ParallelLexer t (ExtEndoData k)
 parallelLexer lexer f =
-  flip evalStateT s $ do
+  flip evalState s $ do
     endoCompositionsTable
     _compositions <- gets comps
     endo_data <- gets endoData
