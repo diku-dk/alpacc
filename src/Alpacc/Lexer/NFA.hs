@@ -43,7 +43,7 @@ toSet Eps = Set.empty
 
 type NFA t s = FSA Set Transition t s
 
-initNFA :: (IsState s, Enum s) => s -> NFA t s
+initNFA :: (Ord s, Enum s) => s -> NFA t s
 initNFA start_state =
   FSA
     { states = Set.fromList [start_state, succ start_state],
@@ -53,7 +53,7 @@ initNFA start_state =
       accepting = Set.singleton $ succ start_state
     }
 
-newState :: (IsState s, IsTransition t, Enum s) => State (NFA t s) s
+newState :: (Ord s, Ord t, Enum s) => State (NFA t s) s
 newState = do
   nfa <- get
   let max_state = Set.findMax $ states nfa
@@ -62,7 +62,7 @@ newState = do
   put $ nfa { states = new_states' }
   return new_max_state
 
-newTransition :: (IsState s, IsTransition t) => s -> Transition t -> s -> State (NFA t s) ()
+newTransition :: (Ord s, Ord t) => s -> Transition t -> s -> State (NFA t s) ()
 newTransition s c s' = do
   nfa <- get
   let trans = transitions nfa
@@ -74,7 +74,7 @@ newTransition s c s' = do
   let new_alph = toSet c `Set.union` alphabet nfa
   put $ nfa {transitions = new_trans, alphabet = new_alph}
 
-newTransitions :: (IsState s, IsTransition t, Foldable f, Enum s) => s -> f t -> s -> State (NFA t s) ()
+newTransitions :: (Ord s, Ord t, Foldable f, Enum s) => s -> f t -> s -> State (NFA t s) ()
 newTransitions z ts' = auxiliary z (toList ts')
   where
     auxiliary s [] s' = newTransition s Eps s'
@@ -84,7 +84,7 @@ newTransitions z ts' = auxiliary z (toList ts')
       newTransition s (Trans t) s'
       auxiliary s' ts s''
 
-mkNFA' :: (IsState s, IsTransition t, Foldable f, Enum s) => s -> s -> RegEx (f t) -> State (NFA t s) ()
+mkNFA' :: (Ord s, Ord t, Foldable f, Enum s) => s -> s -> RegEx (f t) -> State (NFA t s) ()
 mkNFA' s s' Epsilon = do
   newTransition s Eps s'
 mkNFA' s s' (Literal cs) = do
@@ -106,7 +106,7 @@ mkNFA' s s' alter@(Alter _ _) = do
     findAlters (Alter a b) = findAlters a ++ findAlters b
     findAlters regex = [regex]
 
-mkNFA :: (IsState s, IsTransition t, Enum s) => RegEx (NonEmpty t) -> State (NFA t s) ()
+mkNFA :: (Ord s, Ord t, Enum s) => RegEx (NonEmpty t) -> State (NFA t s) ()
 mkNFA regex = do
   nfa <- get
   let (s, s') = (initial nfa, accepting nfa)
@@ -114,7 +114,7 @@ mkNFA regex = do
   mapM_ (\_s -> mkNFA' s _s regex) accept_list
 
 
-fromRegExToNFA :: (IsState s, IsTransition t, Enum s) => s -> RegEx (NonEmpty t) -> NFA t s
+fromRegExToNFA :: (Ord s, Ord t, Enum s) => s -> RegEx (NonEmpty t) -> NFA t s
 fromRegExToNFA start_state regex = execState (mkNFA regex) init_nfa
   where
     init_nfa = initNFA start_state
