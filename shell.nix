@@ -1,6 +1,5 @@
 let
   pkgs = import <nixpkgs> { config.allowUnfree = true; };
-  unstable = import <nixos-unstable> { };
   compilerVersion = "ghc96"; 
   compiler = pkgs.haskell.packages."${compilerVersion}";
 in
@@ -31,10 +30,8 @@ let pkg =
                 ocl-icd
                 rustc
                 cargo
-              ]) ++
-            (with unstable;
-              [ futhark
                 mkjson
+                futhark
               ]));
       };
 in pkg.overrideAttrs (attrs: {

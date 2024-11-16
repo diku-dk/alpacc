@@ -4,8 +4,6 @@ module Alpacc.Lexer.FSA
     reenumerateFSA,
     reenumerateFSAsMap,
     OrdMap (..),
-    IsState,
-    IsTransition,
     FSAMappable,
     FSAMap (..),
     Lexer (..),
@@ -22,7 +20,6 @@ import Data.Set qualified as Set hiding (Set)
 import Data.Bifunctor (Bifunctor(..))
 import Data.Foldable
 import Control.Monad.Identity (Identity)
-import Data.Word (Word8)
 
 data FSA f f' t s = FSA
   { states :: Set s,
@@ -42,48 +39,30 @@ data Lexer f f' t s k = Lexer
 class OrdMap f where
   omap :: (Ord a, Ord b) => (a -> b) -> f a -> f b
 
-class (Eq s, Ord s, Show s) => IsState s where
+class (Ord t, Ord (f' t), OrdMap f, OrdMap f', Ord s) => FSAMappable p f f' t s where
 
-class (Eq t, Ord t, Show t) => IsTransition t where
+instance (Ord t, Ord (f' t), OrdMap f, OrdMap f', Ord s) => FSAMappable FSA f f' t s where
 
-instance IsTransition Char where
+class (Ord t, Ord (f' t), OrdMap f, OrdMap f', Ord s, Ord k) => LexerMappable p f f' t s k where
 
-instance IsTransition Word8 where
-
-instance IsTransition Integer where
-
-instance IsTransition Int where
-
-class (IsTransition t, Ord (f' t), OrdMap f, OrdMap f', IsState s) => FSAMappable p f f' t s where
-
-instance (IsTransition t, Ord (f' t), OrdMap f, OrdMap f', IsState s) => FSAMappable FSA f f' t s where
-
-class (IsTransition t, Ord (f' t), OrdMap f, OrdMap f', IsState s, Ord k) => LexerMappable p f f' t s k where
-
-instance (IsTransition t, Ord (f' t), OrdMap f, OrdMap f', IsState s, Ord k) => LexerMappable Lexer f f' t s k where
+instance (Ord t, Ord (f' t), OrdMap f, OrdMap f', Ord s, Ord k) => LexerMappable Lexer f f' t s k where
 
 class FSAMap p where
-  fsaMap :: (IsTransition a, IsTransition c, Ord (f' c), OrdMap f, OrdMap f', IsState b, IsState d) => (a -> c) -> (b -> d) -> p f f' a b -> p f f' c d
-  fsaFirst :: (IsTransition a, IsTransition c, Ord (f' c), OrdMap f, OrdMap f', IsState b) => (a -> c) -> p f f' a b -> p f f' c b
+  fsaMap :: (Ord a, Ord c, Ord (f' c), OrdMap f, OrdMap f', Ord b, Ord d) => (a -> c) -> (b -> d) -> p f f' a b -> p f f' c d
+  fsaFirst :: (Ord a, Ord c, Ord (f' c), OrdMap f, OrdMap f', Ord b) => (a -> c) -> p f f' a b -> p f f' c b
   fsaFirst = flip fsaMap id
-  fsaSecond :: (IsTransition a, Ord (f' a), OrdMap f, OrdMap f', IsState b, IsState d) => (b -> d) -> p f f' a b -> p f f' a d
+  fsaSecond :: (Ord a, Ord (f' a), OrdMap f, OrdMap f', Ord b, Ord d) => (b -> d) -> p f f' a b -> p f f' a d
   fsaSecond = fsaMap id
 
 class LexerMap p where
-  fsaLexerMap :: (IsTransition a, IsTransition c, Ord (f' c), OrdMap f, OrdMap f', IsState b, IsState d) => (a -> c) -> (b -> d) -> p f f' a b k -> p f f' c d k
-  fsaLexerFirst :: (IsTransition a, IsTransition c, Ord (f' c), OrdMap f, OrdMap f', IsState b) => (a -> c) -> p f f' a b k -> p f f' c b k
+  fsaLexerMap :: (Ord a, Ord c, Ord (f' c), OrdMap f, OrdMap f', Ord b, Ord d) => (a -> c) -> (b -> d) -> p f f' a b k -> p f f' c d k
+  fsaLexerFirst :: (Ord a, Ord c, Ord (f' c), OrdMap f, OrdMap f', Ord b) => (a -> c) -> p f f' a b k -> p f f' c b k
   fsaLexerFirst = flip fsaLexerMap id
-  fsaLexerSecond :: (IsTransition a, Ord (f' a), OrdMap f, OrdMap f', IsState b, IsState d) => (b -> d) -> p f f' a b k -> p f f' a d k
+  fsaLexerSecond :: (Ord a, Ord (f' a), OrdMap f, OrdMap f', Ord b, Ord d) => (b -> d) -> p f f' a b k -> p f f' a d k
   fsaLexerSecond = fsaLexerMap id
 
 instance OrdMap Set where
   omap = Set.map
-
-instance IsState s => IsState (Set s) where
-
-instance IsState Integer where
-
-instance IsState Int where
 
 instance OrdMap Identity where
   omap = fmap
