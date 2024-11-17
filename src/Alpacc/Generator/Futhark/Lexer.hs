@@ -14,8 +14,6 @@ import Alpacc.Lexer.ParallelLexing
 import Data.List qualified as List
 import Data.Either.Extra
 import Alpacc.Types
-import Data.Text qualified as Text hiding (Text)
-import Data.Text (Text)
 import Alpacc.Generator.Futhark.FutPrinter
 
 futharkLexer :: String
@@ -48,10 +46,11 @@ transitionsToEndomorphismsArray parallel_lexer = do
 compositionsArray :: UInt -> ParallelLexer Word8 Int -> String
 compositionsArray int parallel_lexer =
   [i|def compositions : [endomorphism_size * endomorphism_size]endomorphism =
-  #{p <$> listCompositions parallel_lexer} :> [endomorphism_size * endomorphism_size]endomorphism
+  [#{ps}] :> [endomorphism_size * endomorphism_size]endomorphism
 |]
   where
-    p = RawText . (<> futPrint int) . Text.pack . show 
+    ps = futPrint $ p <$> listCompositions parallel_lexer
+    p = RawString . (<> futPrint int) . futPrint 
 
 ignoreFunction :: Map T Int -> String
 ignoreFunction terminal_index_map = 
