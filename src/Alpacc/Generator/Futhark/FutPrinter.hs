@@ -2,27 +2,24 @@ module Alpacc.Generator.Futhark.FutPrinter
   ( FutPrinter (..)
   , NTuple (..)
   , RawString (..)
-  , RawText (..)
   )
 where
 
 import Data.Foldable
 import Data.Array as Array hiding (Array)
+import Data.List qualified as List
 import Data.Array.Unboxed (UArray)
 import Data.Array.IArray as IArray
+import Data.String.Interpolate ( i )
 import Alpacc.Types
 import Numeric.Natural
-import Data.Text qualified as Text hiding (Text)
-import Data.Text (Text)
 
 newtype NTuple a = NTuple [a] deriving (Show, Eq, Ord, Read, Foldable)
 
 newtype RawString = RawString String deriving (Show, Eq, Ord, Read)
 
-newtype RawText = RawText Text deriving (Show, Eq, Ord, Read)
-
 class FutPrinter a where
-  futPrint :: a -> Text
+  futPrint :: a -> String
 
 instance FutPrinter UInt where
   futPrint U8 = "u8"
@@ -36,38 +33,36 @@ instance FutPrinter IInt where
   futPrint I32 = "i32"
   futPrint I64 = "i64"
 
+instance FutPrinter RawString where
+  futPrint (RawString s) = s
+
 instance FutPrinter String where
-  futPrint = Text.pack
+  futPrint = show
 
 instance FutPrinter Int where
-  futPrint = Text.pack . show
+  futPrint = show
 
 instance FutPrinter Bool where
   futPrint True = "true"
   futPrint False = "false"
 
 instance FutPrinter Natural where
-  futPrint = Text.pack . show
+  futPrint = show
 
 instance FutPrinter Integer where
-  futPrint = Text.pack . show
-
-instance FutPrinter RawString where
-  futPrint (RawString s) = "\"" <> Text.pack s <> "\""
-instance FutPrinter RawText where
-  futPrint (RawText s) = "\"" <> s <> "\""
+  futPrint = show
 
 instance (FutPrinter a, FutPrinter b) => FutPrinter (a, b) where
-  futPrint (a, b) = "(" <> futPrint a <> ", " <> futPrint b <> ")"
+  futPrint (a, b) = [i|#{futPrint a}, #{futPrint b})|]
 
 instance (FutPrinter a) => FutPrinter [a] where
-  futPrint = ("["<>) . (<>"]") . Text.intercalate ", " . fmap futPrint
+  futPrint = ("["<>) . (<>"]") . List.intercalate ", " . fmap futPrint
 
 instance (FutPrinter a) => FutPrinter (NTuple a) where
   futPrint =
     ("("<>)
     . (<>")")
-    . Text.intercalate ", "
+    . List.intercalate ", "
     . fmap futPrint
     . toList
 
