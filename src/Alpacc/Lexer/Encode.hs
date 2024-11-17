@@ -39,7 +39,8 @@ masks sizes = do
   unless (all (0<) sizes) $ Left "Error: Negative sizes were used to encode the masks for the states in a data parallel lexer. This should not happen, contact a maintainer."
   unless (sum bit_sizes <= 64) $ Left "Error: There are too many tokens and/or states to create a data parallel lexer."
   let offsets = init $ List.scanl' (+) 0 bit_sizes -- Exclusive scan.
-  let _masks = zipWith shift offsets bit_sizes
+  let unshifted_masks = pred . shift 1 <$> bit_sizes
+  let _masks = zipWith shift unshifted_masks offsets
   pure $ Masks64 $ NonEmpty.fromList $ zipWith Mask64 _masks offsets
   where
     bit_sizes = findBitSize <$> sizes
@@ -55,8 +56,8 @@ data ParallelLexerMasks =
   } deriving (Eq, Ord, Show)
 
 extEndoType :: ParallelLexer t k -> Either String UInt
-extEndoType (ParallelLexer { endomorphismsSize = a, tokenSize = b }) =
-  maybeToEither errorMessage . toIntType . (2^)  . sum $ findBitSize <$> [a, b, 1]
+extEndoType (ParallelLexer { endomorphismsSize = e, tokenSize = t }) =
+  maybeToEither errorMessage . toIntType . (2^)  . sum $ findBitSize <$> [e, t, 1]
 
 parallelLexerToMasks64 :: ParallelLexer t k -> Either String Masks64
 parallelLexerToMasks64 (ParallelLexer { endomorphismsSize = e, tokenSize = t }) =
@@ -66,7 +67,7 @@ encodeMasks64 :: Masks64 -> NonEmpty Int -> Either String Int
 encodeMasks64 (Masks64 ms) elems
   | NonEmpty.length ms == NonEmpty.length elems =
     let x = offset <$> ms
-    in pure $ sum $ NonEmpty.zipWith (flip shift) elems x 
+    in pure $ sum $ NonEmpty.zipWith shift elems x 
   | otherwise = Left errorMessage
 
 masks64ToParallelLexerMasks :: Masks64 -> Either String ParallelLexerMasks 
