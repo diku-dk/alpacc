@@ -87,6 +87,7 @@ generateLexer lexer terminal_index_map terminal_type = do
         } = parMasks int_parallel_lexer
   let parallel_lexer = parLexer int_parallel_lexer
   let _identity = identity parallel_lexer
+  let accept_array = acceptArray parallel_lexer
   endomorphism_type <- extEndoType parallel_lexer
   transitions_to_endo <- transitionsToEndomorphismsArray parallel_lexer
   compositions_table <- compositionsArray endomorphism_type parallel_lexer
@@ -112,6 +113,9 @@ module lexer = mk_lexer {
   #{ignoreFunction terminal_index_map}
 
   #{defEndomorphismSize parallel_lexer}
+  
+  def accept_array: [endomorphism_size]bool =
+    sized endomorphism_size #{futPrint accept_array}
 
   #{transitions_to_endo}
 

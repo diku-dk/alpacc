@@ -23,7 +23,6 @@ import Data.Bifunctor (Bifunctor (..))
 import Data.Tuple (swap)
 import Control.Monad.State.Strict
 import Data.List qualified as List
-import Data.Either.Extra
 
 errorMessage :: String
 errorMessage = "Error: Happend during Parallel Lexing genration, contact a maintainer."
@@ -49,28 +48,26 @@ toEndoData ::
   ParallelDFALexer t S k ->
   IntMap Endomorphism ->
   E ->
-  Either String (EndoData k)
-toEndoData lexer to_endo e = do
-  (is_producing, s) <- maybeToEither errorMessage $ toState e
-  let maybe_token = toToken s
-  pure $
+  EndoData k
+toEndoData lexer to_endo e =
     EndoData
     { endo = e
-    , token = maybe_token
+    , token = Map.lookup s token_map
     , isAccepting = s `Set.member` accept_states
     , isProducing = is_producing
     }
   where
     initial_state = initial $ fsa $ parDFALexer lexer
-    toState e' = do
-      Endomorphism endo' producing <- IntMap.lookup e' to_endo
-      let (a, b) = bounds endo'
-      if a <= initial_state && initial_state <= b
-        then pure (producing UArray.! initial_state
-                    ,endo' UArray.! initial_state)
-        else Nothing
+    (is_producing, s) =
+      case IntMap.lookup e to_endo of 
+      Just (Endomorphism endo' producing) | in_bound ->
+          (producing UArray.! initial_state
+          ,endo' UArray.! initial_state)
+        where
+          (a, b) = bounds endo'
+          in_bound = a <= initial_state && initial_state <= b
+      _any -> error errorMessage
     token_map = terminalMap $ parDFALexer lexer
-    toToken s = Map.lookup s token_map
     accept_states = accepting $ fsa $ parDFALexer lexer
       
 data ParallelLexer t e =
@@ -81,6 +78,7 @@ data ParallelLexer t e =
   , endomorphismsSize :: !Int
   , dead :: !e
   , tokenSize :: !Int
+  , acceptArray :: !(UArray E Bool)
   } deriving (Show, Eq, Ord)
   
 data EndoCtx =
@@ -242,13 +240,14 @@ endoCompositionsTable _map =
 compositionsTable ::
   (Enum t, Bounded t, Ord t, Ord k) =>
   ParallelDFALexer t S k ->
-  Either String (Map Endomorphism (EndoData k)
-                ,Map (E, E) (EndoData k))
-compositionsTable lexer = do
-  a <- to_endo
-  b <- _compositions
-  pure (a, b)
+  (UArray E Bool
+  ,Map Endomorphism (EndoData k)
+  ,Map (E, E) (EndoData k))
+compositionsTable lexer = (accept_array, to_endo, _compositions)
   where
+    accept_array =
+      toAcceptArray
+      $ IntMap.mapWithKey (\k _ -> toEndoData' k) inv_to_endo
     ctx = initEndoCtx lexer
     toEndoData' = toEndoData lexer inv_to_endo
     connected_map = connectedMap ctx
@@ -260,7 +259,7 @@ compositionsTable lexer = do
     vec_dead = deadEndomorphism lexer
     vec_identity = identityEndomorphism lexer
     to_endo =
-      mapM toEndoData'
+      fmap toEndoData'
       $ Map.insert vec_dead _dead
       $ Map.insert vec_identity _identity to_endo'
     inv_to_endo =
@@ -275,7 +274,7 @@ compositionsTable lexer = do
         Nothing -> succ _identity
         Just a -> a
     _compositions =
-      mapM toEndoData'
+      fmap toEndoData'
       $ addDead _dead
       $ addIdentity _identity _compositions'
 
@@ -336,6 +335,13 @@ connectedTable lexer =
     transitionsLookup s =
       Set.fromList
       $ mapMaybe (transitionLookup s) _alphabet
+
+toAcceptArray :: IntMap (EndoData k) -> UArray E Bool
+toAcceptArray endo_map =
+  UArray.array (fst $ IntMap.findMin endo_map
+               ,fst $ IntMap.findMax endo_map)
+  $ IntMap.assocs
+  $ isAccepting <$> endo_map
 
 initEndoCtx ::
   (Enum t, Bounded t, Ord t, Ord k) =>
@@ -453,27 +459,28 @@ identityEndomorphism lexer = Endomorphism s b
 parallelLexer ::
   (Ord t, Enum t, Bounded t, Ord s, Ord k) =>
   ParallelDFALexer t s k ->
-  Either String (ParallelLexer t (EndoData k))
-parallelLexer lexer' = do
-  let lexer = enumerateParLexer 0 lexer'
-  (to_endo, _compositions) <- compositionsTable lexer
-  let endo_size = Map.size to_endo
-  let toEndo x = maybeToEither errorMessage $ Map.lookup x to_endo
-  dead_e <- toEndo $ deadEndomorphism lexer
-  identity_e <- toEndo $ identityEndomorphism lexer
-  let _unknown_transitions =
-        Map.fromList
-        $ map (,dead_e) [minBound..maxBound]
-  _transitions_to_endo <-
-        fmap (`Map.union` _unknown_transitions)
-        $ mapM toEndo
-        $ endomorphismTable lexer
-  pure $
-    ParallelLexer
-    { compositions = _compositions
-    , endomorphisms = _transitions_to_endo
-    , identity = identity_e
-    , endomorphismsSize = endo_size
-    , dead = dead_e
-    , tokenSize = Map.size $ terminalMap $ parDFALexer lexer
-    }
+  ParallelLexer t (EndoData k)
+parallelLexer lexer' =
+  ParallelLexer
+  { compositions = _compositions
+  , endomorphisms = _transitions_to_endo
+  , identity = identity_e
+  , endomorphismsSize = endo_size
+  , dead = dead_e
+  , tokenSize = Map.size $ terminalMap $ parDFALexer lexer
+  , acceptArray = accept_array
+  }
+  where
+    lexer = enumerateParLexer 0 lexer'
+    (accept_array, to_endo, _compositions) = compositionsTable lexer
+    endo_size = Map.size to_endo
+    toEndo x = to_endo Map.! x
+    dead_e = toEndo $ deadEndomorphism lexer
+    identity_e = toEndo $ identityEndomorphism lexer
+    _unknown_transitions =
+      Map.fromList
+      $ map (,dead_e) [minBound..maxBound]
+    _transitions_to_endo =
+      (`Map.union` _unknown_transitions)
+      $ toEndo <$> endomorphismTable lexer
+  

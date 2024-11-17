@@ -12,16 +12,15 @@ module type lexer_context = {
   val endomorphism_size: i64
   val endo_mask: endomorphism_module.t
   val terminal_mask: endomorphism_module.t
-  val accept_mask: endomorphism_module.t
   val produce_mask: endomorphism_module.t
   val endo_offset: endomorphism_module.t
   val terminal_offset: endomorphism_module.t
-  val accept_offset: endomorphism_module.t
   val produce_offset: endomorphism_module.t
   val is_ignore: terminal_module.t -> bool
   val transitions_to_endomorphisms: [256]endomorphism_module.t
   val compositions: [endomorphism_size * endomorphism_size]endomorphism_module.t
   val dead_terminal: terminal_module.t
+  val accept_array: [endomorphism_size]bool
 }
 
 module mk_lexer(L: lexer_context) = {
@@ -34,11 +33,6 @@ module mk_lexer(L: lexer_context) = {
                 endomorphism =
     let a' = mask L.endomorphism_module.& a
     in a' L.endomorphism_module.>> offset
-                                    
-  def is_accept (a: endomorphism): bool =
-    get_value L.accept_mask L.accept_offset a
-    |> L.endomorphism_module.to_i64
-    |> bool.i64
 
   def is_produce (a: endomorphism): bool =
     get_value L.produce_mask L.produce_offset a
@@ -53,6 +47,9 @@ module mk_lexer(L: lexer_context) = {
   def to_index (a: endomorphism): i64 =
     get_value L.endo_mask L.endo_offset a
     |> L.endomorphism_module.to_i64
+                                    
+  def is_accept (a: endomorphism): bool =
+    L.accept_array[to_index a]
     
   def compose (a: endomorphism) (b: endomorphism): endomorphism =
     #[unsafe]
