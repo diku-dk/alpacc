@@ -2,6 +2,7 @@ module Alpacc.Lexer.ParallelLexing
   ( ParallelLexer (..)
   , parallelLexer
   , EndoData (..)
+  , listCompositions
   )
 where
 
@@ -69,10 +70,10 @@ toEndoData lexer to_endo e =
       _any -> error errorMessage
     token_map = terminalMap $ parDFALexer lexer
     accept_states = accepting $ fsa $ parDFALexer lexer
-      
+
 data ParallelLexer t e =
   ParallelLexer
-  { compositions :: !(Map (E, E) e) 
+  { compositions :: !(IntMap (IntMap e)) 
   , endomorphisms :: !(Map t e)
   , identity :: !e
   , endomorphismsSize :: !Int
@@ -80,18 +81,34 @@ data ParallelLexer t e =
   , tokenSize :: !Int
   , acceptArray :: !(UArray E Bool)
   } deriving (Show, Eq, Ord)
-  
+
 data EndoCtx =
   EndoCtx
-  { comps :: !(Map (E, E) E)
+  { comps ::  !(IntMap (IntMap E))
   , endoMap :: !(Map Endomorphism E)
   , inverseEndoMap :: !(IntMap Endomorphism)
   , connectedMap :: !(IntMap IntSet)
-  , initialStateCtx :: !S
-  , deadStateCtx :: !S
   , inverseConnectedMap :: !(IntMap IntSet)
   , maxE :: !E
+  , identityE :: !E
   } deriving (Show, Eq, Ord)
+
+lookupComposition ::
+  IntMap (IntMap e) ->
+  E ->
+  E ->
+  Maybe e
+lookupComposition comps e e' =
+  IntMap.lookup e comps >>= IntMap.lookup e'
+
+listCompositions :: ParallelLexer t e -> [e]
+listCompositions parallel_lexer =
+  [fromMaybe d $ lookupComposition cs e e' | e <- range, e' <- range]
+  where
+    range = [0..upper]
+    cs = compositions parallel_lexer
+    d = dead parallel_lexer
+    upper = endomorphismsSize parallel_lexer - 1
 
 endoInsert ::
   E ->
@@ -109,10 +126,10 @@ endoInsert e endo = do
       s { inverseEndoMap = new_inv_map
         , endoMap = new_map }
 
-eLookup :: E -> State EndoCtx (Maybe Endomorphism)
+eLookup :: E -> State EndoCtx Endomorphism
 eLookup e = do
   inv_map <- gets inverseEndoMap
-  pure $ IntMap.lookup e inv_map
+  pure $ inv_map IntMap.! e
 
 connectedLookup :: E -> State EndoCtx (Maybe IntSet)
 connectedLookup e = do
@@ -139,7 +156,11 @@ connectedUpdateAll _map =
 insertComposition :: E -> E -> E -> State EndoCtx ()
 insertComposition e e' e'' = do
   _map <- gets comps
-  let new_map = Map.insert (e, e') e'' _map
+  let new_map =
+        if e `IntMap.member` _map then
+          IntMap.adjust (IntMap.insert e' e'') e _map
+        else
+          IntMap.insert e (IntMap.singleton e' e'') _map
   modify $ \s -> s { comps = new_map }
 
 preSets :: E -> E -> State EndoCtx (IntMap IntSet)
@@ -181,38 +202,40 @@ compose (Endomorphism a a') (Endomorphism b b') = Endomorphism c c'
     auxiliary i = (i, b UArray.! (a UArray.! i))
     auxiliary' i = (i, b' UArray.! (a UArray.! i))
 
-endoNext :: State EndoCtx E
-endoNext = do
-  max_e <- gets maxE
-  let new_max_e = succ max_e
-  modify $ \s -> s { maxE = new_max_e }
-  pure new_max_e
+endoNext :: Endomorphism -> State EndoCtx E
+endoNext endo = do
+  maybe_e <- endomorphismLookup endo
+  case maybe_e of
+    Just e -> pure e
+    Nothing -> do
+      max_e <- gets maxE
+      identity <- gets identityE
+      insertComposition max_e identity max_e
+      insertComposition identity max_e max_e
+      let new_max_e = succ max_e
+      modify $ \s -> s { maxE = new_max_e }
+      pure new_max_e
 
 endoCompose ::
   E ->
   E ->
   State EndoCtx (IntMap IntSet)
 endoCompose e e' = do
-  maybe_endo <- eLookup e
-  maybe_endo' <- eLookup e'
-  case (maybe_endo, maybe_endo') of
-    (Just endo, Just endo') -> do
-      _comps <- gets comps
-      case Map.lookup (e, e') _comps of
-        Just _ -> pure IntMap.empty
-        Nothing -> do
-          let endo'' = endo `compose` endo'
-          maybe_e'' <- endomorphismLookup endo''
-          e'' <- maybe endoNext pure maybe_e''
-          endoInsert e'' endo''
-          insertComposition e e' e''
-          pre_sets <- preSets e'' e
-          post_sets <- postSets e'' e'
-          let new_sets =
-                IntMap.unionWith IntSet.union pre_sets post_sets
-          connectedUpdateAll new_sets
-          pure new_sets
-    _ -> error errorMessage -- This should never happen.
+  _comps <- gets comps
+  case lookupComposition _comps e e' of
+    Nothing -> do
+      endo <- eLookup e
+      endo' <- eLookup e'
+      let endo'' = endo `compose` endo'
+      e'' <- endoNext endo''
+      endoInsert e'' endo''
+      insertComposition e e' e''
+      pre_sets <- preSets e'' e
+      post_sets <- postSets e'' e'
+      let new_sets = IntMap.unionWith IntSet.union pre_sets post_sets
+      connectedUpdateAll new_sets
+      pure new_sets
+    _ -> pure IntMap.empty
 
 popElement :: IntMap IntSet -> Maybe ((Int, Int), IntMap IntSet)
 popElement _map =
@@ -242,7 +265,7 @@ compositionsTable ::
   ParallelDFALexer t S k ->
   (UArray E Bool
   ,Map Endomorphism (EndoData k)
-  ,Map (E, E) (EndoData k))
+  ,IntMap (IntMap (EndoData k)))
 compositionsTable lexer = (accept_array, to_endo, _compositions)
   where
     accept_array =
@@ -254,29 +277,10 @@ compositionsTable lexer = (accept_array, to_endo, _compositions)
     (EndoCtx
       { comps = _compositions'
       , endoMap = to_endo'
-      , inverseEndoMap = inv_to_endo'
+      , inverseEndoMap = inv_to_endo
       }) = execState (endoCompositionsTable connected_map) ctx
-    vec_dead = deadEndomorphism lexer
-    vec_identity = identityEndomorphism lexer
-    to_endo =
-      fmap toEndoData'
-      $ Map.insert vec_dead _dead
-      $ Map.insert vec_identity _identity to_endo'
-    inv_to_endo =
-      IntMap.insert _dead vec_dead
-      $ IntMap.insert _identity vec_identity inv_to_endo'
-    _identity =
-      case Map.lookup vec_identity to_endo' of
-        Nothing -> succ $ maximum to_endo'
-        Just a -> a
-    _dead =
-      case Map.lookup vec_dead to_endo' of
-        Nothing -> succ _identity
-        Just a -> a
-    _compositions =
-      fmap toEndoData'
-      $ addDead _dead
-      $ addIdentity _identity _compositions'
+    to_endo = fmap toEndoData' to_endo'
+    _compositions = fmap toEndoData' <$> _compositions'
 
 endomorphismTable ::
   (Enum t, Bounded t, Ord t, Ord k) =>
@@ -343,20 +347,27 @@ toAcceptArray endo_map =
   $ IntMap.assocs
   $ isAccepting <$> endo_map
 
+initCompositions :: E -> IntSet -> IntMap (IntMap E)
+initCompositions identity set =
+  IntMap.unionsWith IntMap.union
+  $ [IntMap.singleton identity (IntMap.singleton e e) | e <- ls]
+  ++ [IntMap.singleton e (IntMap.singleton identity e) | e <- ls]
+  where
+    ls = IntSet.toList set
+
 initEndoCtx ::
   (Enum t, Bounded t, Ord t, Ord k) =>
   ParallelDFALexer t S k ->
   EndoCtx
 initEndoCtx lexer =
   EndoCtx
-  { comps = Map.empty
+  { comps = initCompositions 0 $ IntMap.keysSet e_to_endo
   , endoMap = endo_to_e
   , inverseEndoMap = e_to_endo
   , connectedMap = connected_table
   , inverseConnectedMap = inverse_connected_table
   , maxE = maximum endo_to_e
-  , initialStateCtx = initial $ fsa $ parDFALexer lexer
-  , deadStateCtx = deadState lexer
+  , identityE = 0
   }
   where
     endo_table = endomorphismTable lexer
@@ -364,6 +375,8 @@ initEndoCtx lexer =
       IntMap.fromList
       $ zip [0 :: E ..]
       $ List.nub
+      $ (identityEndomorphism lexer :)
+      $ (deadEndomorphism lexer :)
       $ Map.elems endo_table
     endo_to_e =
       Map.fromList
@@ -385,43 +398,6 @@ initEndoCtx lexer =
     inverse_connected_table =
       IntMap.unionsWith IntSet.union
       $ IntMap.mapWithKey toMap connected_table
-
-endosInTable :: Ord t => Map (t, t) t -> Set t
-endosInTable table = endos
-  where
-    endos =
-      Set.union (Set.fromList right)
-      $ Set.union (Set.fromList left)
-      $ Set.fromList
-      $ Map.elems table
-    (left, right) =
-      unzip
-      $ Map.keys table
-
-addIdentity :: Ord t => t -> Map (t, t) t -> Map (t, t) t
-addIdentity identity_endo table =
-  Map.union right_endos
-  $ Map.union table left_endos
-  where
-    left_endos =
-      Map.fromList $ (\q -> ((identity_endo, q), q)) <$> endos
-    right_endos =
-      Map.fromList $ (\q -> ((q, identity_endo), q)) <$> endos
-    endos =
-      Set.toList
-      $ Set.insert identity_endo
-      $ endosInTable table
-
-addDead :: Ord t => t -> Map (t, t) t -> Map (t, t) t
-addDead dead_endo table =
-  Map.union table deads
-  where
-    deads =
-      Map.fromList [((q, q'), dead_endo) | q <- endos, q' <- endos]
-    endos =
-      Set.toList
-      $ Set.insert dead_endo
-      $ endosInTable table
 
 deadEndomorphism ::
   (Ord t, Enum t, Bounded t, Ord k) =>
