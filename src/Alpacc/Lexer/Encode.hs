@@ -141,7 +141,7 @@ intParallelLexer ::
   ParallelDFALexer t s k ->
   Either String (IntParallelLexer t)
 intParallelLexer to_int lexer = do
-  parallel_lexer <- parallelLexer lexer
+  let parallel_lexer = parallelLexer lexer
   ms <- lexerMasks parallel_lexer
   let encode = encodeEndoData ms to_int
   new_compositions <- mapM encode $ compositions parallel_lexer

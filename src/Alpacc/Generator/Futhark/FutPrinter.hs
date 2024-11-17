@@ -8,8 +8,9 @@ where
 import Data.Foldable
 import Data.List qualified as List
 import Data.String.Interpolate (i)
-import Data.Array (Array)
 import Data.Array as Array hiding (Array)
+import Data.Array.Unboxed (UArray)
+import Data.Array.IArray as IArray
 import Alpacc.Types
 import Numeric.Natural
 
@@ -38,6 +39,11 @@ instance FutPrinter String where
 instance FutPrinter Int where
   futPrint = show
 
+instance FutPrinter Bool where
+  futPrint True = "true"
+  futPrint False = "false"
+
+
 instance FutPrinter Natural where
   futPrint = show
 
@@ -64,6 +70,9 @@ instance (FutPrinter a) => FutPrinter (NTuple a) where
 
 instance (FutPrinter a) => FutPrinter (Array i a) where
   futPrint = futPrint . Array.elems
+
+instance (FutPrinter a, IArray UArray a, Ix i) => FutPrinter (UArray i a) where
+  futPrint = futPrint . IArray.elems
 
 instance (FutPrinter a) => FutPrinter (Maybe a) where
   futPrint (Just a) = "#some " ++ futPrint a
