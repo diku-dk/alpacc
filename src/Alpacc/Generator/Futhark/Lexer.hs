@@ -14,6 +14,8 @@ import Alpacc.Lexer.ParallelLexing
 import Data.List qualified as List
 import Data.Either.Extra
 import Alpacc.Types
+import Data.Text qualified as Text hiding (Text)
+import Data.Text (Text)
 import Alpacc.Generator.Futhark.FutPrinter
 
 futharkLexer :: String
@@ -35,34 +37,21 @@ transitionsToEndomorphismsArray parallel_lexer = do
     $ mapM (fmap show . flip Map.lookup to_endo)
     [0..255]
   let result =
-        ("def transitions_to_endomorphisms : [256]endomorphism = sized 256 "++)
-        $ (++"]")
-        $ ("["++)
+        ("def transitions_to_endomorphisms : [256]endomorphism = sized 256 "<>)
+        $ (<>"]")
+        $ ("["<>)
         $ List.intercalate ",\n" vals
   return result
   where
     to_endo = endomorphisms parallel_lexer
     
-compositionsArray :: UInt -> ParallelLexer Word8 Int -> Either String String
-compositionsArray int parallel_lexer = do
-  vals <-
-    maybeToEither errorMessage
-    $ mapM row [0..endomorphisms_size - 1]
-  let result =
-        ("def compositions : [endomorphism_size * endomorphism_size]endomorphism = "++)
-        $ (++"] :> [endomorphism_size * endomorphism_size]endomorphism")
-        $ ("["++)
-        $ List.intercalate ",\n" vals
-  return result
+compositionsArray :: UInt -> ParallelLexer Word8 Int -> String
+compositionsArray int parallel_lexer =
+  [i|def compositions : [endomorphism_size * endomorphism_size]endomorphism =
+  #{p <$> listCompositions parallel_lexer} :> [endomorphism_size * endomorphism_size]endomorphism
+|]
   where
-    _compositions = compositions parallel_lexer
-    endomorphisms_size = endomorphismsSize parallel_lexer
-    row j = do
-      vals <-
-        mapM (\k -> (++ futPrint int) . show <$> Map.lookup (k, j) _compositions)
-        [0..endomorphisms_size - 1]
-      let result = List.intercalate ", " vals
-      return result
+    p = RawText . (<> futPrint int) . Text.pack . show 
 
 ignoreFunction :: Map T Int -> String
 ignoreFunction terminal_index_map = 
@@ -90,7 +79,7 @@ generateLexer lexer terminal_index_map terminal_type = do
   let accept_array = acceptArray parallel_lexer
   endomorphism_type <- extEndoType parallel_lexer
   transitions_to_endo <- transitionsToEndomorphismsArray parallel_lexer
-  compositions_table <- compositionsArray endomorphism_type parallel_lexer
+  let compositions_table = compositionsArray endomorphism_type parallel_lexer
   Right $
     futharkLexer
       <> [i|

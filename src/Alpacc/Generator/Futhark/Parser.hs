@@ -23,6 +23,8 @@ import Data.Composition
 import Alpacc.HashTable
 import Data.Array.Base as ABase
 import Alpacc.Types
+import Data.Text (Text)
+import Data.Text qualified as Text hiding (Text)
 
 futharkParser :: String
 futharkParser = $(embedStringFile "futhark/parser.fut")
@@ -173,7 +175,7 @@ maxAoPi table = (max_alpha_omega, max_pi)
     max_alpha_omega = maximum $ length . fst <$> values
     max_pi = maximum $ length . snd <$> values
 
-createNe :: Int -> Int -> String
+createNe :: Int -> Int -> Text
 createNe max_alpha_omega max_pi = futPrint ne
   where
     stacks = replicate max_alpha_omega (RawString "epsilon")
@@ -182,8 +184,9 @@ createNe max_alpha_omega max_pi = futPrint ne
 
 -- | Creates a string that is a tuple where a variable is indexed from 0 to
 -- n - 1 in the Futhark language.
-toTupleIndexArray :: (Show a, Num a, Enum a) => String -> a -> String
-toTupleIndexArray name n = futPrint $ NTuple $ map (indexArray name) [0 .. n - 1]
+toTupleIndexArray :: (Show a, Num a, Enum a) => String -> a -> Text
+toTupleIndexArray name n =
+  futPrint $ NTuple $ map (indexArray name) [0 .. n - 1]
 
 createHashFunction :: Int -> Int -> String
 createHashFunction q k = 

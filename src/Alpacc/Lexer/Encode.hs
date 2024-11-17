@@ -145,7 +145,7 @@ intParallelLexer to_int lexer = do
   let parallel_lexer = parallelLexer lexer
   ms <- lexerMasks parallel_lexer
   let encode = encodeEndoData ms to_int
-  new_compositions <- mapM encode $ compositions parallel_lexer
+  new_compositions <- mapM (mapM encode) $ compositions parallel_lexer
   new_endomorphims <- mapM encode $ endomorphisms parallel_lexer
   new_identity <- encode $ identity parallel_lexer
   new_dead <- encode $ dead parallel_lexer

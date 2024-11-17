@@ -2,24 +2,27 @@ module Alpacc.Generator.Futhark.FutPrinter
   ( FutPrinter (..)
   , NTuple (..)
   , RawString (..)
+  , RawText (..)
   )
 where
 
 import Data.Foldable
-import Data.List qualified as List
-import Data.String.Interpolate (i)
 import Data.Array as Array hiding (Array)
 import Data.Array.Unboxed (UArray)
 import Data.Array.IArray as IArray
 import Alpacc.Types
 import Numeric.Natural
+import Data.Text qualified as Text hiding (Text)
+import Data.Text (Text)
 
 newtype NTuple a = NTuple [a] deriving (Show, Eq, Ord, Read, Foldable)
 
 newtype RawString = RawString String deriving (Show, Eq, Ord, Read)
 
+newtype RawText = RawText Text deriving (Show, Eq, Ord, Read)
+
 class FutPrinter a where
-  futPrint :: a -> String
+  futPrint :: a -> Text
 
 instance FutPrinter UInt where
   futPrint U8 = "u8"
@@ -34,37 +37,37 @@ instance FutPrinter IInt where
   futPrint I64 = "i64"
 
 instance FutPrinter String where
-  futPrint = show
+  futPrint = Text.pack
 
 instance FutPrinter Int where
-  futPrint = show
+  futPrint = Text.pack . show
 
 instance FutPrinter Bool where
   futPrint True = "true"
   futPrint False = "false"
 
-
 instance FutPrinter Natural where
-  futPrint = show
+  futPrint = Text.pack . show
 
 instance FutPrinter Integer where
-  futPrint = show
-
+  futPrint = Text.pack . show
 
 instance FutPrinter RawString where
-  futPrint (RawString s) = s
+  futPrint (RawString s) = "\"" <> Text.pack s <> "\""
+instance FutPrinter RawText where
+  futPrint (RawText s) = "\"" <> s <> "\""
 
 instance (FutPrinter a, FutPrinter b) => FutPrinter (a, b) where
-  futPrint (a, b) = [i|(#{futPrint a}, #{futPrint b})|]
+  futPrint (a, b) = "(" <> futPrint a <> ", " <> futPrint b <> ")"
 
 instance (FutPrinter a) => FutPrinter [a] where
-  futPrint = ('[':) . (++"]") . List.intercalate ", " . fmap futPrint
+  futPrint = ("["<>) . (<>"]") . Text.intercalate ", " . fmap futPrint
 
 instance (FutPrinter a) => FutPrinter (NTuple a) where
   futPrint =
-    ('(':)
-    . (++")")
-    . List.intercalate ", "
+    ("("<>)
+    . (<>")")
+    . Text.intercalate ", "
     . fmap futPrint
     . toList
 
@@ -75,5 +78,5 @@ instance (FutPrinter a, IArray UArray a, Ix i) => FutPrinter (UArray i a) where
   futPrint = futPrint . IArray.elems
 
 instance (FutPrinter a) => FutPrinter (Maybe a) where
-  futPrint (Just a) = "#some " ++ futPrint a
+  futPrint (Just a) = "#some " <> futPrint a
   futPrint Nothing = "#none"
