@@ -31,6 +31,33 @@ errorMessage = "Error: Happend during Parallel Lexing genration, contact a maint
 type S = Int
 type E = Int
 
+identityE :: E
+identityE = 0
+
+identityEndo :: EndoData k
+identityEndo =
+  EndoData
+  { endo = identityE
+  , token = Nothing
+  , isAccepting = False
+  , isProducing = False
+  }
+
+deadE :: E
+deadE = 1
+
+deadEndo :: EndoData k
+deadEndo =
+  EndoData
+  { endo = deadE
+  , token = Nothing
+  , isAccepting = False
+  , isProducing = False
+  }
+
+initE :: E
+initE = 2
+
 data Endomorphism =
   Endomorphism
   {-# UNPACK #-} !(UArray S S)
@@ -88,7 +115,6 @@ data EndoCtx k =
   , connectedMap :: !(IntMap IntSet)
   , inverseConnectedMap :: !(IntMap IntSet)
   , maxE :: !E
-  , identityE :: !E
   , ecInitialState :: !S
   , ecTokenMap :: !(Map S k)
   , ecAcceptStates :: !(Set S)
@@ -216,10 +242,9 @@ endoNext endo = do
     Just e -> pure e
     Nothing -> do
       new_max_e <- gets (succ . maxE)
-      identity <- gets identityE
       d <- endoInsert new_max_e endo
-      insertComposition identity new_max_e d
-      insertComposition new_max_e identity d
+      insertComposition identityE new_max_e d
+      insertComposition new_max_e identityE d
       modify $ \s -> s { maxE = new_max_e }
       pure d
 
@@ -351,11 +376,12 @@ toAcceptArray endo_map =
   $ IntMap.assocs
   $ isAccepting <$> endo_map
 
-initCompositions :: E -> [EndoData k]  -> IntMap (IntMap (EndoData k))
-initCompositions identity ls =
+initCompositions :: [EndoData k]  -> IntMap (IntMap (EndoData k))
+initCompositions ls =
   IntMap.unionsWith IntMap.union
-  $ [IntMap.singleton identity (IntMap.singleton (endo e) e) | e <- ls]
-  ++ [IntMap.singleton (endo e) (IntMap.singleton identity e) | e <- ls]
+  $ [IntMap.singleton identityE (IntMap.singleton (endo e) e) | e <- ls]
+  ++ [IntMap.singleton (endo e) (IntMap.singleton identityE e) | e <- ls]
+  ++ [IntMap.singleton identityE (IntMap.singleton identityE identityEndo)]
 
 initEndoCtx ::
   (Enum t, Bounded t, Ord t, Ord k) =>
@@ -363,13 +389,12 @@ initEndoCtx ::
   EndoCtx k
 initEndoCtx lexer =
   EndoCtx
-  { comps = initCompositions 0 $ Map.elems endo_to_e
+  { comps = initCompositions $ Map.elems endo_to_e
   , endoMap = endo_to_e
   , inverseEndoMap = e_to_endo
   , connectedMap = connected_table
   , inverseConnectedMap = inverse_connected_table
   , maxE = maximum $ IntMap.keys e_to_endo
-  , identityE = 0
   , ecInitialState = initial_state
   , ecTokenMap = token_map
   , ecAcceptStates = accept_states
@@ -381,10 +406,8 @@ initEndoCtx lexer =
     endo_table = endomorphismTable lexer
     e_to_endo =
       IntMap.fromList
-      $ zip [0 :: E ..]
+      $ zip [initE :: E ..]
       $ List.nub
-      $ (identityEndomorphism lexer :)
-      $ (deadEndomorphism lexer :)
       $ Map.elems endo_table
     endo_to_e =
       Map.mapWithKey (flip $ toEndoData initial_state token_map accept_states)
@@ -408,39 +431,6 @@ initEndoCtx lexer =
       IntMap.unionsWith IntSet.union
       $ IntMap.mapWithKey toMap connected_table
 
-deadEndomorphism ::
-  (Ord t, Enum t, Bounded t, Ord k) =>
-  ParallelDFALexer t S k ->
-  Endomorphism
-deadEndomorphism lexer = Endomorphism s b
-  where
-    _states = states $ fsa $ parDFALexer lexer
-    first_state = minimum _states
-    last_state = maximum _states
-    dead_state = deadState lexer
-    s =
-      UArray.array (first_state, last_state)
-      $ (,dead_state) <$> [first_state..last_state]
-    b =
-      UArray.array (first_state, last_state)
-      $ (,False) <$> [first_state..last_state]
-
-identityEndomorphism ::
-  (Ord t, Enum t, Bounded t, Ord k) =>
-  ParallelDFALexer t S k ->
-  Endomorphism
-identityEndomorphism lexer = Endomorphism s b
-  where
-    _states = states $ fsa $ parDFALexer lexer
-    first_state = minimum _states
-    last_state = maximum _states
-    s =
-      UArray.array (first_state, last_state)
-      $ zip [first_state..last_state] [first_state..last_state]
-    b =
-      UArray.array (first_state, last_state)
-      $ (,False) <$> [first_state..last_state]
-
 parallelLexer ::
   (Ord t, Enum t, Bounded t, Ord s, Ord k) =>
   ParallelDFALexer t s k ->
@@ -449,9 +439,9 @@ parallelLexer lexer' =
   ParallelLexer
   { compositions = _compositions
   , endomorphisms = _transitions_to_endo
-  , identity = identity_e
+  , identity = identityEndo
   , endomorphismsSize = endo_size
-  , dead = dead_e
+  , dead = deadEndo
   , tokenSize = Map.size $ terminalMap $ parDFALexer lexer
   , acceptArray = accept_array
   }
@@ -460,11 +450,9 @@ parallelLexer lexer' =
     (accept_array, to_endo, _compositions) = compositionsTable lexer
     endo_size = Map.size to_endo
     toEndo x = to_endo Map.! x
-    dead_e = toEndo $ deadEndomorphism lexer
-    identity_e = toEndo $ identityEndomorphism lexer
     _unknown_transitions =
       Map.fromList
-      $ map (,dead_e) [minBound..maxBound]
+      $ map (,deadEndo) [minBound..maxBound]
     _transitions_to_endo =
       (`Map.union` _unknown_transitions)
       $ toEndo <$> endomorphismTable lexer
