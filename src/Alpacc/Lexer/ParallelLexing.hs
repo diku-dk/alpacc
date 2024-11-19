@@ -8,6 +8,7 @@ where
 
 import Alpacc.Lexer.FSA
 import Alpacc.Lexer.DFA
+import Data.Foldable
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map hiding (Map)
 import Data.IntMap.Strict (IntMap)
@@ -20,7 +21,6 @@ import Data.Maybe
 import Data.Array.Base (IArray (..))
 import Data.Array.Unboxed (UArray)
 import Data.Array.Unboxed qualified as UArray hiding (UArray)
-import Data.Bifunctor (Bifunctor (..))
 import Data.Tuple (swap)
 import Control.Monad.State.Strict
 import Data.List qualified as List
@@ -63,13 +63,13 @@ data Endomorphism =
   {-# UNPACK #-} !(UArray S S)
   {-# UNPACK #-} !(UArray S Bool) deriving (Eq, Ord, Show)
 
-data EndoData t =
+data EndoData k =
   EndoData
   { endo :: !E
-  , token :: !(Maybe t)
+  , token :: !(Maybe k)
   , isAccepting :: !Bool
   , isProducing :: !Bool
-  } deriving (Show, Eq, Ord)
+  } deriving (Show, Eq, Ord, Functor)
 
 toEndoData ::
   (Ord k) =>
@@ -109,12 +109,13 @@ data ParallelLexer t e =
 
 data EndoCtx k =
   EndoCtx
-  { comps ::  !(IntMap (IntMap (EndoData k)))
-  , endoMap :: !(Map Endomorphism (EndoData k))
-  , inverseEndoMap :: !(IntMap Endomorphism)
-  , connectedMap :: !(IntMap IntSet)
-  , inverseConnectedMap :: !(IntMap IntSet)
-  , maxE :: !E
+  { ecCompositions ::  !(IntMap (IntMap (EndoData k)))
+  , ecEndoMap :: !(Map Endomorphism E)
+  , ecEndoData :: !(IntMap (EndoData k))
+  , ecInverseEndoMap :: !(IntMap Endomorphism)
+  , ecConnectedMap :: !(IntMap IntSet)
+  , ecInverseConnectedMap :: !(IntMap IntSet)
+  , ecMaxE :: !E
   , ecInitialState :: !S
   , ecTokenMap :: !(Map S k)
   , ecAcceptStates :: !(Set S)
@@ -143,44 +144,47 @@ endoInsert ::
   Endomorphism ->
   State (EndoCtx k) (EndoData k)
 endoInsert e endo = do
-  inv_map <- gets inverseEndoMap
+  inv_map <- gets ecInverseEndoMap
   initial_state <- gets ecInitialState
   token_map <- gets ecTokenMap
   accept_states <- gets ecAcceptStates
+  endo_data <- gets ecEndoData
   let new_inv_map = IntMap.insert e endo inv_map
 
-  _map <- gets endoMap
+  _map <- gets ecEndoMap
   let d = toEndoData initial_state token_map accept_states e endo
-  let new_map = Map.insert endo d _map
+  let new_endo_data = IntMap.insert e d endo_data
+  let new_map = Map.insert endo e _map
   
   modify $
     \s ->
-      s { inverseEndoMap = new_inv_map
-        , endoMap = new_map }
+      s { ecInverseEndoMap = new_inv_map
+        , ecEndoMap = new_map
+        , ecEndoData = new_endo_data }
   pure d
 
 eLookup :: E -> State (EndoCtx k) Endomorphism
 eLookup e = do
-  inv_map <- gets inverseEndoMap
+  inv_map <- gets ecInverseEndoMap
   pure $ inv_map IntMap.! e
 
 connectedLookup :: E -> State (EndoCtx k) (Maybe IntSet)
 connectedLookup e = do
-  _map <- gets connectedMap
+  _map <- gets ecConnectedMap
   pure $ IntMap.lookup e _map
 
 connectedUpdate :: E -> IntSet -> State (EndoCtx k) ()
 connectedUpdate e e_set = do
-  _map <- gets connectedMap
-  inv_map <- gets inverseConnectedMap
+  _map <- gets ecConnectedMap
+  inv_map <- gets ecInverseConnectedMap
   let new_map = IntMap.insertWith IntSet.union e e_set _map
   let new_inverse_map =
         IntMap.unionWith IntSet.union inv_map
         $ IntMap.fromList
         $ (,IntSet.singleton e) <$> IntSet.toList e_set
   modify $ \s ->
-    s { connectedMap = new_map
-      , inverseConnectedMap = new_inverse_map }
+    s { ecConnectedMap = new_map
+      , ecInverseConnectedMap = new_inverse_map }
 
 connectedUpdateAll :: IntMap IntSet -> State (EndoCtx k) ()
 connectedUpdateAll _map =
@@ -188,18 +192,18 @@ connectedUpdateAll _map =
 
 insertComposition :: E -> E -> EndoData k -> State (EndoCtx k) ()
 insertComposition e e' e'' = do
-  _map <- gets comps
+  _map <- gets ecCompositions
   let new_map =
         if e `IntMap.member` _map then
           IntMap.adjust (IntMap.insert e' e'') e _map
         else
           IntMap.insert e (IntMap.singleton e' e'') _map
-  modify $ \s -> s { comps = new_map }
+  modify $ \s -> s { ecCompositions = new_map }
 
 preSets :: E -> E -> State (EndoCtx k) (IntMap IntSet)
 preSets e'' e = do
-  _map <- gets connectedMap
-  inv_map <- gets inverseConnectedMap
+  _map <- gets ecConnectedMap
+  inv_map <- gets ecInverseConnectedMap
   let set = IntSet.singleton e''
   pure $
     case IntMap.lookup e inv_map of
@@ -213,16 +217,16 @@ preSets e'' e = do
 
 postSets :: E -> E -> State (EndoCtx k) (IntMap IntSet)
 postSets e'' e' = do
-  _map <- gets connectedMap
+  _map <- gets ecConnectedMap
   e_set' <- fromMaybe IntSet.empty <$> connectedLookup e'
   e_set'' <- fromMaybe IntSet.empty <$> connectedLookup e''
   pure $ IntMap.singleton e'' (IntSet.difference e_set' e_set'')
 
 endomorphismLookup ::
   Endomorphism ->
-  State (EndoCtx k) (Maybe (EndoData k))
+  State (EndoCtx k) (Maybe E)
 endomorphismLookup endomorphism = do
-  _map <- gets endoMap
+  _map <- gets ecEndoMap
   pure $ Map.lookup endomorphism _map
 
 compose :: Endomorphism -> Endomorphism -> Endomorphism
@@ -239,13 +243,13 @@ endoNext :: Ord k => Endomorphism -> State (EndoCtx k) (EndoData k)
 endoNext endo = do
   maybe_e <- endomorphismLookup endo
   case maybe_e of
-    Just e -> pure e
+    Just e -> gets ((IntMap.! e) . ecEndoData)
     Nothing -> do
-      new_max_e <- gets (succ . maxE)
+      new_max_e <- gets (succ . ecMaxE)
       d <- endoInsert new_max_e endo
       insertComposition identityE new_max_e d
       insertComposition new_max_e identityE d
-      modify $ \s -> s { maxE = new_max_e }
+      modify $ \s -> s { ecMaxE = new_max_e }
       pure d
 
 endoCompose ::
@@ -254,7 +258,7 @@ endoCompose ::
   E ->
   State (EndoCtx k) (IntMap IntSet)
 endoCompose e e' = do
-  _comps <- gets comps
+  _comps <- gets ecCompositions
   case lookupComposition _comps e e' of
     Nothing -> do
       endo'' <- compose <$> eLookup e <*> eLookup e'
@@ -290,28 +294,6 @@ endoCompositionsTable _map =
       let !map''' = IntMap.unionWith IntSet.union map' map''
       endoCompositionsTable map''' 
     Nothing -> pure ()
-
-compositionsTable ::
-  (Enum t, Bounded t, Ord t, Ord k) =>
-  ParallelDFALexer t S k ->
-  (UArray E Bool
-  ,Map Endomorphism (EndoData k)
-  ,IntMap (IntMap (EndoData k)))
-compositionsTable lexer = (accept_array, to_endo, _compositions)
-  where
-    accept_array =
-      toAcceptArray
-      $ IntMap.fromList
-      $ fmap (\e -> (endo e, e))
-      $ (identityEndo:)
-      $ (deadEndo:)
-      $ Map.elems to_endo
-    ctx = initEndoCtx lexer
-    connected_map = connectedMap ctx
-    (EndoCtx
-      { comps = _compositions
-      , endoMap = to_endo
-      }) = execState (endoCompositionsTable connected_map) ctx
 
 endomorphismTable ::
   (Enum t, Bounded t, Ord t, Ord k) =>
@@ -378,61 +360,96 @@ toAcceptArray endo_map =
   $ IntMap.assocs
   $ isAccepting <$> endo_map
 
-initCompositions :: [EndoData k]  -> IntMap (IntMap (EndoData k))
+enumerate :: (Foldable f, Ord a) => Int -> f a -> IntMap a
+enumerate a = IntMap.fromList . zip [a ..] . toList
+
+invertBijection :: (Ord a, Ord b) => Map a b -> Map b a
+invertBijection = Map.fromList . fmap swap . Map.assocs
+
+intMapToMap :: IntMap a -> Map Int a
+intMapToMap = Map.fromList . IntMap.toList
+
+mapToIntMap :: Map Int a -> IntMap a
+mapToIntMap = IntMap.fromList . Map.toList
+
+setToIntSet :: Set Int -> IntSet
+setToIntSet = IntSet.fromList . Set.toList
+
+toIntMapSet :: Map Int (Set Int) -> IntMap IntSet
+toIntMapSet = mapToIntMap . fmap setToIntSet
+
+invertIntSetMap :: IntMap IntSet -> IntMap IntSet 
+invertIntSetMap =
+  IntMap.unionsWith IntSet.union
+  . IntMap.mapWithKey toMap
+  where
+    toMap k =
+      IntMap.fromList
+      . fmap (,IntSet.singleton k)
+      . IntSet.toList
+
+mapMapSet ::
+  (Ord t, Ord t') =>
+  (t -> t') ->
+  Map t (Set t) ->
+  Map t' (Set t')
+mapMapSet f =
+  Map.mapKeys f . fmap (Set.map f)
+
+initEndoData :: Ord k => S -> Map S k -> Set S -> IntMap Endomorphism -> IntMap (EndoData k)
+initEndoData initial_state token_map accept_states =
+  IntMap.insert identityE identityEndo
+  . IntMap.insert deadE deadEndo
+  . IntMap.mapWithKey (toEndoData initial_state token_map accept_states)
+
+
+initCompositions :: [EndoData k] -> IntMap (IntMap (EndoData k))
 initCompositions ls =
   IntMap.unionsWith IntMap.union
   $ (IntMap.singleton identityE (IntMap.singleton identityE identityEndo):)
   $ [IntMap.singleton identityE (IntMap.singleton (endo e) e) | e <- ls]
   ++ [IntMap.singleton (endo e) (IntMap.singleton identityE e) | e <- ls]
 
+
 initEndoCtx ::
   (Enum t, Bounded t, Ord t, Ord k) =>
   ParallelDFALexer t S k ->
+  Map t Endomorphism ->
   EndoCtx k
-initEndoCtx lexer =
+initEndoCtx lexer endo_table =
   EndoCtx
-  { comps = initCompositions $ Map.elems endo_to_e
-  , endoMap = endo_to_e
-  , inverseEndoMap = e_to_endo
-  , connectedMap = connected_table
-  , inverseConnectedMap = inverse_connected_table
-  , maxE = maximum $ IntMap.keys e_to_endo
+  { ecCompositions = initCompositions $ IntMap.elems endo_data
+  , ecEndoMap = endo_to_e
+  , ecInverseEndoMap = e_to_endo
+  , ecConnectedMap = connected_table
+  , ecInverseConnectedMap = inverse_connected_table
+  , ecMaxE = maximum $ IntMap.keys e_to_endo
   , ecInitialState = initial_state
   , ecTokenMap = token_map
   , ecAcceptStates = accept_states
+  , ecEndoData = endo_data
   }
   where
+    endo_data = initEndoData initial_state token_map accept_states e_to_endo
     initial_state = initial $ fsa $ parDFALexer lexer
     token_map = terminalMap $ parDFALexer lexer
     accept_states = accepting $ fsa $ parDFALexer lexer
-    endo_table = endomorphismTable lexer
-    e_to_endo =
-      IntMap.fromList
-      $ zip [initE :: E ..]
-      $ List.nub
-      $ Map.elems endo_table
-    endo_to_e =
-      Map.mapWithKey (flip $ toEndoData initial_state token_map accept_states)
-      $ Map.fromList
-      $ swap
-      <$> IntMap.assocs e_to_endo
-    endoToE = (endo_to_e Map.!)
-    t_to_e = endo . endoToE <$> endo_table
-    tToE = (t_to_e Map.!)
-    connected_table =
-      IntMap.unionsWith IntSet.union
-      $ fmap (uncurry IntMap.singleton . first tToE)
-      $ Map.toList
-      $ IntSet.fromList . fmap tToE . Set.toList
-      <$> connectedTable lexer
-    toMap k =
-      IntMap.fromList
-      . fmap (,IntSet.singleton k)
-      . IntSet.toList
-    inverse_connected_table =
-      IntMap.unionsWith IntSet.union
-      $ IntMap.mapWithKey toMap connected_table
+    e_to_endo = enumerate initE $ List.nub $ Map.elems endo_table
+    endo_to_e = invertBijection $ intMapToMap e_to_endo
+    t_to_e = (endo_to_e Map.!) <$> endo_table
+    connected_table = toIntMapSet $ mapMapSet (t_to_e Map.!) $ connectedTable lexer
+    inverse_connected_table = invertIntSetMap connected_table
 
+addDead ::
+  (Ord t, Enum t, Bounded t) =>
+  Map t (EndoData k) ->
+  Map t (EndoData k)
+addDead = (`Map.union` unknown_transitions)
+  where
+    unknown_transitions =
+      Map.fromList
+      $ map (,deadEndo) [minBound..maxBound]
+  
 parallelLexer ::
   (Ord t, Enum t, Bounded t, Ord s, Ord k) =>
   ParallelDFALexer t s k ->
@@ -440,22 +457,24 @@ parallelLexer ::
 parallelLexer lexer' =
   ParallelLexer
   { compositions = _compositions
-  , endomorphisms = _transitions_to_endo
+  , endomorphisms = transition_to_endo
   , identity = identityEndo
-  , endomorphismsSize = endo_size
+  , endomorphismsSize = IntMap.size endo_data
   , dead = deadEndo
   , tokenSize = Map.size $ terminalMap $ parDFALexer lexer
   , acceptArray = accept_array
   }
   where
     lexer = enumerateParLexer 0 lexer'
-    (accept_array, to_endo, _compositions) = compositionsTable lexer
-    endo_size = 2 + Map.size to_endo
-    toEndo x = to_endo Map.! x
-    _unknown_transitions =
-      Map.fromList
-      $ map (,deadEndo) [minBound..maxBound]
-    _transitions_to_endo =
-      (`Map.union` _unknown_transitions)
-      $ toEndo <$> endomorphismTable lexer
+    accept_array = toAcceptArray endo_data
+    ctx = initEndoCtx lexer endo_table
+    connected_map = ecConnectedMap ctx
+    (EndoCtx
+      { ecCompositions = _compositions
+      , ecEndoMap = endo_map
+      , ecEndoData = endo_data
+      }) = execState (endoCompositionsTable connected_map) ctx
+    endo_table = endomorphismTable lexer
+    transition_to_endo =
+      addDead $ (endo_data IntMap.!) . (endo_map Map.!) <$> endo_table
   

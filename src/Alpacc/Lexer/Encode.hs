@@ -63,12 +63,19 @@ parallelLexerToMasks64 :: ParallelLexer t k -> Either String Masks64
 parallelLexerToMasks64 (ParallelLexer { endomorphismsSize = e, tokenSize = t }) =
   masks [e, t, 1]
 
+{-
 encodeMasks64 :: Masks64 -> NonEmpty Int -> Either String Int
-encodeMasks64 (Masks64 ms) elems
+encodeMasks64 m@(Masks64 ms) elems
   | NonEmpty.length ms == NonEmpty.length elems =
-    let x = offset <$> ms
-    in pure $ sum $ NonEmpty.zipWith shift elems x 
+    pure $ unsafeEncodeMasks64 m elems 
   | otherwise = Left errorMessage
+-}
+
+unsafeEncodeMasks64 :: Masks64 -> NonEmpty Int -> Int
+unsafeEncodeMasks64 (Masks64 ms) elems =
+  let x = offset <$> ms
+  in sum $ NonEmpty.zipWith shift elems x 
+  
 
 masks64ToParallelLexerMasks :: Masks64 -> Either String ParallelLexerMasks 
 masks64ToParallelLexerMasks (Masks64 ls) = do
@@ -115,10 +122,10 @@ encodeEndoData ::
   ParallelLexerMasks ->
   Map (Maybe k) Int ->
   EndoData k ->
-  Either String Int
+  Int
 encodeEndoData lexer_masks to_int endo_data = do
-  t <- findInt maybe_token 
-  encodeMasks64 ms $ NonEmpty.fromList [e, t, p]
+  unsafeEncodeMasks64 ms
+  $ NonEmpty.fromList [e, t, p]
   where
     ms = parallelLexerMasksToMasks64 lexer_masks
     EndoData
@@ -127,7 +134,7 @@ encodeEndoData lexer_masks to_int endo_data = do
       , isProducing = produce
       } = endo_data
     p = fromEnum produce
-    findInt = maybeToEither errorMessage . flip Map.lookup to_int
+    t = to_int Map.! maybe_token
 
 data IntParallelLexer t =
   IntParallelLexer
@@ -145,10 +152,10 @@ intParallelLexer to_int lexer = do
   let parallel_lexer = parallelLexer lexer
   ms <- lexerMasks parallel_lexer
   let encode = encodeEndoData ms to_int
-  new_compositions <- mapM (mapM encode) $ compositions parallel_lexer
-  new_endomorphims <- mapM encode $ endomorphisms parallel_lexer
-  new_identity <- encode $ identity parallel_lexer
-  new_dead <- encode $ dead parallel_lexer
+  let new_compositions = fmap encode <$> compositions parallel_lexer
+  let new_endomorphims = encode <$> endomorphisms parallel_lexer
+  let new_identity = encode $ identity parallel_lexer
+  let new_dead = encode $ dead parallel_lexer
   let new_parallel_lexer =
         parallel_lexer
         { compositions = new_compositions
@@ -161,4 +168,3 @@ intParallelLexer to_int lexer = do
     { parLexer = new_parallel_lexer
     , parMasks = ms
     }
-
