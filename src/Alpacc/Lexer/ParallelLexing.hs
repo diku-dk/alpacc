@@ -130,7 +130,7 @@ lookupComposition comps e e' =
 
 listCompositions :: ParallelLexer t e -> [e]
 listCompositions parallel_lexer =
-  [fromMaybe d $ lookupComposition cs e e' | e <- range, e' <- range]
+  [fromMaybe d $ lookupComposition cs e' e | e <- range, e' <- range]
   where
     range = [0..upper]
     cs = compositions parallel_lexer
@@ -302,8 +302,10 @@ compositionsTable lexer = (accept_array, to_endo, _compositions)
     accept_array =
       toAcceptArray
       $ IntMap.fromList
-      $ Map.elems
-      $ (\e -> (endo e, e)) <$> to_endo
+      $ fmap (\e -> (endo e, e))
+      $ (identityEndo:)
+      $ (deadEndo:)
+      $ Map.elems to_endo
     ctx = initEndoCtx lexer
     connected_map = connectedMap ctx
     (EndoCtx
@@ -379,9 +381,9 @@ toAcceptArray endo_map =
 initCompositions :: [EndoData k]  -> IntMap (IntMap (EndoData k))
 initCompositions ls =
   IntMap.unionsWith IntMap.union
+  $ (IntMap.singleton identityE (IntMap.singleton identityE identityEndo):)
   $ [IntMap.singleton identityE (IntMap.singleton (endo e) e) | e <- ls]
   ++ [IntMap.singleton (endo e) (IntMap.singleton identityE e) | e <- ls]
-  ++ [IntMap.singleton identityE (IntMap.singleton identityE identityEndo)]
 
 initEndoCtx ::
   (Enum t, Bounded t, Ord t, Ord k) =>
@@ -448,7 +450,7 @@ parallelLexer lexer' =
   where
     lexer = enumerateParLexer 0 lexer'
     (accept_array, to_endo, _compositions) = compositionsTable lexer
-    endo_size = Map.size to_endo
+    endo_size = 2 + Map.size to_endo
     toEndo x = to_endo Map.! x
     _unknown_transitions =
       Map.fromList

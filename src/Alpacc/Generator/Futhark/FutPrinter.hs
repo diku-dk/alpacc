@@ -53,7 +53,7 @@ instance FutPrinter Integer where
   futPrint = show
 
 instance (FutPrinter a, FutPrinter b) => FutPrinter (a, b) where
-  futPrint (a, b) = [i|#{futPrint a}, #{futPrint b})|]
+  futPrint (a, b) = [i|(#{futPrint a}, #{futPrint b})|]
 
 instance (FutPrinter a) => FutPrinter [a] where
   futPrint = ("["<>) . (<>"]") . List.intercalate ", " . fmap futPrint
