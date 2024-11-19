@@ -46,7 +46,7 @@ transitionsToEndomorphismsArray parallel_lexer = do
 compositionsArray :: UInt -> ParallelLexer Word8 Int -> String
 compositionsArray int parallel_lexer =
   [i|def compositions : [endomorphism_size * endomorphism_size]endomorphism =
-  [#{ps}] :> [endomorphism_size * endomorphism_size]endomorphism
+  #{ps} :> [endomorphism_size * endomorphism_size]endomorphism
 |]
   where
     ps = futPrint $ p <$> listCompositions parallel_lexer
