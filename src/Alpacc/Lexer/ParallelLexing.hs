@@ -168,27 +168,17 @@ eLookup e = do
   inv_map <- gets ecInverseEndoMap
   pure $ inv_map IntMap.! e
 
-connectedLookup :: E -> State (EndoCtx k) (Maybe IntSet)
-connectedLookup e = do
-  _map <- gets ecConnectedMap
-  pure $ IntMap.lookup e _map
-
-connectedUpdate :: E -> IntSet -> State (EndoCtx k) ()
-connectedUpdate e e_set = do
-  _map <- gets ecConnectedMap
-  inv_map <- gets ecInverseConnectedMap
-  let new_map = IntMap.insertWith IntSet.union e e_set _map
-  let new_inverse_map =
-        IntMap.unionWith IntSet.union inv_map
-        $ IntMap.fromList
-        $ (,IntSet.singleton e) <$> IntSet.toList e_set
+connectedUpdate :: IntMap IntSet -> IntMap IntSet -> State (EndoCtx k) ()
+connectedUpdate add_map add_inv_map = do
+  old_map <- gets ecConnectedMap
+  old_inv_map <- gets ecInverseConnectedMap
+  let new_map =
+        IntMap.foldrWithKey' (IntMap.insertWith IntSet.union) old_map add_map
+  let new_inv_map =
+        IntMap.foldrWithKey' (IntMap.insertWith IntSet.union) old_inv_map add_inv_map
   modify $ \s ->
     s { ecConnectedMap = new_map
-      , ecInverseConnectedMap = new_inverse_map }
-
-connectedUpdateAll :: IntMap IntSet -> State (EndoCtx k) ()
-connectedUpdateAll _map =
-  mapM_ (uncurry connectedUpdate) $ IntMap.assocs _map
+      , ecInverseConnectedMap = new_inv_map }
 
 insertComposition :: E -> E -> EndoData k -> State (EndoCtx k) ()
 insertComposition e e' e'' = do
@@ -200,27 +190,25 @@ insertComposition e e' e'' = do
           IntMap.insert e (IntMap.singleton e' e'') _map
   modify $ \s -> s { ecCompositions = new_map }
 
-preSets :: E -> E -> State (EndoCtx k) (IntMap IntSet)
+preSets :: E -> E -> State (EndoCtx k) (IntMap IntSet, IntMap IntSet)
 preSets e'' e = do
-  _map <- gets ecConnectedMap
-  inv_map <- gets ecInverseConnectedMap
-  let set = IntSet.singleton e''
-  pure $
-    case IntMap.lookup e inv_map of
-      Nothing -> error errorMessage -- This should never happen.
-      Just _set ->
-        if e'' `IntSet.member` _set
-        then IntMap.empty
-        else  
-          IntMap.fromList
-          $ (,set) <$> IntSet.toList _set
+  m <- gets ecInverseConnectedMap
+  let e_set = m IntMap.! e
+  let e_set'' = fromMaybe IntSet.empty $ e'' `IntMap.lookup` m
+  let new_set = IntSet.difference e_set e_set''
+  let e_inv_m'' = IntMap.singleton e'' new_set
+  let e_m'' = IntMap.fromList $ (, IntSet.singleton e'') <$> IntSet.elems new_set
+  pure (e_m'', e_inv_m'')
 
-postSets :: E -> E -> State (EndoCtx k) (IntMap IntSet)
+postSets :: E -> E -> State (EndoCtx k) (IntMap IntSet, IntMap IntSet)
 postSets e'' e' = do
-  _map <- gets ecConnectedMap
-  e_set' <- fromMaybe IntSet.empty <$> connectedLookup e'
-  e_set'' <- fromMaybe IntSet.empty <$> connectedLookup e''
-  pure $ IntMap.singleton e'' (IntSet.difference e_set' e_set'')
+  m <- gets ecConnectedMap
+  let e_set' = m IntMap.! e'
+  let e_set'' = fromMaybe IntSet.empty $ e'' `IntMap.lookup` m
+  let new_set = IntSet.difference e_set' e_set''
+  let e_m'' = IntMap.singleton e'' new_set
+  let e_inv_m'' = IntMap.fromList $ (, IntSet.singleton e'') <$> IntSet.elems new_set
+  pure (e_m'', e_inv_m'')
 
 endomorphismLookup ::
   Endomorphism ->
@@ -261,14 +249,15 @@ endoCompose e e' = do
   _comps <- gets ecCompositions
   case lookupComposition _comps e e' of
     Nothing -> do
-      endo'' <- compose <$> eLookup e <*> eLookup e'
+      endo'' <- {-# SCC compose #-} compose <$> eLookup e <*> eLookup e'
       e'' <- endoNext endo''
       insertComposition e e' e''
-      pre_sets <- preSets (endo e'') e
-      post_sets <- postSets (endo e'') e'
-      let new_sets = IntMap.unionWith IntSet.union pre_sets post_sets
-      connectedUpdateAll new_sets
-      pure new_sets
+      (pre_map, pre_inv_map) <- preSets (endo e'') e
+      (post_map, post_inv_map) <- postSets (endo e'') e'
+      let new_map = IntMap.unionWith IntSet.union pre_map post_map
+      let new_inv_map = IntMap.unionWith IntSet.union pre_inv_map post_inv_map
+      connectedUpdate new_map new_inv_map
+      pure new_map
     _ -> pure IntMap.empty
 
 popElement :: IntMap IntSet -> Maybe ((Int, Int), IntMap IntSet)
@@ -291,7 +280,7 @@ endoCompositionsTable _map =
   case popElement _map of
     Just ((e, e'), map') -> do
       map'' <- endoCompose e e'
-      let !map''' = IntMap.unionWith IntSet.union map' map''
+      let !map''' = IntMap.foldrWithKey' (IntMap.insertWith IntSet.union) map' map''
       endoCompositionsTable map''' 
     Nothing -> pure ()
 
