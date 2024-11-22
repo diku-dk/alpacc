@@ -14,7 +14,7 @@ import Alpacc.Lexer.ParallelLexing
 import Data.List qualified as List
 import Data.Either.Extra
 import Alpacc.Types
-import Alpacc.Generator.Futhark.FutPrinter
+import Alpacc.Generator.Futhark.Futharkify
 
 futharkLexer :: String
 futharkLexer = $(embedStringFile "futhark/lexer.fut")
@@ -49,8 +49,8 @@ compositionsArray int parallel_lexer =
   #{ps} :> [endomorphism_size * endomorphism_size]endomorphism
 |]
   where
-    ps = futPrint $ p <$> listCompositions parallel_lexer
-    p = RawString . (<> futPrint int) . futPrint 
+    ps = futharkify $ p <$> listCompositions parallel_lexer
+    p = RawString . (<> futharkify int) . futharkify 
 
 ignoreFunction :: Map T Int -> String
 ignoreFunction terminal_index_map = 
@@ -83,8 +83,8 @@ generateLexer lexer terminal_index_map terminal_type = do
     futharkLexer
       <> [i|
 module lexer = mk_lexer {
-  module terminal_module = #{futPrint terminal_type}
-  module endomorphism_module = #{futPrint endomorphism_type}
+  module terminal_module = #{futharkify terminal_type}
+  module endomorphism_module = #{futharkify endomorphism_type}
 
   type endomorphism = endomorphism_module.t
   type terminal = terminal_module.t
@@ -103,7 +103,7 @@ module lexer = mk_lexer {
   #{defEndomorphismSize parallel_lexer}
   
   def accept_array: [endomorphism_size]bool =
-    sized endomorphism_size #{futPrint accept_array}
+    sized endomorphism_size #{futharkify accept_array}
 
   #{transitions_to_endo}
 

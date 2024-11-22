@@ -11,7 +11,7 @@ import Data.Map qualified as Map
 import Data.Map ( Map )
 import Alpacc.Types
 import Data.Either.Extra
-import Alpacc.Generator.Futhark.FutPrinter
+import Alpacc.Generator.Futhark.Futharkify
 
 parentVectorTest :: String
 parentVectorTest =
@@ -47,7 +47,7 @@ lexerFunction t = [i|
 entry lex s =
   match lexer.lex_chunked 16777216 s
   case #some r ->
-    map (\\(a, (b, c)) -> [i32.#{futPrint t} a, b, c]) r
+    map (\\(a, (b, c)) -> [i32.#{futharkify t} a, b, c]) r
   case #none -> []
 |]
 
