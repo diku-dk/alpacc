@@ -17,7 +17,7 @@ import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.String.Interpolate (i)
 import Data.Tuple.Extra
-import Alpacc.Generator.Futhark.FutPrinter
+import Alpacc.Generator.Futhark.Futharkify
 import Alpacc.Generator.Futhark.Util
 import Data.Composition
 import Alpacc.HashTable
@@ -174,7 +174,7 @@ maxAoPi table = (max_alpha_omega, max_pi)
     max_pi = maximum $ length . snd <$> values
 
 createNe :: Int -> Int -> String
-createNe max_alpha_omega max_pi = futPrint ne
+createNe max_alpha_omega max_pi = futharkify ne
   where
     stacks = replicate max_alpha_omega (RawString "epsilon")
     rules = replicate max_pi (RawString "empty_production")
@@ -184,7 +184,7 @@ createNe max_alpha_omega max_pi = futPrint ne
 -- n - 1 in the Futhark language.
 toTupleIndexArray :: (Show a, Num a, Enum a) => String -> a -> String
 toTupleIndexArray name n =
-  futPrint $ NTuple $ map (indexArray name) [0 .. n - 1]
+  futharkify $ NTuple $ map (indexArray name) [0 .. n - 1]
 
 createHashFunction :: Int -> Int -> String
 createHashFunction q k = 
@@ -194,8 +194,8 @@ def hash_no_mod #{a_arg} #{b_arg} =
 |]
   where
     qk = q + k
-    a_arg = futPrint $ NTuple $ map RawString as
-    b_arg = futPrint $ NTuple $ map RawString bs
+    a_arg = futharkify $ NTuple $ map RawString as
+    b_arg = futharkify $ NTuple $ map RawString bs
     as = ["a" ++ show j | j <- [0..(qk - 1)]]
     bs = ["b" ++ show j | j <- [0..(qk - 1)]]
     concatWith a b c = b ++ a ++ c
@@ -240,25 +240,25 @@ generateParser q k grammar symbol_index_map = do
         padAndStringifyTable empty_terminal q k max_ao max_pi symbol_index_map table
   hash_table <- hashTable terminal_type 13 $ Map.mapKeys (fmap fromIntegral) integer_table
   let ne = createNe max_ao max_pi
-  let offsets_array_str = futPrint $ offsetArray hash_table
+  let offsets_array_str = futharkify $ offsetArray hash_table
   let hash_table_mem_size = ABase.numElements $ elementArray hash_table
   let hash_table_str =
-        futPrint
+        futharkify
         $ fmap (first NTuple)
         <$> elementArray hash_table
   let consts_array = constsArray hash_table
-  let consts_array_str = futPrint $ fmap (fmap NTuple) consts_array
-  let size_array = futPrint $ sizeArray hash_table
-  let consts = futPrint $ NTuple $ initHashConsts hash_table
+  let consts_array_str = futharkify $ fmap (fmap NTuple) consts_array
+  let size_array = futharkify $ sizeArray hash_table
+  let consts = futharkify $ NTuple $ initHashConsts hash_table
   let hash_table_size = ABase.numElements consts_array 
   return . (,terminal_type) $
     futharkParser
           <> [i|
 module parser = mk_parser {
 
-module terminal_module = #{futPrint terminal_type}
-module production_module = #{futPrint production_type}
-module bracket_module = #{futPrint bracket_type}
+module terminal_module = #{futharkify terminal_type}
+module production_module = #{futharkify production_type}
+module bracket_module = #{futharkify bracket_type}
 
 #{declarations}
 
@@ -315,6 +315,6 @@ def ne: ([max_ao]bracket, [max_pi]production) =
     augmented_grammar = augmentGrammar grammar
     terminals' = terminals augmented_grammar
     look_type =
-      futPrint
+      futharkify
       $ NTuple
       $ replicate (q + k) (RawString "terminal")

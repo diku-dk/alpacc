@@ -16,6 +16,7 @@ extra-source-files:
   CHANGELOG.md
   futhark/parser.fut
   futhark/lexer.fut
+  cuda/lexer.fut
 
 library
   default-language:   GHC2021
@@ -62,9 +63,10 @@ library
     Alpacc.Types
     Alpacc.Generator.Futhark.Lexer
     Alpacc.Generator.Futhark.Parser
-    Alpacc.Generator.Futhark.FutPrinter
+    Alpacc.Generator.Futhark.Futharkify
     Alpacc.Generator.Futhark.Generator
     Alpacc.Generator.Futhark.Util
+    Alpacc.Generator.Cuda.Cudafy
     Alpacc.Lexer.RegularExpression
     Alpacc.Lexer.NFA
     Alpacc.Lexer.DFA
