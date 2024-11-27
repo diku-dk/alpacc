@@ -32,7 +32,7 @@ data FSA f f' t s = FSA
 
 data Lexer f f' t s k = Lexer
   { fsa :: FSA f f' t s,
-    terminalMap :: Map s k
+    tokenMap :: Map s k
   }
   deriving (Ord, Eq, Show)
 
@@ -81,10 +81,10 @@ instance LexerMap Lexer where
   fsaLexerMap g f fsa_lexer =
     fsa_lexer
       { fsa = fsaMap g f $ fsa fsa_lexer,
-        terminalMap = Map.mapKeys f terminal_map
+        tokenMap = Map.mapKeys f token_map
       }
     where
-      terminal_map = terminalMap fsa_lexer
+      token_map = tokenMap fsa_lexer
 
 reenumerateFSA ::
   (FSAMappable FSA f f' t s', FSAMappable FSA f f' t s, Enum s) =>

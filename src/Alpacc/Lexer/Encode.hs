@@ -6,7 +6,6 @@ module Alpacc.Lexer.Encode
   )
 where
 
-import Alpacc.Lexer.DFA
 import Alpacc.Types
 import Alpacc.Lexer.ParallelLexing
 import Data.Map.Strict (Map)
@@ -144,12 +143,11 @@ data IntParallelLexer t =
 
 
 intParallelLexer ::
-  (Enum t, Bounded t, Ord t, Ord s, Ord k) =>
+  (Ord t, Ord k) =>
   Map (Maybe k) Int ->
-  ParallelDFALexer t s k ->
+  ParallelLexer t (EndoData k) ->
   Either String (IntParallelLexer t)
-intParallelLexer to_int lexer = do
-  let parallel_lexer = parallelLexer lexer
+intParallelLexer to_int parallel_lexer = do
   ms <- lexerMasks parallel_lexer
   let encode = encodeEndoData ms to_int
   let new_compositions = fmap encode <$> compositions parallel_lexer

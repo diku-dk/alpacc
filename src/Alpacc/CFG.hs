@@ -104,7 +104,7 @@ cfgToDFALexer cfg@(CFG {tRules}) = do
   let x = find (producesEpsilon . snd) t_rule_tuples
   case x of
     Just (t, _) -> Left [i|Error: #{t} may not produce empty strings.|]
-    Nothing -> parallelLexerDFA order_map (0 :: Int) terminal_map
+    Nothing -> Right $ parallelLexerDFA order_map (0 :: Int) terminal_map
 
 type Parser = Parsec Void Text
 

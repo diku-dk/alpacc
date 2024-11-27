@@ -72,6 +72,7 @@ library
     Alpacc.Lexer.DFA
     Alpacc.Lexer.FSA
     Alpacc.Lexer.ParallelLexing
+    Alpacc.Lexer.DFAParallelLexer
     Alpacc.Lexer.Encode
 
   hs-source-dirs:     src
