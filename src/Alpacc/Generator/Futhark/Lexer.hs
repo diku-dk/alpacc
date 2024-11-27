@@ -4,13 +4,14 @@ module Alpacc.Generator.Futhark.Lexer
 
 import Alpacc.Grammar
 import Alpacc.Lexer.DFA
+import Alpacc.Lexer.ParallelLexing
 import Alpacc.Lexer.Encode
+import Alpacc.Lexer.DFAParallelLexer
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.String.Interpolate (i)
 import Data.FileEmbed
 import Data.Word (Word8)
-import Alpacc.Lexer.ParallelLexing
 import Data.List qualified as List
 import Data.Either.Extra
 import Alpacc.Types
@@ -64,7 +65,7 @@ generateLexer ::
   IInt ->
   Either String String
 generateLexer lexer terminal_index_map terminal_type = do
-  int_parallel_lexer <- intParallelLexer new_token_map lexer
+  int_parallel_lexer <- intDfaParallelLexer new_token_map lexer
   let ParallelLexerMasks
         { tokenMask = token_mask
         , tokenOffset = token_offset

@@ -113,7 +113,6 @@ mkNFA regex = do
   let accept_list = toList s'
   mapM_ (\_s -> mkNFA' s _s regex) accept_list
 
-
 fromRegExToNFA :: (Ord s, Ord t, Enum s) => s -> RegEx (NonEmpty t) -> NFA t s
 fromRegExToNFA start_state regex = execState (mkNFA regex) init_nfa
   where

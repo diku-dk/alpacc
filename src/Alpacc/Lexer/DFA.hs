@@ -6,7 +6,7 @@ module Alpacc.Lexer.DFA
   , DFALexer
   , fromRegExToDFA
   , transitions'
-  , ParallelDFALexer (parDFALexer, producesToken, deadState)
+  , ParallelDFALexer (parDFALexer, producesToken)
   , parallelLexerDFA
   , enumerateParLexer
   )
@@ -27,7 +27,6 @@ import Data.Set qualified as Set hiding (Set)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Foldable
-import Data.Either.Extra
 import Data.Maybe (mapMaybe)
 
 type DFA t s = FSA Identity Identity t s
@@ -36,7 +35,6 @@ type DFALexer t s k = Lexer Identity Identity t s k
 data ParallelDFALexer t s k = ParallelDFALexer
     { parDFALexer :: DFALexer t s k
     , producesToken :: Set (s, t)
-    , deadState :: s
     } deriving (Eq, Ord, Show)
 
 transitions' :: (Ord s, Ord t) => DFA t s -> Map (s, t) s
@@ -231,7 +229,6 @@ enumerateParLexer s lexer =
   ParallelDFALexer
   { parDFALexer = fsaLexerSecond toPrime $ parDFALexer lexer
   , producesToken = Set.map (first toPrime) $ producesToken lexer
-  , deadState = toPrime $ deadState lexer
   }
   where
     toPrime = (mapping Map.!)
@@ -316,26 +313,19 @@ tokenProducingTransitions dfa = new_transitions
 toParallelDFALexer ::
   (Enum s, Ord s, Ord t) =>
   DFALexer t s k ->
-  Either String (ParallelDFALexer t s k)
-toParallelDFALexer lexer = do
-  dead_state <-
-    maybeToEither "Error: Can not add a dead state to an empty DFA."
-    maybe_dead_state
-  return $
-    ParallelDFALexer
-    { parDFALexer = new_lexer
-    , producesToken = produces_token
-    , deadState = dead_state
-    }
+  ParallelDFALexer t s k
+toParallelDFALexer lexer =
+  ParallelDFALexer
+  { parDFALexer = new_lexer
+  , producesToken = produces_token
+  }
   where
     dfa = fsa lexer
     token_producing_trans = tokenProducingTransitions dfa
     _transitions = transitions' dfa
     produces_token = Map.keysSet token_producing_trans
     new_trans = Map.union _transitions token_producing_trans
-    (new_dfa, maybe_dead_state) =
-      mkDFATotal
-      $ dfa { transitions = addIdentity new_trans }
+    new_dfa = dfa { transitions = addIdentity new_trans }
     new_lexer = lexer { fsa = new_dfa }
 
 parallelLexerDFA ::
@@ -343,7 +333,7 @@ parallelLexerDFA ::
   Map k o ->
   s ->
   Map k (RegEx (NonEmpty t)) ->
-  Either String (ParallelDFALexer t s k)
+  ParallelDFALexer t s k
 parallelLexerDFA terminal_to_order start_state regex_map =
   toParallelDFALexer
   $ lexerDFA terminal_to_order start_state regex_map
@@ -358,7 +348,7 @@ lexerDFA terminal_to_order start_state regex_map =
   reenumerateLexer start_state $
     Lexer
     { fsa = dfa
-    , terminalMap = dfa_terminal_map
+    , tokenMap = dfa_token_map
     }
   where
     auxiliary =
@@ -383,7 +373,7 @@ lexerDFA terminal_to_order start_state regex_map =
 
     minimumSet = minimumBy (on compare (terminal_to_order Map.!))
     
-    dfa_terminal_map =
+    dfa_token_map =
       fmap minimumSet
       . Map.unionsWith Set.union
       . concat
