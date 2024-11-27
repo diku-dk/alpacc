@@ -26,14 +26,14 @@ import Data.Text qualified as Text
 import Data.Foldable
 import Data.Maybe (mapMaybe)
 
-type DFA t s = FSA Identity Identity t s
-type DFALexer t s k = Lexer Identity Identity t s k 
+type DFA t s = FSA Identity t s
+type DFALexer t s k = Lexer Identity t s k 
 
 transitions' :: (Ord s, Ord t) => DFA t s -> Map (s, t) s
-transitions' = Map.mapKeys (second runIdentity) . fmap runIdentity . transitions
+transitions' = fmap runIdentity . transitions
 
-addIdentity :: (Ord s, Ord t) => Map (s, t) s -> Map (s, Identity t) (Identity s)
-addIdentity = Map.mapKeys (second Identity) . fmap Identity
+addIdentity :: (Ord s, Ord t) => Map (s, t) s -> Map (s, t) (Identity s)
+addIdentity = fmap Identity
 
 stateTransitions :: (Ord s, Ord t) => Transition t -> s -> State (NFA t s) (Set s)
 stateTransitions c s = do
@@ -73,7 +73,7 @@ mkDFATransitionEntries ::
   Set s ->
   State (NFA t s) (Map (Set s, t) (Set s))
 mkDFATransitionEntries set = do
-  alph <- gets (toList . alphabet)
+  alph <- gets (fmap fromTransition . toList . alphabet)
   new_table_entry <- mapM (mkDFATransitionEntry set) alph
   return $ Map.unionsWith Set.union new_table_entry
 
@@ -256,11 +256,12 @@ minimize dfa' = removeUselessStates new_dfa
     newMatrixValue matrix st@(s, s') = matrix Map.! st || isDistinguishable matrix s s'
 
 dfaToNFA :: (Ord s, Ord t) => DFA t s -> NFA t s
-dfaToNFA dfa = dfa { transitions = new_transitions }
+dfaToNFA dfa =
+  fsaFirst Trans
+  $ dfa { transitions = new_transitions }
   where
     new_transitions =
-      Map.mapKeys (second Trans)
-      $ Set.singleton <$> transitions' dfa
+      Set.singleton <$> transitions' dfa
 
 tokenProducingTransitions ::
   (Ord s, Ord t) =>
