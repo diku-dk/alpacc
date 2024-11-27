@@ -1,8 +1,6 @@
 module Alpacc.Lexer.NFA
   ( NFA,
     RegEx (..),
-    mkNFA,
-    initNFA,
     Transition (..),
     isTransition,
     fromTransition,
@@ -84,36 +82,36 @@ newTransitions z ts' = auxiliary z (toList ts')
       newTransition s (Trans t) s'
       auxiliary s' ts s''
 
-mkNFA' :: (Ord s, Ord t, Foldable f, Enum s) => s -> s -> RegEx (f t) -> State (NFA t s) ()
-mkNFA' s s' Epsilon = do
+auxRegExToNFA :: (Ord s, Ord t, Foldable f, Enum s) => s -> s -> RegEx (f t) -> State (NFA t s) ()
+auxRegExToNFA s s' Epsilon = do
   newTransition s Eps s'
-mkNFA' s s' (Literal cs) = do
+auxRegExToNFA s s' (Literal cs) = do
   newTransitions s cs s'
-mkNFA' s s'' (Concat a b) = do
+auxRegExToNFA s s'' (Concat a b) = do
   s' <- newState
-  mkNFA' s s' a
-  mkNFA' s' s'' b
-mkNFA' s s'' (Star a) = do
+  auxRegExToNFA s s' a
+  auxRegExToNFA s' s'' b
+auxRegExToNFA s s'' (Star a) = do
   s' <- newState
   newTransition s Eps s'
   newTransition s' Eps s''
-  mkNFA' s' s' a
-mkNFA' s s' (Range range) = do
+  auxRegExToNFA s' s' a
+auxRegExToNFA s s' (Range range) = do
   mapM_ (\cs -> newTransitions s cs s') range
-mkNFA' s s' alter@(Alter _ _) = do
-  mapM_ (mkNFA' s s') $ findAlters alter
+auxRegExToNFA s s' alter@(Alter _ _) = do
+  mapM_ (auxRegExToNFA s s') $ findAlters alter
   where
     findAlters (Alter a b) = findAlters a ++ findAlters b
     findAlters regex = [regex]
 
-mkNFA :: (Ord s, Ord t, Enum s) => RegEx (NonEmpty t) -> State (NFA t s) ()
-mkNFA regex = do
+regExToNFA :: (Ord s, Ord t, Enum s) => RegEx (NonEmpty t) -> State (NFA t s) ()
+regExToNFA regex = do
   nfa <- get
   let (s, s') = (initial nfa, accepting nfa)
   let accept_list = toList s'
-  mapM_ (\_s -> mkNFA' s _s regex) accept_list
+  mapM_ (\_s -> auxRegExToNFA s _s regex) accept_list
 
 fromRegExToNFA :: (Ord s, Ord t, Enum s) => s -> RegEx (NonEmpty t) -> NFA t s
-fromRegExToNFA start_state regex = execState (mkNFA regex) init_nfa
+fromRegExToNFA start_state regex = execState (regExToNFA regex) init_nfa
   where
     init_nfa = initNFA start_state

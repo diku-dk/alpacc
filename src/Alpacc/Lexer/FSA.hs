@@ -1,15 +1,15 @@
 {-# LANGUAGE MonoLocalBinds #-}
 module Alpacc.Lexer.FSA
   ( FSA (..),
-    reenumerateFSA,
-    reenumerateFSAsMap,
+    enumerateFSA,
+    enumerateFSAsMap,
     OrdMap (..),
     FSAMappable,
     FSAMap (..),
     Lexer (..),
     LexerMappable,
     LexerMap (..),
-    reenumerateLexer
+    enumerateLexer
   )
 where
 
@@ -32,7 +32,8 @@ data FSA f f' t s = FSA
 
 data Lexer f f' t s k = Lexer
   { fsa :: FSA f f' t s,
-    tokenMap :: Map s k
+    tokenMap :: Map s k,
+    producesToken :: Set (s, t)
   }
   deriving (Ord, Eq, Show)
 
@@ -81,27 +82,29 @@ instance LexerMap Lexer where
   fsaLexerMap g f fsa_lexer =
     fsa_lexer
       { fsa = fsaMap g f $ fsa fsa_lexer,
-        tokenMap = Map.mapKeys f token_map
+        tokenMap = Map.mapKeys f token_map,
+        producesToken = Set.map (bimap f g) produces_token 
       }
     where
+      produces_token = producesToken fsa_lexer
       token_map = tokenMap fsa_lexer
 
-reenumerateFSA ::
+enumerateFSA ::
   (FSAMappable FSA f f' t s', FSAMappable FSA f f' t s, Enum s) =>
   s ->
   FSA f f' t s' ->
   FSA f f' t s
-reenumerateFSA start_state fsa = fsaSecond alphabetMap fsa
+enumerateFSA start_state fsa = fsaSecond alphabetMap fsa
   where
     alphabet' = Map.fromList . flip zip [start_state ..] . toList $ states fsa
     alphabetMap = (alphabet' Map.!)
 
-reenumerateLexer ::
+enumerateLexer ::
   (LexerMappable Lexer f f' t s' k, LexerMappable Lexer f f' t s k, Enum s) =>
   s ->
   Lexer f f' t s' k ->
   Lexer f f' t s k
-reenumerateLexer start_state fsa_lexer = fsaLexerSecond alphabetMap fsa_lexer
+enumerateLexer start_state fsa_lexer = fsaLexerSecond alphabetMap fsa_lexer
   where
     alphabet' =
       Map.fromList 
@@ -111,25 +114,25 @@ reenumerateLexer start_state fsa_lexer = fsaLexerSecond alphabetMap fsa_lexer
       $ fsa fsa_lexer
     alphabetMap = (alphabet' Map.!)
 
-reenumerateFSAsInOrder ::
+enumerateFSAsInOrder ::
   (FSAMappable FSA f f' t s', FSAMappable FSA f f' t s, Enum s) =>
   s ->
   [FSA f f' t s'] ->
   [FSA f f' t s]
-reenumerateFSAsInOrder _ [] = []
-reenumerateFSAsInOrder start_state (fsa:fsas) = scanl f fsa' fsas
+enumerateFSAsInOrder _ [] = []
+enumerateFSAsInOrder start_state (fsa:fsas) = scanl f fsa' fsas
   where
-    fsa' = reenumerateFSA start_state fsa
-    f a = reenumerateFSA (succ . maximum $ states a)
+    fsa' = enumerateFSA start_state fsa
+    f a = enumerateFSA (succ . maximum $ states a)
 
-reenumerateFSAsMap ::
+enumerateFSAsMap ::
   (FSAMappable FSA f f' t s', FSAMappable FSA f f' t s, Ord k, Enum s) =>
   s ->
   Map k (FSA f f' t s') ->
   Map k (FSA f f' t s)
-reenumerateFSAsMap start_state =
+enumerateFSAsMap start_state =
   Map.fromList
   . uncurry zip
-  . second (reenumerateFSAsInOrder start_state)
+  . second (enumerateFSAsInOrder start_state)
   . unzip
   . Map.toList
