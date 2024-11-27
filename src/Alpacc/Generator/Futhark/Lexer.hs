@@ -60,7 +60,7 @@ ignoreFunction terminal_index_map =
     Nothing -> [i|def is_ignore (_ : terminal) : bool = false|]
 
 generateLexer ::
-  ParallelDFALexer Word8 Int T ->
+  DFALexer Word8 Int T ->
   Map T Int ->
   IInt ->
   Either String String

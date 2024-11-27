@@ -93,7 +93,7 @@ implicitTRules (CFG {tRules, ntRules}) = mapM implicitLitToRegEx implicit
 tRuleToTuple :: TRule -> (T, RegEx (NonEmpty Word8))
 tRuleToTuple (TRule {ruleT=t, ruleRegex=regex}) = (t, NonEmpty.fromList <$> toWord8 regex)
 
-cfgToDFALexer :: CFG -> Either String (ParallelDFALexer Word8 Int T)
+cfgToDFALexer :: CFG -> Either String (DFALexer Word8 Int T)
 cfgToDFALexer (CFG {tRules = []}) = Left "CFG has no lexical rules."
 cfgToDFALexer cfg@(CFG {tRules}) = do
   implicit_t_rules <- implicitTRules cfg
@@ -104,7 +104,7 @@ cfgToDFALexer cfg@(CFG {tRules}) = do
   let x = find (producesEpsilon . snd) t_rule_tuples
   case x of
     Just (t, _) -> Left [i|Error: #{t} may not produce empty strings.|]
-    Nothing -> Right $ parallelLexerDFA order_map (0 :: Int) terminal_map
+    Nothing -> Right $ lexerDFA order_map (0 :: Int) terminal_map
 
 type Parser = Parsec Void Text
 

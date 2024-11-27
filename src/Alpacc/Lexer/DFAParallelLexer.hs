@@ -33,14 +33,14 @@ initState = 1
 
 endomorphismTable ::
   (Enum t, Bounded t, Ord t, Ord k) =>
-  ParallelDFALexer t S k ->
+  DFALexer t S k ->
   Map t Endomorphism
 endomorphismTable lexer =
   Map.fromList
   $ map statesFromChar
   $ Set.toList _alphabet
   where
-    dfa = fsa $ parDFALexer lexer
+    dfa = fsa lexer
     produces_set = producesToken lexer
     _transitions = transitions' dfa
     _states = states dfa
@@ -84,16 +84,16 @@ instance Sim Endomorphism S where
 
 dfaParallelLexer ::
   (Ord t, Ord s, Enum t, Bounded t, Ord k) =>
-  ParallelDFALexer t s k ->
+  DFALexer t s k ->
   ParallelLexer t (EndoData k)
 dfaParallelLexer lexer' = parallelLexer lexer endo_table 
   where
-    lexer = enumerateParLexer initState lexer'
+    lexer = enumerateLexer initState lexer'
     endo_table = endomorphismTable lexer
 
 intDfaParallelLexer ::
   (Ord t, Ord s, Enum t, Bounded t, Ord k) =>
   Map (Maybe k) Int ->
-  ParallelDFALexer t s k ->
+  DFALexer t s k ->
   Either String (IntParallelLexer t)
 intDfaParallelLexer m = intParallelLexer m . dfaParallelLexer

@@ -262,12 +262,12 @@ endoCompositionsTable _map =
       endoCompositionsTable map''' 
     Nothing -> pure ()
 
-connectedTable :: (Ord s, Ord t) => ParallelDFALexer t s k -> Map t (Set t)
+connectedTable :: (Ord s, Ord t) => DFALexer t s k -> Map t (Set t)
 connectedTable lexer =
   Map.fromList
   $ auxiliary <$> _alphabet
   where
-    dfa = fsa $ parDFALexer lexer
+    dfa = fsa lexer
     _alphabet = Set.toList $ alphabet dfa
     _states = Set.toAscList $ states dfa
     _transitions = transitions' dfa
@@ -346,7 +346,7 @@ initCompositions ls =
 
 initEndoCtx ::
   (Ord t', Ord t, Sim t' s, Ord k) =>
-  ParallelDFALexer t s k ->
+  DFALexer t s k ->
   Map t t' ->
   EndoCtx t' s k
 initEndoCtx lexer endo_table =
@@ -364,9 +364,9 @@ initEndoCtx lexer endo_table =
   }
   where
     endo_data = initEndoData initial_state token_map accept_states e_to_endo
-    initial_state = initial $ fsa $ parDFALexer lexer
-    token_map = tokenMap $ parDFALexer lexer
-    accept_states = accepting $ fsa $ parDFALexer lexer
+    initial_state = initial $ fsa lexer
+    token_map = tokenMap lexer
+    accept_states = accepting $ fsa lexer
     e_to_endo = enumerate initE $ List.nub $ Map.elems endo_table
     endo_to_e = invertBijection $ intMapToMap e_to_endo
     t_to_e = (endo_to_e Map.!) <$> endo_table
@@ -385,7 +385,7 @@ addDead = (`Map.union` unknown_transitions)
   
 parallelLexer ::
   (Ord t, Enum t, Bounded t, Sim t' s, Ord k) =>
-  ParallelDFALexer t s k ->
+  DFALexer t s k ->
   Map t t' ->
   ParallelLexer t (EndoData k)
 parallelLexer lexer endo_table =
@@ -395,7 +395,7 @@ parallelLexer lexer endo_table =
   , identity = identityEndo
   , endomorphismsSize = IntMap.size endo_data
   , dead = deadEndo
-  , tokenSize = Map.size $ tokenMap $ parDFALexer lexer
+  , tokenSize = Map.size $ tokenMap lexer
   , acceptArray = accept_array
   }
   where

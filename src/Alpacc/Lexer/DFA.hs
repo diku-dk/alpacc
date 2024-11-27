@@ -6,9 +6,6 @@ module Alpacc.Lexer.DFA
   , DFALexer
   , fromRegExToDFA
   , transitions'
-  , ParallelDFALexer (parDFALexer, producesToken)
-  , parallelLexerDFA
-  , enumerateParLexer
   )
 where
 
@@ -31,11 +28,6 @@ import Data.Maybe (mapMaybe)
 
 type DFA t s = FSA Identity Identity t s
 type DFALexer t s k = Lexer Identity Identity t s k 
-
-data ParallelDFALexer t s k = ParallelDFALexer
-    { parDFALexer :: DFALexer t s k
-    , producesToken :: Set (s, t)
-    } deriving (Eq, Ord, Show)
 
 transitions' :: (Ord s, Ord t) => DFA t s -> Map (s, t) s
 transitions' = Map.mapKeys (second runIdentity) . fmap runIdentity . transitions
@@ -220,20 +212,6 @@ mkDFATotal dfa'
         (`Map.notMember` _transitions)
         ((s,) <$> toList _alphabet)
 
-enumerateParLexer ::
-  (Ord t, Ord s, Ord s', Enum s') =>
-  s' ->
-  ParallelDFALexer t s k ->
-  ParallelDFALexer t s' k
-enumerateParLexer s lexer =
-  ParallelDFALexer
-  { parDFALexer = fsaLexerSecond toPrime $ parDFALexer lexer
-  , producesToken = Set.map (first toPrime) $ producesToken lexer
-  }
-  where
-    toPrime = (mapping Map.!)
-    mapping = Map.fromList $ flip zip [s..] $ Set.toList $ states $ fsa $ parDFALexer lexer
-
 -- | http://www.cs.um.edu.mt/gordon.pace/Research/Software/Relic/Transformations/FSA/minimise.html
 minimize :: (Ord s, Ord t, Enum s) => DFA t s -> DFA t (Set s)
 minimize dfa' = removeUselessStates new_dfa
@@ -310,57 +288,43 @@ tokenProducingTransitions dfa = new_transitions
           q' <- Map.lookup (_initial, t) _transitions
           return ((q, t), q') 
 
-toParallelDFALexer ::
-  (Enum s, Ord s, Ord t) =>
-  DFALexer t s k ->
-  ParallelDFALexer t s k
-toParallelDFALexer lexer =
-  ParallelDFALexer
-  { parDFALexer = new_lexer
-  , producesToken = produces_token
-  }
+addProducingTransitions ::
+  (Ord s, Ord t) =>
+  DFA t s ->
+  (DFA t s, Set (s, t))
+addProducingTransitions dfa =
+  (new_dfa, produces_token)
   where
-    dfa = fsa lexer
     token_producing_trans = tokenProducingTransitions dfa
     _transitions = transitions' dfa
     produces_token = Map.keysSet token_producing_trans
     new_trans = Map.union _transitions token_producing_trans
     new_dfa = dfa { transitions = addIdentity new_trans }
-    new_lexer = lexer { fsa = new_dfa }
 
-parallelLexerDFA ::
-  (Show k, Ord t, Ord s, Enum s, Ord k, Ord o) =>
-  Map k o ->
-  s ->
-  Map k (RegEx (NonEmpty t)) ->
-  ParallelDFALexer t s k
-parallelLexerDFA terminal_to_order start_state regex_map =
-  toParallelDFALexer
-  $ lexerDFA terminal_to_order start_state regex_map
-    
 lexerDFA ::
-  (Show k, Ord t, Ord s, Enum s, Ord k, Ord o) =>
+  (Ord t, Ord s, Enum s, Ord k, Ord o) =>
   Map k o ->
   s ->
   Map k (RegEx (NonEmpty t)) ->
   DFALexer t s k
 lexerDFA terminal_to_order start_state regex_map =
-  reenumerateLexer start_state $
+  enumerateLexer start_state $
     Lexer
     { fsa = dfa
     , tokenMap = dfa_token_map
+    , producesToken = produces_token
     }
   where
     auxiliary =
       dfaToNFA
-      . reenumerateFSA start_state
+      . enumerateFSA start_state
       . minimize
-      . reenumerateFSA start_state
+      . enumerateFSA start_state
       . fromNFAtoDFA
       . fromRegExToNFA start_state
       
     dfa_map' = auxiliary <$> regex_map
-    nfa_map = reenumerateFSAsMap start_state dfa_map'
+    nfa_map = enumerateFSAsMap start_state dfa_map'
     nfas = Map.elems nfa_map
     initials = Set.fromList $ initial <$> nfas
 
@@ -396,7 +360,8 @@ lexerDFA terminal_to_order start_state regex_map =
       $ Map.unionsWith Set.union
       $ transitions <$> nfas
 
-    dfa =
+    (dfa, produces_token) =
+      addProducingTransitions $
       fromNFAtoDFA $
         FSA
         { states = new_states
