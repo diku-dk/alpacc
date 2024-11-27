@@ -17,6 +17,8 @@ import Alpacc.Lexer.RegularExpression
 import Alpacc.Lexer.FSA
 import Data.List.NonEmpty (NonEmpty (..))
 
+type NFA t s = FSA Set (Transition t) s
+
 data Transition t = Trans t | Eps deriving (Show, Eq, Ord)
 
 isTransition :: Transition t -> Bool
@@ -35,11 +37,9 @@ instance OrdMap Transition where
   omap f (Trans t) = Trans (f t)
   omap _ Eps = Eps
 
-toSet :: Transition a -> Set a
-toSet (Trans t) = Set.singleton t
+toSet :: Transition a -> Set (Transition a)
+toSet t@(Trans _) = Set.singleton t
 toSet Eps = Set.empty
-
-type NFA t s = FSA Set Transition t s
 
 initNFA :: (Ord s, Enum s) => s -> NFA t s
 initNFA start_state =
