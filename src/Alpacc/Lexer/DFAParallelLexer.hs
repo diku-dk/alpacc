@@ -47,6 +47,7 @@ endomorphismTable lexer =
     _alphabet = alphabet dfa
     first_index = deadState
     last_index = maximum _states
+    states_list = deadState : Set.toAscList _states
     tableLookUp key =
       fromMaybe deadState
       $ Map.lookup key _transitions
@@ -55,13 +56,11 @@ endomorphismTable lexer =
         ss =
           UArray.array (first_index, last_index)
           $ zip [first_index..last_index]
-          $ map (tableLookUp . (, t))
-          $ Set.toAscList _states
+          $ map (tableLookUp . (, t)) states_list
         bs =
           UArray.array (first_index, last_index)
           $ zip [first_index..last_index]
-          $ map ((`Set.member` produces_set) . (, t))
-          $ Set.toAscList _states
+          $ map ((`Set.member` produces_set) . (, t)) states_list
 
 instance Semigroup Endomorphism where
   (Endomorphism a a') <> (Endomorphism b b') = Endomorphism c c'
