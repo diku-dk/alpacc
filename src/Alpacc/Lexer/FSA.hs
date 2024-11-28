@@ -1,4 +1,3 @@
-{-# LANGUAGE MonoLocalBinds #-}
 module Alpacc.Lexer.FSA
   ( FSA (..),
     enumerateFSA,

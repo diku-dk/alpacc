@@ -8,7 +8,6 @@ module Alpacc.Lexer.ParallelLexing
 where
 
 import Alpacc.Lexer.FSA
-import Alpacc.Lexer.DFA
 import Data.Foldable
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map hiding (Map)
@@ -262,21 +261,24 @@ endoCompositionsTable _map =
       endoCompositionsTable map''' 
     Nothing -> pure ()
 
-connectedTable :: (Ord s, Ord t) => DFALexer t s k -> Map t (Set t)
+connectedTable :: (Foldable f, Ord s, Ord t) => Lexer f t s k -> Map t (Set t)
 connectedTable lexer =
   Map.fromList
   $ auxiliary <$> _alphabet
   where
-    dfa = fsa lexer
-    _alphabet = Set.toList $ alphabet dfa
-    _states = Set.toAscList $ states dfa
-    _transitions = transitions' dfa
+    _alphabet = Set.toList $ alphabet $ fsa lexer
+    _states = Set.toAscList $ states $ fsa lexer
+    _transitions = Set.fromList . toList <$> transitions (fsa lexer)
+
+    lookupStates t =
+      Set.unions
+      $ mapMaybe ((`Map.lookup` _transitions) . (, t)) _states
 
     auxiliary t =
       (t, )
       $ Set.unions
-      $ transitionsLookup
-      <$> mapMaybe ((`Map.lookup` _transitions) . (, t)) _states
+      $ Set.map transitionsLookup
+      $ lookupStates t
 
     transitionLookup s t =
       if (s, t) `Map.member` _transitions
@@ -345,8 +347,8 @@ initCompositions ls =
 
 
 initEndoCtx ::
-  (Ord t', Ord t, Sim t' s, Ord k) =>
-  DFALexer t s k ->
+  (Ord t', Ord t, Sim t' s, Foldable f, Ord k) =>
+  Lexer f t s k ->
   Map t t' ->
   EndoCtx t' s k
 initEndoCtx lexer endo_table =
@@ -384,8 +386,8 @@ addDead = (`Map.union` unknown_transitions)
       $ map (,deadEndo) [minBound..maxBound]
   
 parallelLexer ::
-  (Ord t, Enum t, Bounded t, Sim t' s, Ord k) =>
-  DFALexer t s k ->
+  (Ord t, Enum t, Bounded t, Sim t' s, Ord k, Foldable f) =>
+  Lexer f t s k ->
   Map t t' ->
   ParallelLexer t (EndoData k)
 parallelLexer lexer endo_table =
