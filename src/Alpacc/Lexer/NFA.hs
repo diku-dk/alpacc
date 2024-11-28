@@ -4,7 +4,9 @@ module Alpacc.Lexer.NFA
     Transition (..),
     isTransition,
     fromTransition,
-    fromRegExToNFA
+    fromRegExToNFA,
+    statesTransitions,
+    epsilonClosure
   )
 where
 
@@ -115,3 +117,26 @@ fromRegExToNFA :: (Ord s, Ord t, Enum s) => s -> RegEx (NonEmpty t) -> NFA t s
 fromRegExToNFA start_state regex = execState (regExToNFA regex) init_nfa
   where
     init_nfa = initNFA start_state
+
+stateTransitions :: (Ord s, Ord t) => Transition t -> s -> State (NFA t s) (Set s)
+stateTransitions c s = do
+  nfa <- get
+  let trans = transitions nfa
+  let eps_map = Map.filterWithKey (\k _ -> isSymbolTransition k) trans
+  pure . Set.unions $ toList eps_map
+  where
+    isSymbolTransition (s', c') = s == s' && c == c'
+
+epsilonTransitions :: (Ord s, Ord t) => s -> State (NFA t s) (Set s)
+epsilonTransitions = stateTransitions Eps
+
+statesTransitions :: (Ord s, Ord t) => Set s -> Transition t -> State (NFA t s) (Set s)
+statesTransitions set c = Set.unions <$> mapM (stateTransitions c) (toList set)
+
+epsilonClosure :: (Ord s, Ord t) => Set s -> State (NFA t s) (Set s)
+epsilonClosure set = do
+  new_set <- Set.unions <$> mapM epsilonTransitions (toList set)
+  let set' = new_set `Set.union` set
+  if set == set'
+    then pure set'
+    else epsilonClosure set'

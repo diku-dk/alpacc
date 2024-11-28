@@ -35,62 +35,39 @@ transitions' = fmap runIdentity . transitions
 addIdentity :: (Ord s, Ord t) => Map (s, t) s -> Map (s, t) (Identity s)
 addIdentity = fmap Identity
 
-stateTransitions :: (Ord s, Ord t) => Transition t -> s -> State (NFA t s) (Set s)
-stateTransitions c s = do
-  nfa <- get
-  let trans = transitions nfa
-  let eps_map = Map.filterWithKey (\k _ -> isSymbolTransition k) trans
-  return . Set.unions $ toList eps_map
-  where
-    isSymbolTransition (s', c') = s == s' && c == c'
-
-epsilonTransitions :: (Ord s, Ord t) => s -> State (NFA t s) (Set s)
-epsilonTransitions = stateTransitions Eps
-
-statesTransitions :: (Ord s, Ord t) => Set s -> Transition t -> State (NFA t s) (Set s)
-statesTransitions set c = Set.unions <$> mapM (stateTransitions c) (toList set)
-
-epsilonClosure :: (Ord s, Ord t) => Set s -> State (NFA t s) (Set s)
-epsilonClosure set = do
-  new_set <- Set.unions <$> mapM epsilonTransitions (toList set)
-  let set' = new_set `Set.union` set
-  if set == set'
-    then return set'
-    else epsilonClosure set'
-
-mkDFATransitionEntry ::
+dfaTransitionEntry ::
   (Ord s, Ord t) =>
   Set s ->
   t ->
   State (NFA t s) (Map (Set s, t) (Set s))
-mkDFATransitionEntry set t = do
+dfaTransitionEntry set t = do
   _states <- statesTransitions set $ Trans t
   eps_states <- epsilonClosure _states
-  return $ Map.singleton (set, t) eps_states
+  pure $ Map.singleton (set, t) eps_states
 
-mkDFATransitionEntries ::
+dfaTransitionEntries ::
   (Ord s, Ord t) =>
   Set s ->
   State (NFA t s) (Map (Set s, t) (Set s))
-mkDFATransitionEntries set = do
+dfaTransitionEntries set = do
   alph <- gets (fmap fromTransition . toList . alphabet)
-  new_table_entry <- mapM (mkDFATransitionEntry set) alph
-  return $ Map.unionsWith Set.union new_table_entry
+  new_table_entry <- mapM (dfaTransitionEntry set) alph
+  pure $ Map.unionsWith Set.union new_table_entry
 
-mkDFATransitions ::
+dfaTransitions ::
   (Ord s, Ord t) =>
   Set (Set s) ->
   Map (Set s, t) (Set s) ->
   [Set s] ->
   State (NFA t s) (Map (Set s, t) (Set s))
-mkDFATransitions _ table [] = return table
-mkDFATransitions visited table (top : queue) = do
-  entries <- mkDFATransitionEntries top
+dfaTransitions _ table [] = pure table
+dfaTransitions visited table (top : queue) = do
+  entries <- dfaTransitionEntries top
   let new_visited = Set.insert top visited
   let rest = Map.elems entries
   let new_queue = filter (`Set.notMember` new_visited) $ queue ++ rest
   let new_table = Map.unionWith Set.union entries table
-  mkDFATransitions new_visited new_table new_queue
+  dfaTransitions new_visited new_table new_queue
 
 dfaFilter :: Ord s => (s -> Bool) -> DFA t s -> DFA t s
 dfaFilter p dfa =
@@ -107,34 +84,40 @@ dfaFilter p dfa =
         then initial dfa
         else error "Can not filter states since the initial state is removed."
 
+emptyDFA :: DFA t (Set s)
+emptyDFA =
+  FSA
+  { states = Set.singleton Set.empty,
+    alphabet = Set.empty,
+    transitions = Map.empty,
+    initial = Set.empty,
+    accepting = Set.empty
+  }
+
 fromNFAtoDFAState :: (Ord s, Ord t) => State (NFA t s) (DFA t (Set s))
 fromNFAtoDFAState = do
   nfa <- get
   new_initial <- epsilonClosure . Set.singleton $ initial nfa
-  new_transitions' <- mkDFATransitions Set.empty Map.empty [new_initial]
+  new_transitions' <- dfaTransitions Set.empty Map.empty [new_initial]
   let new_transitions = addIdentity new_transitions'
   let accept = accepting nfa
-  let (new_states, new_alphabet) = bimap Set.fromList Set.fromList . unzip $ Map.keys new_transitions'
+  let (new_states, new_alphabet) =
+        bimap Set.fromList Set.fromList
+        $ unzip
+        $ Map.keys new_transitions'
   let new_accepting = newStates new_states accept
-  return $
-    removeUselessStates $
-      if null new_transitions
-        then
-          FSA
-            { states = Set.singleton Set.empty,
-              alphabet = Set.empty,
-              transitions = new_transitions,
-              initial = Set.empty,
-              accepting = Set.singleton Set.empty
-            }
-        else
-          FSA
-            { states = new_states,
-              alphabet = new_alphabet,
-              transitions = new_transitions,
-              initial = new_initial,
-              accepting = new_accepting
-            }
+  pure $
+    if null new_transitions then
+      emptyDFA
+    else
+      removeUselessStates
+      $ FSA
+      { states = new_states,
+        alphabet = new_alphabet,
+        transitions = new_transitions,
+        initial = new_initial,
+        accepting = new_accepting
+      }
   where
     newStates new_states' set = Set.filter (any (`Set.member` set)) new_states'
 
@@ -188,8 +171,8 @@ removeUselessStates dfa = dfaFilter (`Set.member` useful_states) dfa
     useful_states = fixedPointIterate (/=) usefulStates initial_useful
 
 -- | http://www.cs.um.edu.mt/gordon.pace/Research/Software/Relic/Transformations/FSA/to-total.html
-mkDFATotal :: (Ord s, Ord t, Enum s) => DFA t s -> (DFA t s, Maybe s)
-mkDFATotal dfa'
+dfaTotal :: (Ord s, Ord t, Enum s) => DFA t s -> (DFA t s, Maybe s)
+dfaTotal dfa'
   | null $ states dfa' = (dfa', Nothing)
   | otherwise = (new_dfa, Just dead_state)
   where
@@ -218,7 +201,7 @@ minimize dfa' = removeUselessStates new_dfa
   where
     new_dfa = fsaSecond (state_map Map.!) dfa
 
-    dfa = fst $ mkDFATotal dfa'
+    dfa = fst $ dfaTotal dfa'
     states_list = toList $ states dfa
     alphabet_list = toList (alphabet dfa)
     _transitions = transitions' dfa
@@ -287,7 +270,7 @@ tokenProducingTransitions dfa = new_transitions
       | (q, t) `Map.member` _transitions = Nothing
       | otherwise = do
           q' <- Map.lookup (_initial, t) _transitions
-          return ((q, t), q') 
+          pure ((q, t), q') 
 
 addProducingTransitions ::
   (Ord s, Ord t) =>
