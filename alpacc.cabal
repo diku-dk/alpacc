@@ -67,6 +67,8 @@ library
     Alpacc.Generator.Futhark.Generator
     Alpacc.Generator.Futhark.Util
     Alpacc.Generator.Cuda.Cudafy
+    Alpacc.Generator.Cuda.Generator
+    Alpacc.Generator.Generator
     Alpacc.Lexer.RegularExpression
     Alpacc.Lexer.NFA
     Alpacc.Lexer.DFA
