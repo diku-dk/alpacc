@@ -26,21 +26,23 @@ module Alpacc.Grammar
     rightSymbols,
     grammarDuplicates,
     grammarError,
-    extendByTerminals
+    extendByTerminals,
+    toTerminalIndexMap,
+    toSymbolIndexMap,
   )
 where
 
-import Data.String.Interpolate (i)
-import Control.DeepSeq
-import Data.Text (Text)
-import qualified Data.Text as Text hiding (Text)
-import Data.Bifunctor (Bifunctor (bimap, first, second))
-import qualified Data.List as List
-import Data.Map (Map)
 import Alpacc.Util
-import qualified Data.Map as Map hiding (Map)
-import qualified Data.Set as Set
+import Control.DeepSeq
+import Data.Bifunctor (Bifunctor (bimap, first, second))
+import Data.List qualified as List
+import Data.Map (Map)
+import Data.Map qualified as Map hiding (Map)
 import Data.Set (Set)
+import Data.Set qualified as Set
+import Data.String.Interpolate (i)
+import Data.Text (Text)
+import Data.Text qualified as Text hiding (Text)
 import GHC.Generics
 
 -- | Used in augmenting terminals for the augmented grammar.
@@ -50,10 +52,10 @@ data AugmentedTerminal t
   | LeftTurnstile
   deriving (Ord, Eq, Generic)
 
-instance NFData t => NFData (AugmentedTerminal t)
+instance (NFData t) => NFData (AugmentedTerminal t)
 
 -- | Prints whats inside the augmented terminal structure.
-instance Show t => Show (AugmentedTerminal t) where
+instance (Show t) => Show (AugmentedTerminal t) where
   show RightTurnstile = "⊢"
   show LeftTurnstile = "⊣"
   show (AugmentedTerminal t) = show t
@@ -64,10 +66,10 @@ data AugmentedNonterminal nt
   | Start
   deriving (Ord, Eq, Generic)
 
-instance NFData nt => NFData (AugmentedNonterminal nt)
+instance (NFData nt) => NFData (AugmentedNonterminal nt)
 
 -- | Prints whats inside the augmented nonterminal structure.
-instance Show nt => Show (AugmentedNonterminal nt) where
+instance (Show nt) => Show (AugmentedNonterminal nt) where
   show (AugmentedNonterminal nt) = show nt
   show Start = "⊥"
 
@@ -113,8 +115,7 @@ instance Bifunctor Symbol where
   second f (Terminal t) = Terminal $ f t
 
 -- | An algebraic data structure which describes a production.
-data Production nt t
-  = Production { prodLHS :: nt, prodRHS :: [Symbol nt t] }
+data Production nt t = Production {prodLHS :: nt, prodRHS :: [Symbol nt t]}
   deriving (Ord, Eq, Read, Functor, Generic)
 
 instance (Show nt, Show t) => Show (Production nt t) where
@@ -178,7 +179,7 @@ data ExtendedTerminal t
   deriving (Ord, Eq)
 
 -- | Shows whats inside the terminals or the End terminal.
-instance Show t => Show (ExtendedTerminal t) where
+instance (Show t) => Show (ExtendedTerminal t) where
   show End = "End"
   show (ExtendedTerminal t) = show t
 
@@ -190,7 +191,7 @@ data ExtendedNonterminal nt
   deriving (Ord, Eq)
 
 -- | Shows whats inside the nonterminals or the Start nonterminal.
-instance Show nt => Show (ExtendedNonterminal nt) where
+instance (Show nt) => Show (ExtendedNonterminal nt) where
   show ExtendedStart = "Start"
   show (ExtendedNonterminal t) = show t
 
@@ -275,7 +276,7 @@ toProductionsMap = auxiliary Map.empty
       | nt `Map.member` prod_map = auxiliary new_prod_map as
       | otherwise = auxiliary new_prod_map' as
       where
-        new_prod_map = Map.adjust (s:) nt prod_map
+        new_prod_map = Map.adjust (s :) nt prod_map
         new_prod_map' = Map.insert nt [s] prod_map
 
 -- | Given a grammar using NT and T convert it to a grammar using strings.
@@ -322,7 +323,7 @@ substringGrammar grammar =
     new_nts = new_start : (nts' ++ Map.keys substr_prods_map)
     extraSubstrings [] = []
     extraSubstrings s@(_x : xs) = s : extraSubstrings xs
-    firstChange (Production nt ((Nonterminal x):xs)) = Production nt (Nonterminal (toAnt x):xs)
+    firstChange (Production nt ((Nonterminal x) : xs)) = Production nt (Nonterminal (toAnt x) : xs)
     firstChange a = a
 
 -- | Given a string of symbols, find all the nonterminals and make tuples where
@@ -340,11 +341,11 @@ grammarDuplicates grammar = (hasDuplicates nts, hasDuplicates ts, hasDuplicates 
     ts = terminals grammar
     ps = productions grammar
 
-hasDuplicates :: Ord a => [a] -> [a]
+hasDuplicates :: (Ord a) => [a] -> [a]
 hasDuplicates = Set.toList . auxiliary Set.empty Set.empty
   where
     auxiliary dups _ [] = dups
-    auxiliary dups visited (x:xs)
+    auxiliary dups visited (x : xs)
       | x `Set.member` visited = auxiliary new_dups new_visited xs
       | otherwise = auxiliary dups new_visited xs
       where
@@ -389,18 +390,41 @@ extendByTerminals grammar = new_grammar
     left_nts = map Right ts
     new_nts = left_nts ++ right_nts
     ts_prods =
-      zipWith Production left_nts
-      $ map (List.singleton . Terminal) ts
+      zipWith Production left_nts $
+        map (List.singleton . Terminal) ts
     toNonterminal (Terminal a) = Nonterminal $ Right a
     toNonterminal (Nonterminal a) = Nonterminal $ Left a
     toEither (Production nt syms) =
-      Production (Left nt)
-      $ toNonterminal
-      <$> syms
+      Production (Left nt) $
+        toNonterminal
+          <$> syms
     nts_prods = toEither <$> productions grammar
     new_grammar =
       Grammar
-      { start = Left $ start grammar
-      , terminals = ts
-      , nonterminals = new_nts
-      , productions = nts_prods ++ ts_prods}
+        { start = Left $ start grammar,
+          terminals = ts,
+          nonterminals = new_nts,
+          productions = nts_prods ++ ts_prods
+        }
+
+toTerminalIndexMap :: (Ord t) => [t] -> Map t Int
+toTerminalIndexMap = Map.fromList . flip zip [0 ..]
+
+toSymbolIndexMap ::
+  (Ord t, Ord nt) =>
+  [t] ->
+  [nt] ->
+  Map (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)) Int
+toSymbolIndexMap ts nts = Map.union aug_terminal_map nts_map
+  where
+    terminal_map = Map.mapKeys AugmentedTerminal $ toTerminalIndexMap ts
+    max_index = maximum terminal_map
+    new_terminals =
+      Map.union terminal_map $
+        Map.fromList
+          [ (LeftTurnstile, max_index + 1),
+            (RightTurnstile, max_index + 2)
+          ]
+    aug_terminal_map = Map.mapKeys Terminal new_terminals
+    nts' = (++ [Nonterminal Start]) $ Nonterminal . AugmentedNonterminal <$> nts
+    nts_map = Map.fromList $ zip nts' [max_index + 3 ..]
