@@ -1,14 +1,14 @@
 module Alpacc.Generator.Cuda.Cudafy
-  ( Cudafy (..)
-  , RawString (..)
+  ( Cudafy (..),
+    RawString (..),
   )
 where
 
-import Data.Array as Array hiding (Array)
-import Data.List qualified as List
-import Data.Array.Unboxed (UArray)
-import Data.Array.IArray as IArray
 import Alpacc.Types
+import Data.Array as Array hiding (Array)
+import Data.Array.IArray as IArray
+import Data.Array.Unboxed (UArray)
+import Data.List qualified as List
 import Numeric.Natural
 
 newtype RawString = RawString String deriving (Show, Eq, Ord, Read)
@@ -48,7 +48,7 @@ instance Cudafy Integer where
   cudafy = show
 
 instance (Cudafy a) => Cudafy [a] where
-  cudafy = ("["<>) . (<>"]") . List.intercalate ", " . fmap cudafy
+  cudafy = ("{" <>) . (<> "}") . List.intercalate ", " . fmap cudafy
 
 instance (Cudafy a) => Cudafy (Array i a) where
   cudafy = cudafy . Array.elems

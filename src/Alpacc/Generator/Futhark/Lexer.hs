@@ -1,21 +1,19 @@
-module Alpacc.Generator.Futhark.Lexer
-  ( generateLexer )
- where
+module Alpacc.Generator.Futhark.Lexer (generateLexer) where
 
+import Alpacc.Generator.Futhark.Futharkify
 import Alpacc.Grammar
 import Alpacc.Lexer.DFA
-import Alpacc.Lexer.ParallelLexing
-import Alpacc.Lexer.Encode
 import Alpacc.Lexer.DFAParallelLexer
+import Alpacc.Lexer.Encode
+import Alpacc.Lexer.ParallelLexing
+import Alpacc.Types
+import Data.Either.Extra
+import Data.FileEmbed
+import Data.List qualified as List
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.String.Interpolate (i)
-import Data.FileEmbed
 import Data.Word (Word8)
-import Data.List qualified as List
-import Data.Either.Extra
-import Alpacc.Types
-import Alpacc.Generator.Futhark.Futharkify
 
 futharkLexer :: String
 futharkLexer = $(embedStringFile "futhark/lexer.fut")
@@ -25,25 +23,26 @@ errorMessage = [i|Error: Happend during Futhark code generation contact a mainta
 
 defEndomorphismSize :: ParallelLexer Word8 Int -> String
 defEndomorphismSize =
-  ("def endomorphism_size: i64 = "++)
-  . show
-  . endomorphismsSize
+  ("def endomorphism_size: i64 = " ++)
+    . show
+    . endomorphismsSize
 
 transitionsToEndomorphismsArray :: ParallelLexer Word8 Int -> Either String String
 transitionsToEndomorphismsArray parallel_lexer = do
   vals <-
-    maybeToEither errorMessage
-    $ mapM (fmap show . flip Map.lookup to_endo)
-    [0..255]
+    maybeToEither errorMessage $
+      mapM
+        (fmap show . flip Map.lookup to_endo)
+        [0 .. 255]
   let result =
-        ("def transitions_to_endomorphisms : [256]endomorphism = sized 256 "<>)
-        $ (<>"]")
-        $ ("["<>)
-        $ List.intercalate ",\n" vals
+        ("def transitions_to_endomorphisms : [256]endomorphism = sized 256 " <>) $
+          (<> "]") $
+            ("[" <>) $
+              List.intercalate ",\n" vals
   return result
   where
     to_endo = endomorphisms parallel_lexer
-    
+
 compositionsArray :: UInt -> ParallelLexer Word8 Int -> String
 compositionsArray int parallel_lexer =
   [i|def compositions : [endomorphism_size * endomorphism_size]endomorphism =
@@ -51,10 +50,10 @@ compositionsArray int parallel_lexer =
 |]
   where
     ps = futharkify $ p <$> listCompositions parallel_lexer
-    p = RawString . (<> futharkify int) . futharkify 
+    p = RawString . (<> futharkify int) . futharkify
 
 ignoreFunction :: Map T Int -> String
-ignoreFunction terminal_index_map = 
+ignoreFunction terminal_index_map =
   case T "ignore" `Map.lookup` terminal_index_map of
     Just j -> [i|def is_ignore (t : terminal) : bool = #{j} == t|]
     Nothing -> [i|def is_ignore (_ : terminal) : bool = false|]
@@ -67,12 +66,12 @@ generateLexer ::
 generateLexer lexer terminal_index_map terminal_type = do
   int_parallel_lexer <- intDfaParallelLexer new_token_map lexer
   let ParallelLexerMasks
-        { tokenMask = token_mask
-        , tokenOffset = token_offset
-        , indexMask = index_mask
-        , indexOffset = index_offset
-        , producingMask = produce_mask
-        , producingOffset = produce_offset
+        { tokenMask = token_mask,
+          tokenOffset = token_offset,
+          indexMask = index_mask,
+          indexOffset = index_offset,
+          producingMask = produce_mask,
+          producingOffset = produce_offset
         } = parMasks int_parallel_lexer
   let parallel_lexer = parLexer int_parallel_lexer
   let _identity = identity parallel_lexer
@@ -114,5 +113,5 @@ module lexer = mk_lexer {
   where
     dead_token = succ $ maximum terminal_index_map
     new_token_map =
-      Map.insert Nothing dead_token
-      $ Map.mapKeys Just terminal_index_map
+      Map.insert Nothing dead_token $
+        Map.mapKeys Just terminal_index_map
