@@ -18,6 +18,13 @@ let pkg =
                 git gitRepo gnupg autoconf curl
                 procps gnumake util-linux m4 gperf unzip
                 cudatoolkit linuxPackages.nvidia_x11
+                cudaPackages.cuda_cudart
+                cudaPackages.cuda_nvcc
+                (lib.getLib cudaPackages.cuda_nvrtc)
+                (lib.getDev cudaPackages.cuda_nvrtc)
+                (lib.getLib cudaPackages.cuda_cudart)
+                (lib.getDev cudaPackages.cuda_cudart)
+                (lib.getStatic cudaPackages.cuda_cudart)
                 libGLU libGL
                 xorg.libXi xorg.libXmu freeglut
                 xorg.libXext xorg.libX11 xorg.libXv xorg.libXrandr zlib 
@@ -31,14 +38,13 @@ let pkg =
                 rustc
                 cargo
                 mkjson
-                futhark
               ]));
       };
 in pkg.overrideAttrs (attrs: {
   shellHook = attrs.shellHook + ''
     export CUDA_PATH=${pkgs.cudatoolkit}
-    export LD_LIBRARY_PATH=${pkgs.linuxPackages.nvidia_x11}/lib:${pkgs.ncurses5}/lib
-    export EXTRA_LDFLAGS="-L/lib -L${pkgs.linuxPackages.nvidia_x11}/lib"
-    export EXTRA_CCFLAGS="-I/usr/include"
+    export CPATH=${pkgs.cudatoolkit}/include
+    export LIBRARY_PATH=${pkgs.cudatoolkit}/lib:${pkgs.lib.getStatic pkgs.cudaPackages.cuda_cudart}/lib
+    export LD_LIBRARY_PATH=${pkgs.cudatoolkit}/lib:${pkgs.linuxPackages.nvidia_x11}/lib:${pkgs.lib.getStatic pkgs.cudaPackages.cuda_cudart}/lib
   '';
 })
