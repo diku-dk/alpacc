@@ -57,72 +57,47 @@ module mk_lexer(L: lexer_context) = {
     let b' = to_index b
     in copy L.compositions[b' * L.endomorphism_size + a']
     
-  def trans_to_endo (c: u8): endomorphism =
-    copy L.transitions_to_endomorphisms[u8.to_i64 c]
+  def trans_to_endo (prev_endo: endomorphism) (c: u8) (i: i64): endomorphism =
+    let e = copy L.transitions_to_endomorphisms[u8.to_i64 c]
+    in
+      if i == 0
+      then prev_endo `compose` e
+      else e
 
-  def traverse [n] (str: [n]u8): *[n]endomorphism =
-    map trans_to_endo str
+  def traverse [n] (prev_endo: endomorphism) (str: [n]u8): *[n]endomorphism =
+    map2 (trans_to_endo prev_endo) str (iota n)
     |> scan compose L.identity_endomorphism
     
-  def lex_with_dead [n'] (offset: i32)
-                         (str: [n']u8):
-                         [](terminal, (i32, i32)) =
-    let n = i32.i64 n'
-    let endos = traverse str
-    let is = filter (\i -> i == 0 || is_produce endos[i]) (0i32..<n)
-    let new_size = length is
-    in tabulate new_size (
-                  \i ->
-                    let start = is[i]
-                    let end = if i == new_size - 1 then n else is[i + 1]
-                    let span = (offset + start, offset + end)
-                    let endo = endos[end - 1]
-                    in (to_terminal endo, span)
-                )
-    
-  def lex [n'] (str: [n']u8): opt ([](terminal, (i32, i32))) =
-    let result = lex_with_dead 0 str
-    let is_valid =
-      length result == 0 ||
-      (last result).0 L.terminal_module.!= L.dead_terminal
-    let result = filter (not <-< L.is_ignore <-< (.0)) result
-    in if is_valid
-       then some result
-       else #none
-
-  def lex_step [n']
-               (str: [n']u8)
-               (offset: i32)
-               (size: i32): opt ([](terminal, (i32, i32))) =
-    let n = i32.i64 n'
-    let end = i32.min n (offset + size)
-    let substr = str[i64.i32 offset: i64.i32 end]
-    let result = lex_with_dead offset substr
-    let result =
-      if length result == 0 || end == n
-      then result
-      else init result
-    in if length result == 0 ||
-          (last result).0 L.terminal_module.== L.dead_terminal
-       then #none
-       else #some result
-
-  def lex_chunked [n']
-                  (max_token_size: i32)
-                  (str: [n']u8): opt ([](terminal, (i32, i32))) =
-    let n = i32.i64 n'
-    let step = max_token_size
-    let (ys, final_offset, _) =
-      loop (xs, offset, continue) = ([], 0, true) while continue do
-        match lex_step str offset step
-        case #none -> ([], -1, false)
-        case #some lexed ->
-        let (_, (_, m)) = last lexed
-        let xs' = xs ++ filter (not <-< L.is_ignore <-< (.0)) lexed
-        in (xs', m, m != n)
-    in if final_offset != -1 || n == 0
-       then #some ys
-       else #none
+  def lex_step [n] (offset: i64)
+                   (prev_endo: endomorphism)
+                   (str: [n]u8):
+                   ([]i64, []terminal, endomorphism) =
+    let endos = traverse prev_endo str
+    let last_endo = endos[n - 1]
+    let is = filter (\i -> not (i == 0 && offset == 0) && is_produce endos[i]) (0i64..<n)
+    in (map (+ offset) is,
+        map (\i ->
+               let e = if i == 0 then prev_endo else endos[i - 1]
+               in to_terminal e) is,
+        last_endo)
+ 
+  def lex [n]
+          (chunk_size: i32)
+          (str: [n]u8): opt ([](i64, terminal)) =
+    let chunk_size' = i64.i32 chunk_size
+    let (idxs_res, ters_res, final_endo) =
+      loop (idxs, ters, init_endo) = ([], [], L.identity_endomorphism) for offset in 0..chunk_size'..<n do
+      let m = i64.min (offset + chunk_size') n
+      let (idxs', ters', last_endo) = lex_step offset init_endo str[offset:m]
+      in (idxs ++ idxs', ters ++ ters', last_endo)
+    let final_idxs = [0] ++ idxs_res
+    let final_ters = ters_res ++ [to_terminal final_endo]
+    let m = length final_idxs
+    let final_ters = sized m final_ters
+    let final_idxs = sized m final_idxs
+    in if is_accept final_endo
+       then some <| zip final_idxs final_ters
+       else #none 
 }
 
 -- End of lexer.fut
