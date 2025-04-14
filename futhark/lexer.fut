@@ -71,30 +71,27 @@ module mk_lexer(L: lexer_context) = {
   def lex_step [n] (offset: i64)
                    (prev_endo: endomorphism)
                    (str: [n]u8):
-                   ([]i64, []terminal, endomorphism) =
+                   ([](i64, terminal), endomorphism) =
     let endos = traverse prev_endo str
     let last_endo = endos[n - 1]
     let is = filter (\i -> not (i == 0 && offset == 0) && is_produce endos[i]) (0i64..<n)
-    in (map (+ offset) is,
-        map (\i ->
+    in (map (\i ->
                let e = if i == 0 then prev_endo else endos[i - 1]
-               in to_terminal e) is,
+               in (offset + i, to_terminal e)) is,
         last_endo)
  
   def lex [n]
           (chunk_size: i32)
           (str: [n]u8): opt ([](i64, terminal)) =
     let chunk_size' = i64.i32 chunk_size
-    let (idxs_res, ters_res, final_endo) =
-      loop (idxs, ters, init_endo) = ([], [], L.identity_endomorphism) for offset in 0..chunk_size'..<n do
+    let (res, final_endo) =
+      loop (res'', init_endo) = ([], L.identity_endomorphism) for offset in 0..chunk_size'..<n do
       let m = i64.min (offset + chunk_size') n
-      let (idxs', ters', last_endo) = lex_step offset init_endo str[offset:m]
-      in (idxs ++ idxs', ters ++ ters', last_endo)
-    let final_idxs = [0] ++ idxs_res
-    let final_ters = ters_res ++ [to_terminal final_endo]
-    let m = length final_idxs
-    let final_ters = sized m final_ters
-    let final_idxs = sized m final_idxs
+      let (res', last_endo) = lex_step offset init_endo str[offset:m]
+      in (res'' ++ res', last_endo)
+    let (final_idxs, final_ters) = unzip res
+    let final_idxs = rotate (-1) <| final_idxs ++ [0]
+    let final_ters = final_ters ++ [to_terminal final_endo]
     in if is_accept final_endo
        then some <| zip final_idxs final_ters
        else #none 
