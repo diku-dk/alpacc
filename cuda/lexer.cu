@@ -396,6 +396,18 @@ __device__ __host__ __forceinline__ bool is_produce(state_t state) {
   return (state & PRODUCE_MASK) >> PRODUCE_OFFSET;
 }
 
+state_t get_index_cpu(state_t state) {
+  return (state & ENDO_MASK) >> ENDO_OFFSET;
+}
+
+token_t get_token_cpu(state_t state) {
+  return (state & TOKEN_MASK) >> TOKEN_OFFSET;
+}
+
+bool is_produce_cpu(state_t state) {
+  return (state & PRODUCE_MASK) >> PRODUCE_OFFSET;
+}
+
 template<typename I, typename J>
 struct LexerCtx {
   state_t* d_to_state;
@@ -404,14 +416,14 @@ struct LexerCtx {
   volatile State<state_t>* d_state_states;
   volatile State<I>* d_index_states;
   const I NUM_BLOCKS;
-  const I SIZE;
-  bool is_last = false;
+  const I CHUNK_SIZE;
   volatile unsigned int* d_dyn_block_index;
   volatile I* d_new_size;
   volatile state_t* d_last_state;
+  state_t init_state = IDENTITY;
 
-  LexerCtx(const I size,
-           const I num_blocks) : SIZE(size),
+  LexerCtx(const I chunk_size,
+           const I num_blocks) : CHUNK_SIZE(chunk_size),
                                  NUM_BLOCKS(num_blocks) {
     gpuAssert(cudaMalloc(&d_to_state, sizeof(h_to_state)));
     cudaMemcpy(d_to_state, h_to_state, sizeof(h_to_state),
@@ -538,7 +550,11 @@ lexer(LexerCtx<I, J> ctx, const I size, unsigned char* d_string, token_t* d_toke
       I reg_off = sizeof(unsigned long long) * i + j;
       bool is_in_block = lid_off < ITEMS_PER_THREAD * BLOCK_SIZE; 
       if (gid < size && is_in_block) {
-        states[lid_off] = states_aux[chars_reg[reg_off]];
+        if (gid != 0) {
+          states[lid_off] = states_aux[chars_reg[reg_off]];
+        } else {
+          states[lid_off] = ctx(ctx.init_state, states_aux[chars_reg[reg_off]]);
+        }
       } else if (is_in_block) {
         states[lid_off] = IDENTITY;
       }
@@ -553,7 +569,7 @@ lexer(LexerCtx<I, J> ctx, const I size, unsigned char* d_string, token_t* d_toke
   for (I i = 0; i < ITEMS_PER_THREAD; i++) {
     I lid = i * blockDim.x + threadIdx.x;
     I gid = glb_offs + lid;
-    bool temp = (gid < size && is_produce(states[lid])) && !(gid == 0 && ctx.offset == 0);
+    bool temp = gid < size && is_produce(states[lid]);
     is_produce_state |= temp << i;
     indices[lid] = temp;
   }
@@ -570,33 +586,43 @@ lexer(LexerCtx<I, J> ctx, const I size, unsigned char* d_string, token_t* d_toke
     I gid = glb_offs + lid;
     if (gid < size && ((is_produce_state >> i) & 1)) {
       I offset = Add<I>()(prefix, indices[lid]) - 1;
-      d_indices[offset + 1] = ((J) gid) + ctx.offset;
+      d_indices[offset] = ((J) gid) + ctx.offset;
       if (lid != 0) {
         d_tokens[offset] = get_token(states[lid - 1]);
-      } else {
+      } else if (dyn_index != 0) {
         d_tokens[offset] = get_token(ctx.d_state_states[dyn_index - 1].prefix);
+      } else {
+        d_tokens[offset] = get_token(ctx.init_state);
       }
-    }
-
-    if (gid == size - 1) {
-      I offset = Add<I>()(prefix, indices[lid]) - 1;
-      d_tokens[offset + 1] = get_token(states[lid]);
     }
   }
 
   if (dyn_index == gridDim.x - 1 && threadIdx.x == blockDim.x - 1) {
     I new_size = Add<I>()(prefix, indices[ITEMS_PER_THREAD * BLOCK_SIZE - 1]);
-    if (ctx.offset == 0) {
-      new_size += 1;
-    }
     *ctx.d_new_size = new_size;
     *ctx.d_last_state = states[ITEMS_PER_THREAD * BLOCK_SIZE - 1];
   }
-
-  
 }
 
-int lexer_stream() {
+
+struct WriteBinary {
+  void operator()(size_t i, token_t s) const {
+    unsigned char* buffer[sizeof(size_t) + sizeof(token_t)];
+    memcpy(buffer, &i, sizeof(size_t));
+    memcpy(buffer + sizeof(size_t), &s, sizeof(token_t));
+    fwrite(buffer, sizeof(size_t) + sizeof(token_t), 1, stdout);
+  }
+};
+
+struct WriteAscii {
+  void operator()(size_t i, token_t s) const {
+    printf("%lu %lu\n" , (size_t) i, (size_t) s);
+  }
+};
+
+
+template<typename PRINT>
+int lexer_stream(PRINT print) {
   size_t chunk_size = 100 * (1 << 20); // 100MiB
   
   unsigned char* h_string = (unsigned char*) malloc(chunk_size * sizeof(unsigned char));
@@ -618,12 +644,19 @@ int lexer_stream() {
   const unsigned int NUM_BLOCKS = (chunk_size + BLOCK_SIZE * ITEMS_PER_THREAD - 1) / (BLOCK_SIZE * ITEMS_PER_THREAD);
   LexerCtx ctx = LexerCtx<unsigned int, size_t>(chunk_size, NUM_BLOCKS);
 
+  size_t prev_index = 0;
+  size_t new_size = 0;
+
   while (true) {
     size_t bytes = fread(h_string, sizeof(unsigned char), chunk_size, stdin);
     if (bytes == 0) {
+      if (new_size == 0) {
+        break;
+      }
+      token_t token = get_token_cpu(ctx.get_last_state());
+      print(prev_index, token);
       break;
     }
-    ctx.is_last = bytes != chunk_size;
 
     gpuAssert(cudaMemcpy(d_string, h_string, bytes, cudaMemcpyHostToDevice));
 
@@ -633,23 +666,35 @@ int lexer_stream() {
     gpuAssert(cudaDeviceSynchronize());
     gpuAssert(cudaPeekAtLastError());
 
-    size_t new_size = ctx.tokens_size();
+    new_size = ctx.tokens_size();
 
     cudaMemcpy(h_tokens, d_tokens, new_size * sizeof(token_t), cudaMemcpyDeviceToHost);
     cudaMemcpy(h_indices, d_indices, new_size * sizeof(size_t), cudaMemcpyDeviceToHost);
 
+
     for (size_t i = 0; i < new_size; i++) {
-      printf("%zu: %u\n", h_indices[i], h_tokens[i]);
+      if (i == 0 ) {
+        print(prev_index, h_tokens[i]);
+      } else {
+        print(h_indices[i - 1], h_tokens[i]);
+      }
     }
 
-    if (ctx.is_last) {
-      printf("%zu tokens\n", new_size);
-      printf("End of stream\n");
+    prev_index = h_indices[new_size - 1];
+
+    if (bytes != chunk_size) {
+      token_t token = get_token_cpu(ctx.get_last_state());
+      print(prev_index, token);
       break;
     }
 
+    ctx.init_state = ctx.get_last_state();
     ctx.offset += bytes;
   }
+
+  std::cout << std::flush;
+
+  int success = h_accept[ctx.get_last_state()] ? 0 : -1;
   
   ctx.cleanup();
 
@@ -659,12 +704,11 @@ int lexer_stream() {
   cudaFree(d_string);
   cudaFree(d_tokens);
   cudaFree(d_indices);
-  return 0;
+  return success;
 }
 
 int main(int32_t argc, char *argv[]) {
-
-  return lexer_stream();
+  return lexer_stream<WriteBinary>(WriteBinary());
 }
 
 
