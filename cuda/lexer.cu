@@ -286,7 +286,7 @@ decoupledLookbackScanNoWrite(volatile State<T>* states,
 }
 
 template<typename T, typename I, typename OP, I ITEMS_PER_THREAD>
-__device__ inline void
+__device__ inline T
 decoupledLookbackScan(volatile State<T>* states,
                       volatile T* shmem,
                       OP op,
@@ -368,10 +368,11 @@ decoupledLookbackScan(volatile State<T>* states,
     shmem[lid] = op(prefix, shmem[lid]);
   }
   __syncthreads();
+  return prefix;
 }
 
 template<typename T, typename I, typename OP, I ITEMS_PER_THREAD>
-__device__ inline void
+__device__ inline T
 scan(volatile T* block,
      volatile T* block_aux,
      volatile State<T>* states,
@@ -381,7 +382,7 @@ scan(volatile T* block,
     
   scanBlock<T, I, OP, ITEMS_PER_THREAD>(block, block_aux, op);
 
-  decoupledLookbackScan<T, I, OP, ITEMS_PER_THREAD>(states, block, op, ne, dyn_idx);
+  return decoupledLookbackScan<T, I, OP, ITEMS_PER_THREAD>(states, block, op, ne, dyn_idx);
 }
 
 __device__ __host__ __forceinline__ state_t get_index(state_t state) {
@@ -563,7 +564,7 @@ lexer(LexerCtx<I, J> ctx, const I size, unsigned char* d_string, token_t* d_toke
 
   __syncthreads();
 
-  scan<state_t, I, LexerCtx<I, J>, ITEMS_PER_THREAD>(states, states_aux, ctx.d_state_states, ctx, IDENTITY, dyn_index);
+  state_t state_prefix = scan<state_t, I, LexerCtx<I, J>, ITEMS_PER_THREAD>(states, states_aux, ctx.d_state_states, ctx, IDENTITY, dyn_index);
 
 #pragma unroll
   for (I i = 0; i < ITEMS_PER_THREAD; i++) {
@@ -590,7 +591,7 @@ lexer(LexerCtx<I, J> ctx, const I size, unsigned char* d_string, token_t* d_toke
       if (lid != 0) {
         d_tokens[offset] = get_token(states[lid - 1]);
       } else if (dyn_index != 0) {
-        d_tokens[offset] = get_token(ctx.d_state_states[dyn_index - 1].prefix);
+        d_tokens[offset] = get_token(state_prefix);
       } else {
         d_tokens[offset] = get_token(ctx.init_state);
       }
