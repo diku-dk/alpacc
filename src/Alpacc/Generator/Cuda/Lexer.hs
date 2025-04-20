@@ -45,7 +45,7 @@ using state_t = #{cudafy endomorphism_type};
 
 const unsigned int NUM_STATES = #{cudafy $ endomorphismsSize parallel_lexer};
 const unsigned int NUM_TRANS = 256;
-const token_t IGNORE_TOKEN = 0;
+#{ignore_token}
 const state_t ENDO_MASK = #{cudafy index_mask};
 const state_t ENDO_OFFSET = #{cudafy index_offset};
 const state_t TOKEN_MASK = #{cudafy token_mask};
@@ -65,6 +65,9 @@ bool h_accept[NUM_STATES] =
 |]
       <> cudaLexer
   where
+    defToken t = [i|#define IGNORE_TOKEN #{t}|]
+    ignore_token =
+      maybe "" defToken $ Map.lookup (T "ignore") terminal_index_map
     dead_token = succ $ maximum terminal_index_map
     new_token_map =
       Map.insert Nothing dead_token $

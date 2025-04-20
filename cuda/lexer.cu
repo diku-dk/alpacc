@@ -190,109 +190,14 @@ combine(Status a, Status b) {
   return b;
 }
 
-template<typename T, typename I, typename OP>
-__device__ inline void
-scanWarp(volatile T* values,
-         volatile Status* statuses,
-         OP op,
-         const unsigned char lane) {
-  unsigned char h;
-  const I tid = threadIdx.x;
-
-#pragma unroll
-  for (unsigned char d = 0; d < LG_WARP; d++) {
-    if ((h = 1 << d) <= lane) {
-      bool is_not_aggregate = statuses[tid] != Aggregate;
-      values[tid] = is_not_aggregate ? const_cast<T*>(values)[tid] : op(values[tid - h], values[tid]);
-      statuses[tid] = combine(statuses[tid - h], statuses[tid]);
-    }
-  }
-}
-
-template<typename T, typename I, typename OP, I ITEMS_PER_THREAD>
-__device__ inline T
-decoupledLookbackScanNoWrite(volatile State<T>* states,
-                             volatile T* shmem,
-                             OP op,
-                             const T ne,
-                             unsigned int dyn_idx) {
-  volatile __shared__ T values[WARP];
-  volatile __shared__ Status statuses[WARP];
-  volatile __shared__ T shmem_prefix;
-  const unsigned char lane = threadIdx.x & (WARP - 1);
-  const bool is_first = threadIdx.x == 0;
-
-  T aggregate = shmem[ITEMS_PER_THREAD * blockDim.x - 1];
-
-  if (is_first) {
-    states[dyn_idx].aggregate = aggregate;
-  }
-    
-  if (dyn_idx == 0 && is_first) {
-    states[dyn_idx].prefix = aggregate;
-  }
-    
-  __threadfence();
-  if (dyn_idx == 0 && is_first) {
-    states[dyn_idx].status = Prefix;
-  } else if (is_first) {
-    states[dyn_idx].status = Aggregate;
-  }
-
-  T prefix = ne;
-  if (threadIdx.x < WARP && dyn_idx != 0) {
-    I lookback_idx = threadIdx.x + dyn_idx;
-    I lookback_warp = WARP;
-    Status status = Aggregate;
-    do {
-      if (lookback_warp <= lookback_idx) {
-        I idx = lookback_idx - lookback_warp;
-        status = states[idx].status;
-        statuses[threadIdx.x] = status;
-        values[threadIdx.x] = status == Prefix ? states[idx].prefix : states[idx].aggregate;
-      } else {
-        statuses[threadIdx.x] = Aggregate;
-        values[threadIdx.x] = ne;
-      }
-
-      scanWarp<T, I, OP>(values, statuses, op, lane);
-
-      T result = values[WARP - 1];
-      status = statuses[WARP - 1];
-
-      if (status == Invalid)
-        continue;
-                
-      if (is_first) {
-        prefix = op(result, prefix);
-      }
-
-      lookback_warp += WARP;
-    } while (status != Prefix);
-  }
-
-  if (is_first) {
-    shmem_prefix = prefix;
-  }
-
-  __syncthreads();
-
-  if (is_first) {
-    states[dyn_idx].prefix = op(prefix, aggregate);
-    __threadfence();
-    states[dyn_idx].status = Prefix;
-  }
-    
-  return shmem_prefix;
-}
-
 template<typename T, typename I, typename OP, I ITEMS_PER_THREAD>
 __device__ inline T
 decoupledLookbackScan(volatile State<T>* states,
                       volatile T* shmem,
                       OP op,
-                      const T ne,
-                      uint32_t dyn_idx) {
+                      T ne,
+                      uint32_t dyn_idx,
+                      bool write_back = true) {
   volatile __shared__ T values[WARP];
   volatile __shared__ Status statuses[WARP];
   volatile __shared__ T shmem_prefix;
@@ -317,7 +222,7 @@ decoupledLookbackScan(volatile State<T>* states,
     states[dyn_idx].status = Aggregate;
   }
 
-  T prefix = ne;
+  T prefix;
   if (threadIdx.x < WARP && dyn_idx != 0) {
     I lookback_idx = threadIdx.x + dyn_idx;
     I lookback_warp = WARP;
@@ -333,7 +238,16 @@ decoupledLookbackScan(volatile State<T>* states,
         values[threadIdx.x] = ne;
       }
 
-      scanWarp<T, I, OP>(values, statuses, op, lane);
+      unsigned char h;
+
+#pragma unroll
+      for (unsigned char d = 0; d < LG_WARP; d++) {
+        if ((h = 1 << d) <= lane) {
+          bool is_not_aggregate = statuses[threadIdx.x] != Aggregate;
+          values[threadIdx.x] = is_not_aggregate ? const_cast<T*>(values)[threadIdx.x] : op(values[threadIdx.x - h], values[threadIdx.x]);
+          statuses[threadIdx.x] = combine(statuses[threadIdx.x - h], statuses[threadIdx.x]);
+        }
+      }
 
       T result = values[WARP - 1];
       status = statuses[WARP - 1];
@@ -342,7 +256,7 @@ decoupledLookbackScan(volatile State<T>* states,
         continue;
                 
       if (is_first) {
-        prefix = op(result, prefix);
+        prefix = result;
       }
 
       lookback_warp += WARP;
@@ -361,15 +275,17 @@ decoupledLookbackScan(volatile State<T>* states,
     states[dyn_idx].status = Prefix;
   }
     
-  prefix = shmem_prefix;
-  const I offset = threadIdx.x * ITEMS_PER_THREAD;
-  const I upper = offset + ITEMS_PER_THREAD;
+  if (write_back) {
+    prefix = shmem_prefix;
+    const I offset = threadIdx.x * ITEMS_PER_THREAD;
+    const I upper = offset + ITEMS_PER_THREAD;
 #pragma unroll
-  for (I lid = offset; lid < upper; lid++) {
-    shmem[lid] = op(prefix, shmem[lid]);
+    for (I lid = offset; lid < upper; lid++) {
+      shmem[lid] = op(prefix, shmem[lid]);
+    }
+    __syncthreads();
   }
-  __syncthreads();
-  return prefix;
+  return shmem_prefix;
 }
 
 template<typename T, typename I, typename OP, I ITEMS_PER_THREAD>
@@ -378,12 +294,13 @@ scan(volatile T* block,
      volatile T* block_aux,
      volatile State<T>* states,
      OP op,
-     const T ne,
-     uint32_t dyn_idx) {
+     T ne,
+     uint32_t dyn_idx,
+     bool write_back = true) {
     
   scanBlock<T, I, OP, ITEMS_PER_THREAD>(block, block_aux, op);
 
-  return decoupledLookbackScan<T, I, OP, ITEMS_PER_THREAD>(states, block, op, ne, dyn_idx);
+  return decoupledLookbackScan<T, I, OP, ITEMS_PER_THREAD>(states, block, op, dyn_idx, ne, write_back);
 }
 
 __device__ __host__ __forceinline__ state_t get_index(state_t state) {
@@ -426,6 +343,7 @@ private:
 public:
   volatile State<state_t>* d_state_states;
   volatile State<I>* d_index_states;
+  volatile State<I>* d_take_right_states;
 
   LexerCtx(const I chunk_size,
            const I block_size,
@@ -442,6 +360,7 @@ public:
     I INDEX_STATES_BYTES = num_blocks * sizeof(State<I>);
       
     gpuAssert(cudaMalloc((void**)&d_index_states, INDEX_STATES_BYTES));
+    gpuAssert(cudaMalloc((void**)&d_take_right_states, INDEX_STATES_BYTES));
     gpuAssert(cudaMalloc((void**)&d_state_states, STATE_STATES_BYTES));
 
     gpuAssert(cudaMalloc((void**)&d_dyn_block_index, sizeof(unsigned int)));
@@ -458,6 +377,7 @@ public:
     if (d_compose) cudaFree(d_compose);
     if (d_index_states) cudaFree((void*)d_index_states);
     if (d_state_states) cudaFree((void*)d_state_states);
+    if (d_take_right_states) cudaFree((void*)d_take_right_states);
     if (d_dyn_block_index) cudaFree((void*)d_dyn_block_index);
     if (d_new_size) cudaFree((void*)d_new_size);
     if (d_last_state) cudaFree((void*)d_last_state);
@@ -543,12 +463,25 @@ struct Add {
   }
 };
 
+template<typename T>
+struct TakeRight {
+  __device__ __forceinline__ T operator()(T a, T b) const {
+    if (a == T()) {
+      return b;
+    } else if (b == T()) {
+      return a;
+    }
+    return b;
+  }
+};
+
 template<typename I, typename J, I BLOCK_SIZE, I ITEMS_PER_THREAD>
 __global__ void
-lexer(LexerCtx<I, J> ctx, unsigned char* d_string, token_t* d_tokens, J* d_indices, const I size) {
+lexer(LexerCtx<I, J> ctx, unsigned char* d_string, token_t* d_tokens, J* d_indices, J* d_ends, const I size) {
   volatile __shared__ state_t states[ITEMS_PER_THREAD * BLOCK_SIZE];
   volatile __shared__ I indices[ITEMS_PER_THREAD * BLOCK_SIZE];
   volatile __shared__ I indices_aux[BLOCK_SIZE];
+  __shared__ state_t next_block_first_state;
   volatile state_t* states_aux = (volatile state_t*) indices;
   const I REG_MEM = 1 + ITEMS_PER_THREAD / sizeof(unsigned long long);
   unsigned long long copy_reg[REG_MEM];
@@ -557,6 +490,10 @@ lexer(LexerCtx<I, J> ctx, unsigned char* d_string, token_t* d_tokens, J* d_indic
 
   unsigned int dyn_index = ctx.getDynamicIndex();
   I glb_offs = dyn_index * BLOCK_SIZE * ITEMS_PER_THREAD;
+
+  if (threadIdx.x == I()) {
+      next_block_first_state = IDENTITY;
+  }
 
 #pragma unroll
   for (I i = 0; i < REG_MEM; i++) {
@@ -585,50 +522,75 @@ lexer(LexerCtx<I, J> ctx, unsigned char* d_string, token_t* d_tokens, J* d_indic
       I reg_off = sizeof(unsigned long long) * i + j;
       bool is_in_block = lid_off < ITEMS_PER_THREAD * BLOCK_SIZE; 
       if (gid < size && is_in_block) {
-        if (gid != 0) {
-          states[lid_off] = ctx.toState(chars_reg[reg_off]);
-        } else {
-          states[lid_off] = ctx(ctx.getInitState(), reinterpret_cast<state_t>(ctx.toState(chars_reg[reg_off])));
-        }
+          if (gid == 0) {
+            states[lid_off] = ctx(ctx.getInitState(), reinterpret_cast<state_t>(ctx.toState(chars_reg[reg_off])));
+          } else {
+            states[lid_off] = ctx.toState(chars_reg[reg_off]);
+          }
       } else if (is_in_block) {
-        states[lid_off] = IDENTITY;
+          states[lid_off] = IDENTITY;
+      } else if (lid_off == ITEMS_PER_THREAD * BLOCK_SIZE) {
+          next_block_first_state = ctx.toState(chars_reg[reg_off]);
       }
     }
   }
 
   __syncthreads();
 
-  state_t state_prefix = scan<state_t, I, LexerCtx<I, J>, ITEMS_PER_THREAD>(states, states_aux, ctx.d_state_states, ctx, IDENTITY, dyn_index);
+  scan<state_t, I, LexerCtx<I, J>, ITEMS_PER_THREAD>(states, states_aux, ctx.d_state_states, ctx, IDENTITY, dyn_index);
 
 #pragma unroll
   for (I i = 0; i < ITEMS_PER_THREAD; i++) {
     I lid = i * blockDim.x + threadIdx.x;
     I gid = glb_offs + lid;
-    bool temp = gid < size && is_produce(states[lid]);
+    bool temp = false;
+    if (gid < size) {
+      state_t state = states[lid];
+      if (lid == ITEMS_PER_THREAD * BLOCK_SIZE - 1) {
+        temp = is_produce(ctx(state, next_block_first_state)) && get_token(state) != IGNORE_TOKEN;
+      } else {
+        temp = is_produce(states[lid + 1]) && get_token(state) != IGNORE_TOKEN;
+      }
+
+      indices[lid] = is_produce(state) ? gid : 0;
+    } else {
+      indices[lid] = 0;
+    }
     is_produce_state |= temp << i;
-    indices[lid] = temp;
   }
 
   __syncthreads();
 
-  scanBlock<I, I, Add<I>, ITEMS_PER_THREAD>(indices, indices_aux, Add<I>());
+  scan<I, I, TakeRight<I>, ITEMS_PER_THREAD>(indices, indices_aux, ctx.d_take_right_states, TakeRight<I>(), I(), dyn_index);
 
-  I prefix = decoupledLookbackScanNoWrite<I, I, Add<I>, ITEMS_PER_THREAD>(ctx.d_index_states, indices, Add<I>(), I(), dyn_index);
+  I starts[ITEMS_PER_THREAD];
 
 #pragma unroll
+  for (I i = 0; i < ITEMS_PER_THREAD; i++) {
+    I lid = i * blockDim.x + threadIdx.x;
+    I gid = glb_offs + lid;
+
+    if (gid < size) {
+      starts[i] = indices[lid];
+      indices[lid] = (is_produce_state >> i) & 1;
+    } else {
+      indices[lid] = 0;
+    }
+  }
+
+  __syncthreads();
+
+  I prefix = scan<I, I, Add<I>, ITEMS_PER_THREAD>(indices, indices_aux, ctx.d_index_states, Add<I>(), I(), dyn_index, false);
+
+  #pragma unroll
   for (I i = 0; i < ITEMS_PER_THREAD; i++) {
     I lid = blockDim.x * i + threadIdx.x;
     I gid = glb_offs + lid;
     if (gid < size && ((is_produce_state >> i) & 1)) {
       I offset = Add<I>()(prefix, indices[lid]) - 1;
-      d_indices[offset] = ctx.addOffset(gid);
-      if (lid != 0) {
-        d_tokens[offset] = get_token(states[lid - 1]);
-      } else if (dyn_index != 0) {
-        d_tokens[offset] = get_token(state_prefix);
-      } else {
-        d_tokens[offset] = get_token(ctx.getInitState());
-      }
+      d_indices[offset] = ctx.addOffset(starts[i]);
+      d_ends[offset] = ctx.addOffset(gid + 1);
+      d_tokens[offset] = get_token(states[lid]);
     }
   }
 
@@ -641,51 +603,56 @@ lexer(LexerCtx<I, J> ctx, unsigned char* d_string, token_t* d_tokens, J* d_indic
 
 
 struct WriteBinary {
-  void operator()(size_t i, token_t s) const {
-    unsigned char* buffer[sizeof(size_t) + sizeof(token_t)];
+  void operator()(size_t i, size_t j, token_t s) const {
+    unsigned char* buffer[2 * sizeof(size_t) + sizeof(token_t)];
     memcpy(buffer, &i, sizeof(size_t));
-    memcpy(buffer + sizeof(size_t), &s, sizeof(token_t));
-    fwrite(buffer, sizeof(size_t) + sizeof(token_t), 1, stdout);
+    memcpy(buffer + sizeof(size_t), &j, sizeof(size_t));
+    memcpy(buffer + 2 * sizeof(size_t), &s, sizeof(token_t));
+    fwrite(buffer, 2 * sizeof(size_t) + sizeof(token_t), 1, stdout);
   }
 };
 
 struct WriteAscii {
-  void operator()(size_t i, token_t s) const {
-    printf("%lu %lu\n" , (size_t) i, (size_t) s);
+  void operator()(size_t i, size_t j, token_t s) const {
+    printf("%lu %lu %lu\n", i, j, (size_t) s);
   }
 };
 
 
 struct NoWrite {
-  void operator()(size_t i, token_t s) const {
+  void operator()(size_t i, size_t j, token_t s) const {
     // No operation
   }
 };
 
 template<typename PRINT>
 int lexer_stream(PRINT print, bool timeit = false) {
-  const unsigned int chunk_size = 100 * (1 << 20); // 100MiB
+  const unsigned int chunk_size = 8; //100 * (1 << 20); // 100MiB
   
   unsigned char* h_string = (unsigned char*) malloc(chunk_size * sizeof(unsigned char));
   token_t* h_tokens = (token_t*) malloc(chunk_size * sizeof(token_t));
   size_t* h_indices = (size_t*) malloc(chunk_size * sizeof(size_t));
+  size_t* h_ends = (size_t*) malloc(chunk_size * sizeof(size_t));
   assert(h_string != NULL);
   assert(h_tokens != NULL);
   assert(h_indices != NULL);
+  assert(h_ends != NULL);
 
   unsigned char* d_string;
   token_t* d_tokens;
   size_t* d_indices;
+  size_t* d_ends;
   gpuAssert(cudaMalloc((void**)&d_string, chunk_size * sizeof(unsigned char)));
   gpuAssert(cudaMalloc((void**)&d_tokens, chunk_size * sizeof(token_t)));
   gpuAssert(cudaMalloc((void**)&d_indices, chunk_size * sizeof(size_t)));
+  gpuAssert(cudaMalloc((void**)&d_ends, chunk_size * sizeof(size_t)));
 
   const unsigned int BLOCK_SIZE = 256;
   const unsigned int ITEMS_PER_THREAD = 31;
   LexerCtx ctx = LexerCtx<unsigned int, size_t>(chunk_size, BLOCK_SIZE, ITEMS_PER_THREAD);
 
-  size_t prev_index = 0;
   size_t new_size = 0;
+  size_t final_size = 0;
   float time = 0;
   cudaEvent_t start, stop;
   cudaEventCreate(&start);
@@ -693,6 +660,7 @@ int lexer_stream(PRINT print, bool timeit = false) {
 
   while (true) {
     size_t bytes = fread(h_string, sizeof(unsigned char), chunk_size, stdin);
+    final_size += bytes;
     if (bytes == 0) {
       break;
     }
@@ -702,7 +670,7 @@ int lexer_stream(PRINT print, bool timeit = false) {
     ctx.resetDynamicIndex();
     const unsigned int num_blocks = numBlocks(bytes, BLOCK_SIZE, ITEMS_PER_THREAD);
     cudaEventRecord(start, 0);
-    lexer<unsigned int, size_t, BLOCK_SIZE, ITEMS_PER_THREAD><<<num_blocks, BLOCK_SIZE>>>(ctx, d_string, d_tokens, d_indices, bytes);
+    lexer<unsigned int, size_t, BLOCK_SIZE, ITEMS_PER_THREAD><<<num_blocks, BLOCK_SIZE>>>(ctx, d_string, d_tokens, d_indices, d_ends, bytes);
     gpuAssert(cudaDeviceSynchronize());
     cudaEventRecord(stop, 0);
     cudaEventSynchronize(stop);
@@ -715,16 +683,11 @@ int lexer_stream(PRINT print, bool timeit = false) {
 
     cudaMemcpy(h_tokens, d_tokens, new_size * sizeof(token_t), cudaMemcpyDeviceToHost);
     cudaMemcpy(h_indices, d_indices, new_size * sizeof(size_t), cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_ends, d_ends, new_size * sizeof(size_t), cudaMemcpyDeviceToHost);
 
     for (size_t i = 0; i < new_size; i++) {
-      if (i == 0 ) {
-        print(prev_index, h_tokens[i]);
-      } else {
-        print(h_indices[i - 1], h_tokens[i]);
-      }
+      print(h_indices[i], h_ends[i], h_tokens[i]);
     }
-
-    prev_index = new_size == 0 ? prev_index : h_indices[new_size - 1];
 
     if (bytes != chunk_size) {
       break;
@@ -740,7 +703,7 @@ int lexer_stream(PRINT print, bool timeit = false) {
 
   state_t last_state = ctx.getLastState();
   token_t token = get_token_cpu(last_state);
-  print(prev_index, token);
+  // print(prev_index, final_size, token);
 
   std::cout << std::flush;
 
@@ -758,17 +721,19 @@ int lexer_stream(PRINT print, bool timeit = false) {
 }
 
 template<unsigned int BLOCK_SIZE, unsigned int ITEMS_PER_THREAD>
-size_t lexer_full(LexerCtx<unsigned int, size_t> ctx, unsigned char* d_string, token_t* d_tokens, size_t* d_indices, size_t chunk_size, size_t size) {
+size_t lexer_full(LexerCtx<unsigned int, size_t> ctx, unsigned char* d_string, token_t* d_tokens, size_t* d_indices, size_t* d_ends, size_t chunk_size, size_t size) {
   assert(chunk_size <= size);
   assert(size != 0);
   assert(d_string != NULL);
   assert(d_tokens == NULL);
   assert(d_indices == NULL);
+  assert(d_ends == NULL);
 
   const size_t TOKENS_CHUNK_SIZE = chunk_size * sizeof(token_t);
   const size_t INDICES_CHUNK_SIZE = chunk_size * sizeof(size_t);
   cudaMalloc((void**)&d_tokens, TOKENS_CHUNK_SIZE);
   cudaMalloc((void**)&d_indices, INDICES_CHUNK_SIZE);
+  cudaMalloc((void**)&d_ends, INDICES_CHUNK_SIZE);
 
   cudaMemset(d_indices, 0, sizeof(size_t));
 
@@ -786,7 +751,7 @@ size_t lexer_full(LexerCtx<unsigned int, size_t> ctx, unsigned char* d_string, t
     ctx.resetDynamicIndex();
     const unsigned int num_blocks = numBlocks(bytes, BLOCK_SIZE, ITEMS_PER_THREAD);
     cudaEventRecord(start, 0);
-    lexer<unsigned int, size_t, BLOCK_SIZE, ITEMS_PER_THREAD><<<num_blocks, BLOCK_SIZE>>>(ctx, d_string, d_tokens, d_indices + 1, bytes);
+    lexer<unsigned int, size_t, BLOCK_SIZE, ITEMS_PER_THREAD><<<num_blocks, BLOCK_SIZE>>>(ctx, d_string, d_tokens, d_indices + 1, d_ends, bytes);
     gpuAssert(cudaDeviceSynchronize());
     cudaEventRecord(stop, 0);
     cudaEventSynchronize(stop);
@@ -799,6 +764,7 @@ size_t lexer_full(LexerCtx<unsigned int, size_t> ctx, unsigned char* d_string, t
 
     cudaMalloc((void**)&d_tokens, new_size * sizeof(token_t) + TOKENS_CHUNK_SIZE);
     cudaMalloc((void**)&d_indices, new_size * sizeof(size_t) + INDICES_CHUNK_SIZE);
+    cudaMalloc((void**)&d_ends, new_size * sizeof(size_t) + INDICES_CHUNK_SIZE);
 
     ctx.updateInitState();
     ctx.updateOffset();
@@ -806,11 +772,14 @@ size_t lexer_full(LexerCtx<unsigned int, size_t> ctx, unsigned char* d_string, t
 
   state_t last_state = ctx.getLastState();
   token_t token = get_token_cpu(last_state);
+  size_t final_size = new_size + 1;
   cudaMemcpy(d_tokens + new_size - 1, &token, sizeof(token_t), cudaMemcpyHostToDevice);
+  cudaMemcpy(d_tokens + new_size - 1, &final_size, sizeof(size_t), cudaMemcpyHostToDevice);
   cudaMalloc((void**)&d_tokens, (1 + new_size) * sizeof(token_t));
   cudaMalloc((void**)&d_indices, (1 + new_size) * sizeof(size_t));
+  cudaMalloc((void**)&d_ends, (1 + new_size) * sizeof(size_t));
 
-  int success = h_accept[get_index_cpu(last_state)] ? new_size + 1 : 0;
+  int success = h_accept[get_index_cpu(last_state)] ? final_size : 0;
 
   return success;
 }
