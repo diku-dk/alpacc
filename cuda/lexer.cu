@@ -638,7 +638,7 @@ lexer(LexerCtx<I, J> ctx, unsigned char* d_string, token_t* d_tokens, J* d_indic
     I new_size = Add<I>()(prefix, indices[ITEMS_PER_THREAD * BLOCK_SIZE - 1]);
     ctx.setNewSize(new_size);
     ctx.setLastState(states[ITEMS_PER_THREAD * BLOCK_SIZE - 1]);
-    ctx.setLastStart(ctx.addOffset(indices[ITEMS_PER_THREAD * BLOCK_SIZE - 1]));
+    ctx.setLastStart(ctx.addOffset(starts[ITEMS_PER_THREAD - 1]));
   }
 }
 
