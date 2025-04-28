@@ -417,7 +417,6 @@ public:
   States<I, state_t> d_state_states;
   States<I, I> d_index_states;
   States<I, I> d_take_right_states;
-  const I take_right_identity = std::numeric_limits<I>::max();
   TakeRight<I> take_right = TakeRight<I>();
 
   LexerCtx(const I chunk_size,
@@ -630,16 +629,16 @@ lexer(LexerCtx<I, J> ctx, unsigned char* d_string, token_t* d_tokens, J* d_start
         is_next_produce &= is_not_ignore && gid != size - 1;
       }
 
-      indices[lid] = is_produce(state) ? gid : ctx.take_right_identity;
+      indices[lid] = is_produce(state) ? gid : ctx.take_right.identity;
     } else {
-      indices[lid] = ctx.take_right_identity;
+      indices[lid] = ctx.take_right.identity;
     }
     is_produce_state |= is_next_produce << i;
   }
 
   __syncthreads();
 
-  scan<I, I, TakeRight<I>, ITEMS_PER_THREAD>(indices, indices_aux, ctx.d_take_right_states, ctx.take_right, ctx.take_right_identity, dyn_index);
+  scan<I, I, TakeRight<I>, ITEMS_PER_THREAD>(indices, indices_aux, ctx.d_take_right_states, ctx.take_right, ctx.take_right.identity, dyn_index);
 
   I starts[ITEMS_PER_THREAD];
   volatile __shared__ I last_start;
@@ -672,7 +671,7 @@ lexer(LexerCtx<I, J> ctx, unsigned char* d_string, token_t* d_tokens, J* d_start
     I gid = glb_offs + lid;
     if (gid < size && ((is_produce_state >> i) & 1)) {
       I offset = Add<I>()(prefix, indices[lid]) - 1;
-      if (offset == I() && starts[i] == ctx.take_right_identity) {
+      if (offset == I() && starts[i] == ctx.take_right.identity) {
         d_starts[offset] = ctx.getLastStart();
       } else {
         d_starts[offset] = ctx.addOffset(starts[i]);
@@ -687,7 +686,7 @@ lexer(LexerCtx<I, J> ctx, unsigned char* d_string, token_t* d_tokens, J* d_start
     ctx.setNewSize(new_size);
     ctx.setLastState(states[ITEMS_PER_THREAD * BLOCK_SIZE - 1]);
     
-    if (last_start != ctx.take_right_identity) {
+    if (last_start != ctx.take_right.identity) {
       ctx.setLastStart(ctx.addOffset(last_start));
     } else {
       ctx.setLastStart(ctx.getLastStart());
