@@ -13,8 +13,10 @@ module Alpacc.LLP
   )
 where
 
-import Control.Monad (foldM, join)
+import Alpacc.Grammar
+import Alpacc.LL hiding (before, follow, llParse)
 import Control.DeepSeq
+import Control.Monad (foldM, join)
 import Control.Monad.State
 import Data.Bifunctor qualified as BI
 import Data.Either.Extra (maybeToEither)
@@ -28,10 +30,8 @@ import Data.Sequence qualified as Seq hiding (Seq (..), (<|), (><), (|>))
 import Data.Set (Set)
 import Data.Set qualified as Set hiding (Set)
 import Data.String.Interpolate (i)
-import Data.Tuple.Extra (fst3, thd3, both)
+import Data.Tuple.Extra (both, fst3, thd3)
 import GHC.Generics
-import Alpacc.Grammar
-import Alpacc.LL hiding (before, follow, llParse)
 import Prelude hiding (last)
 
 -- | This Algebraic data structure is used to model the production with a dot in
@@ -207,20 +207,21 @@ initLlpContext ::
   Grammar nt t ->
   Either String (LlpContext nt t)
 initLlpContext q k grammar
-  | q < 1 = Left "Error: Lookback must be positive. The parser generator should allow for nonnegative lookback but this will be fixed at some point." -- nonnegative."
+  | q < 0 = Left "Error: Lookback must be non-negative."
+  | k < 1 = Left "Error: Lookahead must be positive."
   | otherwise = do
-  ll_table <- evalState (llTableM k augmented_grammar followFunction) first_ctx
-  return $
-    LlpContext
-      { lookback = q,
-        lookahead = k,
-        theGrammar = augmented_grammar,
-        firstContext = first_ctx,
-        lastContext = last_ctx,
-        before = beforeFunction,
-        follow = followFunction,
-        table = ll_table
-      }
+      ll_table <- evalState (llTableM k augmented_grammar followFunction) first_ctx
+      return $
+        LlpContext
+          { lookback = q,
+            lookahead = k,
+            theGrammar = augmented_grammar,
+            firstContext = first_ctx,
+            lastContext = last_ctx,
+            before = beforeFunction,
+            follow = followFunction,
+            table = ll_table
+          }
   where
     augmented_grammar = augmentGrammar grammar
     (first_ctx, followFunction) = firstAndFollow k augmented_grammar
@@ -416,7 +417,7 @@ llpCollectionMemo = do
         a_str' = concatString $ fst3 a'
         a_str = concatString $ fst3 a
         key_str = (\(x, y) -> "(" ++ x ++ ", " ++ y ++ ")") $ both concatString key
-        
+
         concatString :: (Show m) => [m] -> String
         concatString = unwords . fmap show
 

@@ -120,18 +120,28 @@ module mk_parser(P: parser_context) = {
               if key `P.look_eq` key' then #some value else #none
           )
 
-  def pre_productions [n] (arr: [n]terminal): []production =
+  def to_configs arr =
     let arr' = [P.start_terminal] ++ arr ++ [P.end_terminal]
     let configs = keys arr' |> map key_to_config
     in if any (is_none) configs
        then []
-       else
-       let (brackets, productions) = unzip (map (from_opt P.ne) configs)
-       in if brackets |> flatten |> filter (bracket_module.!=epsilon) |> brackets_matches
-          then productions
-               |> flatten
-               |> filter (production_module.!=empty_production)
-          else []
+       else configs
+
+  def to_productions configs =
+    let (brackets, productions) = unzip (map (from_opt P.ne) configs)
+    in if brackets
+          |> flatten
+          |> filter (bracket_module.!=epsilon)
+          |> brackets_matches
+       then productions
+            |> flatten
+            |> filter (production_module.!=empty_production)
+       else []
+    
+  def pre_productions [n] (arr: [n]terminal): []production =
+    arr
+    |> to_configs
+    |> to_productions
        
   def production_to_terminal (p: production): opt terminal =
     copy P.production_to_terminal[production_module.to_i64 p]
@@ -224,26 +234,35 @@ module mk_parser(P: parser_context) = {
     in zip expected result
        |> all (uncurry (==))
             
-  type node 't 'p = #terminal t (i32, i32) | #production p
-  
+  type node 't 'p = #terminal t (i64, i64) | #production p
+
+  def safe_zip [n][m] 'a 'b (a: [n]a) (b: [m]b) =
+    if n == m
+    then zip a (sized n b)
+    else []
+    
   def terminal_offsets [n][m]
-                       (spans: [m](i32, i32))
+                       (spans: [m](i64, i64))
                        (ts: [n](opt terminal)):
-                       [m](i64, node terminal production) =
+                       [](i64, node terminal production) =
     map (is_some) ts
     |> zip3 (iota n) (ts)
     |> filter (\(_, _, b) -> b)
-    |> sized m
-    |> zip spans
+    |> safe_zip spans
     |> map (
          \(s, (i, t, _)) ->
            from_opt empty_terminal t
            |> (\t' -> (i, #terminal t' s))
        )
+
+  def safe_tail arr =
+    if length arr == 0
+    then arr
+    else tail arr
     
-  def parse [n] (arr: [n](terminal, (i32, i32))) =
+  def parse [n] (arr: [n](terminal, (i64, i64))) =
     let (ters, spans) = unzip arr
-    let prods = ters |> pre_productions |> tail
+    let prods = ters |> pre_productions |> safe_tail
     let parent_vector = parents prods
     let ts = map production_to_terminal prods
     let (offsets, ts') = terminal_offsets spans ts |> unzip
