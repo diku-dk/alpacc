@@ -822,7 +822,15 @@ int lexer_stream(PRINT print, bool timeit = false) {
 }
 
 template<unsigned int BLOCK_SIZE, unsigned int ITEMS_PER_THREAD>
-size_t lexer_full(LexerCtx<unsigned int, size_t> ctx, unsigned char* d_string, token_t* d_tokens, size_t* d_starts, size_t* d_ends, size_t chunk_size, size_t size) {
+bool lexer_full(
+  LexerCtx<unsigned int, size_t> ctx, 
+  unsigned char* d_string,
+  token_t* d_tokens,
+  size_t* d_starts,
+  size_t* d_ends,
+  size_t chunk_size, 
+  size_t size,
+  size_t* new_size) {
   assert(chunk_size <= size);
   assert(size != 0);
   assert(d_string != NULL);
@@ -830,30 +838,26 @@ size_t lexer_full(LexerCtx<unsigned int, size_t> ctx, unsigned char* d_string, t
   assert(d_starts == NULL);
   assert(d_ends == NULL);
   assert(WARP <= BLOCK_SIZE);
+  assert(ITEMS_PER_THREAD > 1);
 
-  const size_t TOKENS_CHUNK_SIZE = chunk_size * sizeof(token_t);
-  const size_t INDICES_CHUNK_SIZE = chunk_size * sizeof(size_t);
-  cudaMalloc((void**)&d_tokens, TOKENS_CHUNK_SIZE);
-  cudaMalloc((void**)&d_starts, INDICES_CHUNK_SIZE);
-  cudaMalloc((void**)&d_ends, INDICES_CHUNK_SIZE);
-
-  cudaMemset(d_starts, 0, sizeof(size_t));
+  cudaMalloc((void**)&d_tokens, chunk_size * sizeof(token_t));
+  cudaMalloc((void**)&d_starts, chunk_size * sizeof(size_t));
+  cudaMalloc((void**)&d_ends, chunk_size * sizeof(size_t));
 
   size_t prev_index = 0;
-  size_t new_size = 0;
+  size_t temp_new_size = 0;
+  size_t alloc_size = chunk_size;
   float time = 0;
   cudaEvent_t start, stop;
   cudaEventCreate(&start);
   cudaEventCreate(&stop);
 
-
   for (size_t offset = 0; offset < size; offset+=chunk_size) {
     unsigned int bytes = min(chunk_size, size - offset);
 
-    ctx.resetDynamicIndex();
-    const unsigned int num_blocks = numBlocks(bytes, BLOCK_SIZE, ITEMS_PER_THREAD);
+    const unsigned int NUM_BLOCKS = numBlocks(bytes, BLOCK_SIZE, ITEMS_PER_THREAD);
     cudaEventRecord(start, 0);
-    lexer<unsigned int, size_t, BLOCK_SIZE, ITEMS_PER_THREAD><<<num_blocks, BLOCK_SIZE>>>(ctx, d_string, d_tokens, d_starts, d_ends, bytes, false);
+    lexer<unsigned int, size_t, BLOCK_SIZE, ITEMS_PER_THREAD><<<NUM_BLOCKS, BLOCK_SIZE>>>(ctx, d_string, d_tokens, d_starts, d_ends, bytes, offset < size - chunk_size);
     gpuAssert(cudaDeviceSynchronize());
     cudaEventRecord(stop, 0);
     cudaEventSynchronize(stop);
@@ -862,26 +866,27 @@ size_t lexer_full(LexerCtx<unsigned int, size_t> ctx, unsigned char* d_string, t
     gpuAssert(cudaPeekAtLastError());
     time += temp;
 
-    new_size += ctx.tokensSize();
+    temp_new_size += ctx.tokensSize();
 
-    cudaMalloc((void**)&d_tokens, new_size * sizeof(token_t) + TOKENS_CHUNK_SIZE);
-    cudaMalloc((void**)&d_starts, new_size * sizeof(size_t) + INDICES_CHUNK_SIZE);
-    cudaMalloc((void**)&d_ends, new_size * sizeof(size_t) + INDICES_CHUNK_SIZE);
+    if (alloc_size < temp_new_size + chunk_size) {
+      while (alloc_size < temp_new_size + chunk_size) {
+        alloc_size *= 2;
+      }
+      cudaMalloc((void**)&d_tokens, alloc_size * sizeof(token_t));
+      cudaMalloc((void**)&d_starts, alloc_size * sizeof(size_t));
+      cudaMalloc((void**)&d_ends, alloc_size * sizeof(size_t));
+    }
 
+    ctx.update();
   }
 
-  state_t last_state = ctx.getLastState();
-  token_t token = get_token_cpu(last_state);
-  size_t final_size = new_size + 1;
-  cudaMemcpy(d_tokens + new_size - 1, &token, sizeof(token_t), cudaMemcpyHostToDevice);
-  cudaMemcpy(d_tokens + new_size - 1, &final_size, sizeof(size_t), cudaMemcpyHostToDevice);
-  cudaMalloc((void**)&d_tokens, (1 + new_size) * sizeof(token_t));
-  cudaMalloc((void**)&d_starts, (1 + new_size) * sizeof(size_t));
-  cudaMalloc((void**)&d_ends, (1 + new_size) * sizeof(size_t));
+  *new_size = temp_new_size;
+  
+  cudaMalloc((void**)&d_tokens, temp_new_size * sizeof(token_t));
+  cudaMalloc((void**)&d_starts, temp_new_size * sizeof(size_t));
+  cudaMalloc((void**)&d_ends, temp_new_size * sizeof(size_t));
 
-  int success = h_accept[get_index_cpu(last_state)] ? final_size : 0;
-
-  return success;
+  return ctx.isAccept();
 }
 
 int main(int32_t argc, char *argv[]) {
