@@ -79,21 +79,26 @@ module mk_lexer(L: lexer_context) = {
                let e = if i == 0 then prev_endo else endos[i - 1]
                in (offset + i, to_terminal e)) is,
         last_endo)
- 
+  
   def lex [n]
           (chunk_size: i32)
-          (str: [n]u8): opt ([](i64, terminal)) =
+          (str: [n]u8): opt ([](terminal, i64, i64)) =
     let chunk_size' = i64.i32 chunk_size
     let (res, final_endo) =
       loop (res'', init_endo) = ([], L.identity_endomorphism) for offset in 0..chunk_size'..<n do
       let m = i64.min (offset + chunk_size') n
       let (res', last_endo) = lex_step offset init_endo str[offset:m]
       in (res'' ++ res', last_endo)
-    let (final_idxs, final_ters) = unzip res
-    let final_idxs = rotate (-1) <| final_idxs ++ [0]
+    let (final_starts, final_ters) = unzip res
+    let final_ends = final_starts ++ [n]
+    let final_starts = rotate (-1) <| final_starts ++ [0]
     let final_ters = final_ters ++ [to_terminal final_endo]
+    let result =
+      zip3 final_ters final_starts final_ends
+      |> filter (not <-< L.is_ignore <-< (.0))
+      |> some
     in if is_accept final_endo
-       then some <| zip final_idxs final_ters
+       then result
        else #none 
 }
 

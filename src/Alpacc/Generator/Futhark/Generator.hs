@@ -50,8 +50,8 @@ lexerFunction t =
   [i|
 entry lex s =
   match lexer.lex 16777216 s
-  case #some r -> unzip r
-  case #none -> ([], [])
+  case #some r -> unzip3 r
+  case #none -> ([], [], [])
 |]
 
 parserFunction :: String
