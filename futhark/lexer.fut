@@ -82,7 +82,7 @@ module mk_lexer(L: lexer_context) = {
   
   def lex [n]
           (chunk_size: i32)
-          (str: [n]u8): opt ([](terminal, i64, i64)) =
+          (str: [n]u8): opt ([](terminal, (i64, i64))) =
     let chunk_size' = i64.i32 chunk_size
     let (res, final_endo) =
       loop (res'', init_endo) = ([], L.identity_endomorphism) for offset in 0..chunk_size'..<n do
@@ -94,7 +94,7 @@ module mk_lexer(L: lexer_context) = {
     let final_starts = rotate (-1) <| final_starts ++ [0]
     let final_ters = final_ters ++ [to_terminal final_endo]
     let result =
-      zip3 final_ters final_starts final_ends
+      zip final_ters (zip final_starts final_ends)
       |> filter (not <-< L.is_ignore <-< (.0))
       |> some
     in if is_accept final_endo
