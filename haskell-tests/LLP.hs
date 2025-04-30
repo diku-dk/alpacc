@@ -1,16 +1,16 @@
 module LLP (tests) where
 
+import Alpacc.Grammar
+import Alpacc.LL
+import Alpacc.LLP
+import Control.Monad.State
+import Data.Either
 import Data.Foldable (Foldable (toList))
 import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Set as Set
-import Control.Monad.State
-import Alpacc.Grammar
-import Alpacc.LLP
-import Alpacc.LL
-import Test.HUnit
 import Data.String.Interpolate (i)
-import Data.Either
+import Test.HUnit
 
 grammar :: Grammar String String
 grammar =
@@ -107,7 +107,7 @@ collection =
       Set.fromList -- = ⊣
         [ Item -- 1. Item
             { dotProduction = DotProduction Start [rightTurnstile', augNT' "E"] [leftTurnstile'],
-              suffix =  [augT "a"],
+              suffix = [augT "a"],
               prefix = [LeftTurnstile],
               llpConfig = ([leftTurnstile'], [], [])
             },
@@ -143,7 +143,7 @@ collection =
             },
           Item -- 4. Item
             { dotProduction = DotProduction (augNT "E'") [] [],
-              suffix =  [augT "a"],
+              suffix = [augT "a"],
               prefix = [LeftTurnstile],
               llpConfig = ([leftTurnstile'], [], [])
             },
@@ -484,7 +484,7 @@ collection =
 
 augmentGrammarTestCase = TestCase $ assertEqual "Augment grammar test" expected result
   where
-    sortGrammar (Grammar s t nt ps) = Grammar s (List.sort t) (List.sort nt) (List.sort ps) 
+    sortGrammar (Grammar s t nt ps) = Grammar s (List.sort t) (List.sort nt) (List.sort ps)
     augmented_grammar = augmentGrammar grammar
     expected = sortGrammar augmentedGrammar
     result = sortGrammar augmented_grammar
@@ -509,12 +509,12 @@ llpqkParsingTestCase parser q k = TestCase $ assertEqual [i|LLP(#{q}, #{k}) pars
     result = parser input
     expected = Right [0, 1, 4, 2, 5, 1, 4, 2, 4, 3, 3]
 
-llpParsers = [(llpParse q k grammar, q, k) | q <- [1..3], k <- [1..3]]
+llpParsers = [(llpParse q k grammar, q, k) | q <- [1 .. 3], k <- [1 .. 3]]
 
 derivable10 = derivableNLengths 10 grammar
 
 llpqkParsingDerivableTestCase parser q k =
-    TestCase $ assertEqual [i|LLP(#{q}, #{k}) can parse derivables of length 10.|] expected True
+  TestCase $ assertEqual [i|LLP(#{q}, #{k}) can parse derivables of length 10.|] expected True
   where
     expected = all isRight $ parser <$> Set.toList derivable10
 
@@ -525,18 +525,19 @@ llpqkParsingTestCases = [llpqkParsingTestCase parser q k | (parser, k, q) <- llp
 nonderivable3 = nonderivableNLengths 3 grammar
 
 llpqkParsingNonderivableTestCase parser q k =
-    TestCase $ assertEqual [i|LLP(#{q}, #{k}) fails on parsing nonderivables of length 3.|] expected True
+  TestCase $ assertEqual [i|LLP(#{q}, #{k}) fails on parsing nonderivables of length 3.|] expected True
   where
     expected = all isLeft $ parser <$> Set.toList nonderivable3
 
 llpqkParsingNonderivableTestCases = [llpqkParsingNonderivableTestCase parser q k | (parser, k, q) <- llpParsers]
 
-tests = 
+tests =
   TestLabel "LLP(q,k) tests" $
     TestList $
       [ augmentGrammarTestCase,
         -- pslsTestCase,
         collectionTestCase
-      ] ++ llpqkParsingTestCases
+      ]
+        ++ llpqkParsingTestCases
         ++ llpqkParsingDerivableTestCases
         ++ llpqkParsingNonderivableTestCases

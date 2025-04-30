@@ -3,13 +3,19 @@ module Alpacc.Generator.Futhark.Parser
   )
 where
 
-import Control.DeepSeq
+import Alpacc.Generator.Futhark.Futharkify
+import Alpacc.Generator.Futhark.Util
 import Alpacc.Grammar
+import Alpacc.HashTable
 import Alpacc.LLP
   ( Bracket (..),
     llpParserTableWithStartsHomomorphisms,
   )
+import Alpacc.Types
+import Control.DeepSeq
+import Data.Array.Base as ABase
 import Data.Bifunctor qualified as BI
+import Data.Composition
 import Data.Either.Extra (maybeToEither)
 import Data.FileEmbed
 import Data.List qualified as List
@@ -17,18 +23,12 @@ import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.String.Interpolate (i)
 import Data.Tuple.Extra
-import Alpacc.Generator.Futhark.Futharkify
-import Alpacc.Generator.Futhark.Util
-import Data.Composition
-import Alpacc.HashTable
-import Data.Array.Base as ABase
-import Alpacc.Types
 
 futharkParser :: String
 futharkParser = $(embedStringFile "futhark/parser.fut")
 
 padLLPTableKeys ::
-  Ord t =>
+  (Ord t) =>
   t ->
   Int ->
   Int ->
@@ -43,10 +43,13 @@ padLLPTableKeys t q k =
 toIntLLPTable ::
   (Ord nt, Ord t) =>
   Map (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)) Int ->
-  Map ([AugmentedTerminal t]
-      ,[AugmentedTerminal t])
-      ([Bracket (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t))]
-      ,[Int]) ->
+  Map
+    ( [AugmentedTerminal t],
+      [AugmentedTerminal t]
+    )
+    ( [Bracket (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t))],
+      [Int]
+    ) ->
   Map ([Int], [Int]) ([Bracket Int], [Int])
 toIntLLPTable symbol_index_map table = table'
   where
@@ -77,19 +80,23 @@ padAndStringifyTable ::
   Int ->
   Int ->
   Map (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)) Int ->
-  Map ([AugmentedTerminal t]
-      ,[AugmentedTerminal t])
-      ([Bracket (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t))]
-      ,[Int]) ->
+  Map
+    ( [AugmentedTerminal t],
+      [AugmentedTerminal t]
+    )
+    ( [Bracket (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t))],
+      [Int]
+    ) ->
   Map [Int] ([RawString], [RawString])
 padAndStringifyTable empty_terminal q k max_ao max_pi =
   Map.mapKeys (uncurry (++))
-  . llpTableToStrings max_ao max_pi
-  . padLLPTableKeys empty_terminal q k
-  .: toIntLLPTable
+    . llpTableToStrings max_ao max_pi
+    . padLLPTableKeys empty_terminal q k
+    .: toIntLLPTable
 
 declarations :: String
-declarations = [i|
+declarations =
+  [i|
 type terminal = terminal_module.t
 type production = production_module.t
 type bracket = bracket_module.t
@@ -103,7 +110,7 @@ def left (s : bracket) : bracket =
 
 def right (s : bracket) : bracket =
   bracket_module.set_bit (bracket_module.num_bits - 1) s 0
-|] 
+|]
 
 findBracketIntegral ::
   Map (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)) Int ->
@@ -116,16 +123,16 @@ findBracketIntegral index_map
   | max_size < 2 ^ (64 - 1 :: Int) - 1 = Right U64
   | otherwise = Left "Error: There are too many symbols to find a Futhark integral type."
   where
-    max_size = toInteger $ maximum index_map 
+    max_size = toInteger $ maximum index_map
 
 findProductionIntegral ::
   [Production nt t] ->
   Either String UInt
 findProductionIntegral =
   maybeToEither err
-  . toIntType
-  . fromIntegral
-  . length
+    . toIntType
+    . fromIntegral
+    . length
   where
     err = "Error: There are too many productions to find a Futhark integral type."
 
@@ -135,25 +142,26 @@ productionToTerminal ::
   [Production (AugmentedNonterminal (Either nt t)) (AugmentedTerminal t)] ->
   String
 productionToTerminal symbol_to_index prods =
-  ([i|sized number_of_productions [|]++)
-  $ (++"]")
-  $ List.intercalate "\n,"
-  $ p
-  . nonterminal <$> prods
+  ([i|sized number_of_productions [|] ++) $
+    (++ "]") $
+      List.intercalate "\n," $
+        p
+          . nonterminal
+          <$> prods
   where
     p (AugmentedNonterminal (Right t)) =
       [i|#some #{x}|]
-        where
-          x = symbol_to_index Map.! Terminal (AugmentedTerminal t)
-    p _ = "#none"    
+      where
+        x = symbol_to_index Map.! Terminal (AugmentedTerminal t)
+    p _ = "#none"
 
 productionToArity ::
   [Production (AugmentedNonterminal (Either nt t)) (AugmentedTerminal t)] ->
   Either String String
 productionToArity prods =
   if 32767 < max_arity
-  then Left "A production contains a right-hand side too many nonterminals"
-  else Right arities_str
+    then Left "A production contains a right-hand side too many nonterminals"
+    else Right arities_str
   where
     isNt (Nonterminal _) = 1 :: Integer
     isNt _ = 0
@@ -161,11 +169,11 @@ productionToArity prods =
     arities = arity <$> prods
     max_arity = maximum arities
     arities_str =
-      ([i|def production_to_arity: [number_of_productions]i16 = sized number_of_productions [|]++)
-      $ (++"]")
-      $ List.intercalate "\n,"
-      $ show <$> arities
-    
+      ([i|def production_to_arity: [number_of_productions]i16 = sized number_of_productions [|] ++) $
+        (++ "]") $
+          List.intercalate "\n," $
+            show <$> arities
+
 maxAoPi :: Map k ([v], [v']) -> (Int, Int)
 maxAoPi table = (max_alpha_omega, max_pi)
   where
@@ -187,7 +195,7 @@ toTupleIndexArray name n =
   futharkify $ NTuple $ map (indexArray name) [0 .. n - 1]
 
 createHashFunction :: Int -> Int -> String
-createHashFunction q k = 
+createHashFunction q k =
   [i|
 def hash_no_mod #{a_arg} #{b_arg} =
   #{body}
@@ -196,23 +204,25 @@ def hash_no_mod #{a_arg} #{b_arg} =
     qk = q + k
     a_arg = futharkify $ NTuple $ map RawString as
     b_arg = futharkify $ NTuple $ map RawString bs
-    as = ["a" ++ show j | j <- [0..(qk - 1)]]
-    bs = ["b" ++ show j | j <- [0..(qk - 1)]]
+    as = ["a" ++ show j | j <- [0 .. (qk - 1)]]
+    bs = ["b" ++ show j | j <- [0 .. (qk - 1)]]
     concatWith a b c = b ++ a ++ c
     body =
       if qk <= 0
-      then ""
-      else
-        List.foldl1 (concatWith " terminal_module.+ ")
-        $ zipWith (
-            ("("++)
-            . (++")")
-            .: concatWith " terminal_module.* "
-          ) as bs
+        then ""
+        else
+          List.foldl1 (concatWith " terminal_module.+ ") $
+            zipWith
+              ( ("(" ++)
+                  . (++ ")")
+                  .: concatWith " terminal_module.* "
+              )
+              as
+              bs
 
 -- | Creates a string that indexes an array in the Futhark language.
-indexArray :: Show a => String -> a -> RawString
-indexArray name = RawString . (name ++) . ("[" ++) . (++"]") . show
+indexArray :: (Show a) => String -> a -> RawString
+indexArray name = RawString . (name ++) . ("[" ++) . (++ "]") . show
 
 -- | Creates Futhark source code which contains a parallel parser that can
 -- create the productions list for a input which is indexes of terminals.
@@ -229,12 +239,12 @@ generateParser q k grammar symbol_index_map = do
   table <- llpParserTableWithStartsHomomorphisms q k grammar
   bracket_type <- findBracketIntegral symbol_index_map
   production_type <- findProductionIntegral $ productions grammar
-  arities <- productionToArity prods 
+  arities <- productionToArity prods
   let (max_ao, max_pi) = maxAoPi table
   terminal_type <-
-    maybeToEither "Error: The LLP table is too large."
-    $ hashTableSize
-    $ Map.size table
+    maybeToEither "Error: The LLP table is too large." $
+      hashTableSize $
+        Map.size table
   let empty_terminal = fromIntegral $ intTypeMaxBound terminal_type
   let integer_table =
         padAndStringifyTable empty_terminal q k max_ao max_pi symbol_index_map table
@@ -243,17 +253,17 @@ generateParser q k grammar symbol_index_map = do
   let offsets_array_str = futharkify $ offsetArray hash_table
   let hash_table_mem_size = ABase.numElements $ elementArray hash_table
   let hash_table_str =
-        futharkify
-        $ fmap (first NTuple)
-        <$> elementArray hash_table
+        futharkify $
+          fmap (first NTuple)
+            <$> elementArray hash_table
   let consts_array = constsArray hash_table
   let consts_array_str = futharkify $ fmap (fmap NTuple) consts_array
   let size_array = futharkify $ sizeArray hash_table
   let consts = futharkify $ NTuple $ initHashConsts hash_table
-  let hash_table_size = ABase.numElements consts_array 
+  let hash_table_size = ABase.numElements consts_array
   return . (,terminal_type) $
     futharkParser
-          <> [i|
+      <> [i|
 module parser = mk_parser {
 
 module terminal_module = #{futharkify terminal_type}
@@ -315,6 +325,6 @@ def ne: ([max_ao]bracket, [max_pi]production) =
     augmented_grammar = augmentGrammar grammar
     terminals' = terminals augmented_grammar
     look_type =
-      futharkify
-      $ NTuple
-      $ replicate (q + k) (RawString "terminal")
+      futharkify $
+        NTuple $
+          replicate (q + k) (RawString "terminal")

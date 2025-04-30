@@ -1,10 +1,10 @@
 module RegularExpression (tests) where
 
-import Alpacc.Lexer.RegularExpression
 import Alpacc.Lexer.DFA
+import Alpacc.Lexer.RegularExpression
+import qualified Data.List.NonEmpty as NonEmpty
 import Data.String.Interpolate (i)
 import Test.HUnit
-import qualified Data.List.NonEmpty as NonEmpty
 
 regularExpressionMatchCase isMatch' regex valid invalid =
   TestLabel [i|RegEx "#{regex}" test.|] $

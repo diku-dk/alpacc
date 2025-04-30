@@ -10,17 +10,17 @@ module Alpacc.Lexer.FSA
     fsaLexerMap,
     fsaLexerFirst,
     fsaLexerSecond,
-    enumerateLexer
+    enumerateLexer,
   )
 where
 
+import Control.Monad.Identity (Identity)
+import Data.Bifunctor (Bifunctor (..))
+import Data.Foldable
 import Data.Map (Map)
 import Data.Map qualified as Map hiding (Map)
 import Data.Set (Set)
 import Data.Set qualified as Set hiding (Set)
-import Data.Bifunctor (Bifunctor(..))
-import Data.Foldable
-import Control.Monad.Identity (Identity)
 
 data FSA f t s = FSA
   { states :: Set s,
@@ -44,12 +44,12 @@ class OrdMap f where
 fsaMap :: (Ord a, Ord c, OrdMap f, Ord b, Ord d) => (a -> c) -> (b -> d) -> FSA f a b -> FSA f c d
 fsaMap g f fsa =
   fsa
-  { states = Set.map f (states fsa),
-    alphabet = Set.map g (alphabet fsa),
-    transitions = omap f <$> Map.mapKeys (bimap f g) (transitions fsa),
-    initial = f $ initial fsa,
-    accepting = f `Set.map` accepting fsa
-  }
+    { states = Set.map f (states fsa),
+      alphabet = Set.map g (alphabet fsa),
+      transitions = omap f <$> Map.mapKeys (bimap f g) (transitions fsa),
+      initial = f $ initial fsa,
+      accepting = f `Set.map` accepting fsa
+    }
 
 fsaFirst :: (Ord a, Ord c, OrdMap f, Ord b) => (a -> c) -> FSA f a b -> FSA f c b
 fsaFirst = flip fsaMap id
@@ -60,14 +60,13 @@ fsaSecond = fsaMap id
 fsaLexerMap :: (Ord a, Ord c, OrdMap f, Ord b, Ord d) => (a -> c) -> (b -> d) -> Lexer f a b k -> Lexer f c d k
 fsaLexerMap g f fsa_lexer =
   fsa_lexer
-  { fsa = fsaMap g f $ fsa fsa_lexer,
-    tokenMap = Map.mapKeys f token_map,
-    producesToken = Set.map (bimap f g) produces_token 
-  }
+    { fsa = fsaMap g f $ fsa fsa_lexer,
+      tokenMap = Map.mapKeys f token_map,
+      producesToken = Set.map (bimap f g) produces_token
+    }
   where
     produces_token = producesToken fsa_lexer
     token_map = tokenMap fsa_lexer
-
 
 fsaLexerFirst :: (Ord a, Ord c, OrdMap f, Ord b) => (a -> c) -> Lexer f a b k -> Lexer f c b k
 fsaLexerFirst = flip fsaLexerMap id
@@ -99,11 +98,11 @@ enumerateLexer ::
 enumerateLexer start_state fsa_lexer = fsaLexerSecond alphabetMap fsa_lexer
   where
     alphabet' =
-      Map.fromList 
-      $ flip zip [start_state ..] 
-      $ toList
-      $ states
-      $ fsa fsa_lexer
+      Map.fromList $
+        flip zip [start_state ..] $
+          toList $
+            states $
+              fsa fsa_lexer
     alphabetMap = (alphabet' Map.!)
 
 enumerateFSAsInOrder ::
@@ -112,7 +111,7 @@ enumerateFSAsInOrder ::
   [FSA f t s'] ->
   [FSA f t s]
 enumerateFSAsInOrder _ [] = []
-enumerateFSAsInOrder start_state (fsa:fsas) = scanl f fsa' fsas
+enumerateFSAsInOrder start_state (fsa : fsas) = scanl f fsa' fsas
   where
     fsa' = enumerateFSA start_state fsa
     f a = enumerateFSA (succ . maximum $ states a)
@@ -124,7 +123,7 @@ enumerateFSAsMap ::
   Map k (FSA f t s)
 enumerateFSAsMap start_state =
   Map.fromList
-  . uncurry zip
-  . second (enumerateFSAsInOrder start_state)
-  . unzip
-  . Map.toList
+    . uncurry zip
+    . second (enumerateFSAsInOrder start_state)
+    . unzip
+    . Map.toList

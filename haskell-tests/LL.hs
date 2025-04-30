@@ -1,16 +1,16 @@
 module LL (tests) where
 
-import qualified Data.List as List
-import qualified Data.Set as Set
 import Alpacc.Grammar
 import Alpacc.LL
-import Alpacc.LLP hiding ( LlpContext(..) )
-import Test.HUnit
-import Text.ParserCombinators.ReadP (string)
-import Data.String.Interpolate (i)
+import Alpacc.LLP hiding (LlpContext (..))
+import qualified Data.List as List
+import Data.Maybe
 import Data.Sequence (Seq (..), (<|), (><), (|>))
 import qualified Data.Sequence as Seq hiding (Seq (..), (<|), (><), (|>))
-import Data.Maybe
+import qualified Data.Set as Set
+import Data.String.Interpolate (i)
+import Test.HUnit
+import Text.ParserCombinators.ReadP (string)
 
 grammar =
   Grammar
@@ -133,7 +133,7 @@ llkParseTestCase k = TestCase $ assertEqual [i|LL(#{k}) parsing test|] expected 
     result = llkParse' (input, [Nonterminal $ start extendedGrammar], [])
     expected = Just ([], [], [0, 2, 2, 1, 4, 4, 4, 3])
 
-llkParseTestCases = [llkParseTestCase k | k <- [1..10]]
+llkParseTestCases = [llkParseTestCase k | k <- [1 .. 10]]
 
 ll1ParseFailTestCase = TestCase $ assertEqual "LL(1) parsing test" expected result
   where
@@ -149,7 +149,7 @@ firstkTestCase grammar' k = TestCase $ assertEqual [i|First k=#{k} set test|] ex
     strings = List.singleton . Nonterminal <$> nonterminals grammar'
     (expected, result) = unzip $ firstsTuples <$> strings
 
-firstkTestCases grammar' m = [firstkTestCase grammar' k | k <- [1..m]]
+firstkTestCases grammar' m = [firstkTestCase grammar' k | k <- [1 .. m]]
 
 followkTestCase grammar' k = TestCase $ assertEqual [i|Follow k=#{k} set test|] expected result
   where
@@ -157,7 +157,7 @@ followkTestCase grammar' k = TestCase $ assertEqual [i|Follow k=#{k} set test|] 
     nonterminals' = nonterminals grammar'
     (expected, result) = unzip $ followsTuples <$> nonterminals'
 
-followkTestCases grammar' m = [followkTestCase grammar' k | k <- [1..m]]
+followkTestCases grammar' m = [followkTestCase grammar' k | k <- [1 .. m]]
 
 firstMemokTestCase grammar' k = TestCase $ assertEqual [i|First k=#{k} set test|] expected result
   where
@@ -166,7 +166,7 @@ firstMemokTestCase grammar' k = TestCase $ assertEqual [i|First k=#{k} set test|
     strings = symbols <$> productions grammar'
     (expected, result) = unzip $ firstsTuples <$> strings
 
-firstMemokTestCases grammar' m = [firstMemokTestCase grammar' k | k <- [1..m]]
+firstMemokTestCases grammar' m = [firstMemokTestCase grammar' k | k <- [1 .. m]]
 
 extendedGrammarDerivations20 = derivableNLengths 20 extendedGrammar
 
@@ -176,7 +176,7 @@ canParseDerivedTestCase k = TestCase $ assertEqual text expected result
   where
     text = [i|Can parse derived strings of length 20 with LL(#{k}) parser|]
     expected = True
-    result = all isJust $ llkParse' `Set.map` extendedGrammarDerivations20 
+    result = all isJust $ llkParse' `Set.map` extendedGrammarDerivations20
     start' = Nonterminal $ start extendedGrammar
     llkParse' a = llParse k extendedGrammar (a, [start'], [])
 
@@ -184,13 +184,13 @@ canNotParseNonderivableTestCase k = TestCase $ assertEqual text expected result
   where
     text = [i|Can not parse nonderivable strings of length 3 with LL(#{k}) parser|]
     expected = True
-    result = all isNothing $ llkParse' `Set.map` extendedGrammarNotDerivations3 
+    result = all isNothing $ llkParse' `Set.map` extendedGrammarNotDerivations3
     start' = Nonterminal $ start extendedGrammar
     llkParse' a = llParse k extendedGrammar (a, [start'], [])
 
-canParseDerivedTestCases = [canParseDerivedTestCase k | k <- [1..5]]
+canParseDerivedTestCases = [canParseDerivedTestCase k | k <- [1 .. 5]]
 
-canNotParseNonderivableTestCases = [canNotParseNonderivableTestCase k | k <- [1..5]]
+canNotParseNonderivableTestCases = [canNotParseNonderivableTestCase k | k <- [1 .. 5]]
 
 tests =
   TestLabel "LL(k) tests" $
@@ -200,7 +200,8 @@ tests =
         followSmallTestCase,
         followLargeTestCase,
         ll1ParseFailTestCase
-      ] ++ firstkTestCases followExtendedGrammar 4
+      ]
+        ++ firstkTestCases followExtendedGrammar 4
         ++ followkTestCases followExtendedGrammar 4
         ++ firstMemokTestCases followExtendedGrammar 4
         ++ firstkTestCases bookGrammar 4
