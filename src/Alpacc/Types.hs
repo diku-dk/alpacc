@@ -1,16 +1,17 @@
 module Alpacc.Types
-  ( UInt (..)
-  , IInt (..)
-  , IntType (..)
+  ( UInt (..),
+    IInt (..),
+    IntType (..),
   )
 where
 
-import Data.Word
-import Data.Int
-import Data.Function
 import Data.Composition
+import Data.Function
+import Data.Int
+import Data.Word
 
 data UInt = U64 | U32 | U16 | U8 deriving (Eq, Ord, Show, Enum, Bounded)
+
 data IInt = I64 | I32 | I16 | I8 deriving (Eq, Ord, Show, Enum, Bounded)
 
 class IntType a where

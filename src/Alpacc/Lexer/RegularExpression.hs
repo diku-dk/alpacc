@@ -3,20 +3,20 @@ module Alpacc.Lexer.RegularExpression
     pRegEx,
     RegEx (..),
     toWord8,
-    producesEpsilon
+    producesEpsilon,
   )
 where
 
+import Codec.Binary.UTF8.String (encodeChar)
 import Control.Monad (liftM2)
 import Data.Char (chr, isDigit, isPrint)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Void
+import Data.Word (Word8)
 import Text.Megaparsec hiding (State)
 import Text.Megaparsec.Char (char, space1, string)
 import Text.Megaparsec.Char.Lexer qualified as Lexer
-import Codec.Binary.UTF8.String (encodeChar)
-import Data.Word (Word8)
 
 type Parser = Parsec Void Text
 
@@ -54,20 +54,21 @@ lexeme = Lexer.lexeme space
 
 escapeChars :: [(Text, Char)]
 escapeChars =
-  [("\\",'\\')
-  ,(";", ';')
-  ,("[", '[')
-  ,("]", ']')
-  ,("(", '(')
-  ,(")", ')')
-  ,("*", '*')
-  ,("+", '+')
-  ,("-", '-')
-  ,("|", '|')
-  ,("s", ' ')
-  ,("t", '\t')
-  ,("n", '\n')
-  ,("r", '\r')]
+  [ ("\\", '\\'),
+    (";", ';'),
+    ("[", '['),
+    ("]", ']'),
+    ("(", '('),
+    (")", ')'),
+    ("*", '*'),
+    ("+", '+'),
+    ("-", '-'),
+    ("|", '|'),
+    ("s", ' '),
+    ("t", '\t'),
+    ("n", '\n'),
+    ("r", '\r')
+  ]
 
 pEscapeChar :: Text -> Char -> Parser Char
 pEscapeChar a b = do
@@ -132,12 +133,12 @@ pRange =
     Range . concat
       <$> many1
         ( choice
-            [ try $ (\a b -> [a..b])
-                    <$> pChar
-                    <* lexeme "-"
-                    <*> pChar
-                ,
-              (:[]) <$> pChar
+            [ try $
+                (\a b -> [a .. b])
+                  <$> pChar
+                  <* lexeme "-"
+                  <*> pChar,
+              (: []) <$> pChar
             ]
         )
 
@@ -150,16 +151,19 @@ pTerm = do
         between (lexeme "(") (lexeme ")") pRegEx
       ]
   pPostfix term
-  where pPostfix term =
-          choice [lexeme "*" *> pPostfix (Star term),
-                  lexeme "+" *> pPostfix (Concat term (Star term)),
-                  lexeme "?" *> pPostfix (Alter Epsilon term),
-                  pure term]
+  where
+    pPostfix term =
+      choice
+        [ lexeme "*" *> pPostfix (Star term),
+          lexeme "+" *> pPostfix (Concat term (Star term)),
+          lexeme "?" *> pPostfix (Alter Epsilon term),
+          pure term
+        ]
 
 regExFromText :: FilePath -> Text -> Either String (RegEx Char)
 regExFromText fname s =
-  either (Left . errorBundlePretty) Right
-  $ parse (pRegEx <* eof) fname s
+  either (Left . errorBundlePretty) Right $
+    parse (pRegEx <* eof) fname s
 
 toWord8 :: RegEx Char -> RegEx [Word8]
 toWord8 = fmap encodeChar

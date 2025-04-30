@@ -6,29 +6,29 @@ module Alpacc.Lexer.NFA
     fromTransition,
     fromRegExToNFA,
     statesTransitions,
-    epsilonClosure
+    epsilonClosure,
   )
 where
 
+import Alpacc.Lexer.FSA
+import Alpacc.Lexer.RegularExpression
 import Control.Monad.State
 import Data.Foldable (Foldable (..))
+import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map qualified as Map hiding (Map)
 import Data.Set (Set)
 import Data.Set qualified as Set hiding (Set)
-import Alpacc.Lexer.RegularExpression
-import Alpacc.Lexer.FSA
-import Data.List.NonEmpty (NonEmpty (..))
 
 type NFA t s = FSA Set (Transition t) s
 
 data Transition t = Trans t | Eps deriving (Show, Eq, Ord)
 
 isTransition :: Transition t -> Bool
-isTransition (Trans _) = True 
+isTransition (Trans _) = True
 isTransition Eps = False
 
 fromTransition :: Transition t -> t
-fromTransition (Trans t) = t 
+fromTransition (Trans t) = t
 fromTransition Eps = error "Can not unpack Eps."
 
 instance Functor Transition where
@@ -59,7 +59,7 @@ newState = do
   let max_state = Set.findMax $ states nfa
   let new_max_state = succ max_state
   let new_states' = Set.insert new_max_state $ states nfa
-  put $ nfa { states = new_states' }
+  put $ nfa {states = new_states'}
   return new_max_state
 
 newTransition :: (Ord s, Ord t) => s -> Transition t -> s -> State (NFA t s) ()
@@ -79,7 +79,7 @@ newTransitions z ts' = auxiliary z (toList ts')
   where
     auxiliary s [] s' = newTransition s Eps s'
     auxiliary s [t] s' = newTransition s (Trans t) s'
-    auxiliary s (t:ts) s'' = do
+    auxiliary s (t : ts) s'' = do
       s' <- newState
       newTransition s (Trans t) s'
       auxiliary s' ts s''

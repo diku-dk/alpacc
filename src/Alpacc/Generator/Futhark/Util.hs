@@ -1,6 +1,6 @@
 module Alpacc.Generator.Futhark.Util
-  ( lpad
-  , rpad
+  ( lpad,
+    rpad,
   )
 where
 

@@ -1,17 +1,17 @@
 module Alpacc.Generator.Futhark.Futharkify
-  ( Futharkify (..)
-  , NTuple (..)
-  , RawString (..)
+  ( Futharkify (..),
+    NTuple (..),
+    RawString (..),
   )
 where
 
-import Data.Foldable
-import Data.Array as Array hiding (Array)
-import Data.List qualified as List
-import Data.Array.Unboxed (UArray)
-import Data.Array.IArray as IArray
-import Data.String.Interpolate ( i )
 import Alpacc.Types
+import Data.Array as Array hiding (Array)
+import Data.Array.IArray as IArray
+import Data.Array.Unboxed (UArray)
+import Data.Foldable
+import Data.List qualified as List
+import Data.String.Interpolate (i)
 import Numeric.Natural
 
 newtype NTuple a = NTuple [a] deriving (Show, Eq, Ord, Read, Foldable)
@@ -56,15 +56,15 @@ instance (Futharkify a, Futharkify b) => Futharkify (a, b) where
   futharkify (a, b) = [i|(#{futharkify a}, #{futharkify b})|]
 
 instance (Futharkify a) => Futharkify [a] where
-  futharkify = ("["<>) . (<>"]") . List.intercalate ", " . fmap futharkify
+  futharkify = ("[" <>) . (<> "]") . List.intercalate ", " . fmap futharkify
 
 instance (Futharkify a) => Futharkify (NTuple a) where
   futharkify =
-    ("("<>)
-    . (<>")")
-    . List.intercalate ", "
-    . fmap futharkify
-    . toList
+    ("(" <>)
+      . (<> ")")
+      . List.intercalate ", "
+      . fmap futharkify
+      . toList
 
 instance (Futharkify a) => Futharkify (Array i a) where
   futharkify = futharkify . Array.elems
