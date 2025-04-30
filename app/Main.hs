@@ -54,7 +54,7 @@ lookbackParameter =
         <> short 'q'
         <> help "The amount of characters used for lookback."
         <> showDefault
-        <> value 1
+        <> value 0
         <> metavar "INT"
     )
 
