@@ -18,6 +18,7 @@ import Data.Bifunctor qualified as BI
 import Data.Composition
 import Data.Either.Extra (maybeToEither)
 import Data.FileEmbed
+import Data.List qualified as List
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.String.Interpolate (i)
@@ -116,6 +117,58 @@ findProductionIntegral =
     . length
   where
     err = "Error: There are too many productions to find a Futhark integral type."
+
+maxAoPi :: Map k ([v], [v']) -> (Int, Int)
+maxAoPi table = (max_alpha_omega, max_pi)
+  where
+    values = Map.elems table
+    max_alpha_omega = maximum $ length . fst <$> values
+    max_pi = maximum $ length . snd <$> values
+
+createNe :: Int -> Int -> String
+createNe max_alpha_omega max_pi = futharkify ne
+  where
+    stacks = replicate max_alpha_omega (RawString "epsilon")
+    rules = replicate max_pi (RawString "empty_production")
+    ne = NTuple [stacks, rules]
+
+productionToArity ::
+  [Production (AugmentedNonterminal (Either nt t)) (AugmentedTerminal t)] ->
+  Either String String
+productionToArity prods =
+  if 32767 < max_arity
+    then Left "A production contains a right-hand side too many nonterminals"
+    else Right arities_str
+  where
+    isNt (Nonterminal _) = 1 :: Integer
+    isNt _ = 0
+    arity = sum . fmap isNt . symbols
+    arities = arity <$> prods
+    max_arity = maximum arities
+    arities_str =
+      ([i|def production_to_arity: [number_of_productions]i16 = sized number_of_productions [|] ++) $
+        (++ "]") $
+          List.intercalate "\n," $
+            show <$> arities
+
+productionToTerminal ::
+  (Ord nt, Ord t) =>
+  Map (Symbol (AugmentedNonterminal (Either nt t)) (AugmentedTerminal t)) Int ->
+  [Production (AugmentedNonterminal (Either nt t)) (AugmentedTerminal t)] ->
+  String
+productionToTerminal symbol_to_index prods =
+  ([i|sized number_of_productions [|] ++) $
+    (++ "]") $
+      List.intercalate "\n," $
+        p
+          . nonterminal
+          <$> prods
+  where
+    p (AugmentedNonterminal (Right t)) =
+      [i|#some #{x}|]
+      where
+        x = symbol_to_index Map.! Terminal (AugmentedTerminal t)
+    p _ = "#none"
 
 generateParser ::
   (NFData t, NFData nt, Ord nt, Show nt, Show t, Ord t) =>
