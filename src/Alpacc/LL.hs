@@ -25,41 +25,41 @@ module Alpacc.LL
     lastAndBefore,
     firstMap,
     truncatedProduct,
-    llTableM
+    llTableM,
   )
 where
 
+import Alpacc.Grammar
+import Alpacc.Util
+import Control.DeepSeq
 import Control.Monad (foldM, zipWithM)
 import Control.Monad.State hiding (state)
-import qualified Data.List as List
-import Data.Map (Map)
-import qualified Data.Map as Map
-import Data.Maybe
-import Data.Set (Set)
-import qualified Data.Set as Set
-import Data.Tuple.Extra (both)
-import Alpacc.Grammar
-import Prelude hiding (last)
-import Data.Sequence (Seq (..), (<|), (><))
-import qualified Data.Sequence as Seq hiding (Seq (..), (<|), (><), (|>))
-import Data.Foldable
-import qualified Data.Bifunctor as Bifunctor
+import Data.Bifunctor qualified as Bifunctor
 import Data.Composition
-import Control.DeepSeq
-import GHC.Generics
+import Data.Foldable
+import Data.List qualified as List
+import Data.Map (Map)
+import Data.Map qualified as Map
+import Data.Maybe
+import Data.Sequence (Seq (..), (<|), (><))
+import Data.Sequence qualified as Seq hiding (Seq (..), (<|), (><), (|>))
+import Data.Set (Set)
+import Data.Set qualified as Set
 import Data.String.Interpolate (i)
-import Alpacc.Util
+import Data.Tuple.Extra (both)
+import GHC.Generics
+import Prelude hiding (last)
 
 listProducts :: Int -> [a] -> [[a]]
 listProducts = snd .: auxiliary
   where
     auxiliary 1 zs = (result, result)
       where
-        result = map (:[]) zs
+        result = map (: []) zs
     auxiliary n zs = (next, result ++ next)
       where
         (prev, result) = auxiliary (n - 1) zs
-        next = [x:y | x <- zs, y <- prev]
+        next = [x : y | x <- zs, y <- prev]
 
 validLlSubstrings :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> Set [t]
 validLlSubstrings k = Set.unions . firstMap k . substringGrammar
@@ -94,7 +94,7 @@ nonderivableNLengths n grammar = nonderivable
 -- | Given a production it produces a list of tuples where the first element is
 -- the left hand side of the production. The second element is a tuple where the
 -- first element is a nonterminal found in the production and the second element
--- is symbols following that nonterminal. 
+-- is symbols following that nonterminal.
 rightProductons :: Production nt t -> [(nt, (nt, [Symbol nt t]))]
 rightProductons (Production aj symbols') = (aj,) <$> rightSymbols symbols'
 
@@ -121,7 +121,7 @@ derivations ::
   Grammar nt t ->
   [Symbol nt t] ->
   Seq [Symbol nt t]
-derivations grammar str = (str <|) .  derive Seq.empty Seq.empty $ Seq.fromList str
+derivations grammar str = (str <|) . derive Seq.empty Seq.empty $ Seq.fromList str
   where
     toSeq = fmap (fmap Seq.fromList)
     production_map = toSeq . toProductionsMap $ productions grammar
@@ -227,7 +227,7 @@ nullable grammar = all nullableOne'
 
 -- | Concatenates each element of set a on the front of each element of set b
 -- and then takes the first k symbols.
-truncatedProduct :: Ord t => Int -> Set [t] -> Set [t] -> Set [t]
+truncatedProduct :: (Ord t) => Int -> Set [t] -> Set [t] -> Set [t]
 truncatedProduct k a b = Set.fromList token_product
   where
     token_product = [take k $ ts ++ ts' | ts <- a_list, ts' <- b_list]
@@ -237,11 +237,12 @@ truncatedProduct k a b = Set.fromList token_product
 -- | The state used for memoization where the map keys are input and the output
 -- the values belonging to the key.
 type MemoState k v = State (Map.Map k v) v
+
 -- | A function that can be memoized.
 type MemoFunction k v = (k -> MemoState k v) -> (k -> MemoState k v)
 
 -- | Given a function that can be memoized create a function that is memoized.
-memoize :: Ord k => MemoFunction k v -> k -> MemoState k v
+memoize :: (Ord k) => MemoFunction k v -> k -> MemoState k v
 memoize f k = do
   memory <- get
   let lookup_result = Map.lookup k memory
@@ -254,7 +255,7 @@ memoize f k = do
 
 -- | Given a memoized function a value and a initial state return the result
 -- and the resulting state.
-runMemoized :: Ord k => MemoFunction k v -> k -> Map.Map k v -> (v, Map.Map k v)
+runMemoized :: (Ord k) => MemoFunction k v -> k -> Map.Map k v -> (v, Map.Map k v)
 runMemoized f arg = runState (memoize f arg)
 
 -- | Given a string of symbols it creates every way to split the string in two
@@ -262,7 +263,7 @@ runMemoized f arg = runState (memoize f arg)
 -- on them. This is a memoized function.
 memoAlphaBetaProducts :: (Ord nt, Ord t) => Int -> Map nt (Set [t]) -> MemoFunction [Symbol nt t] (Set [t])
 memoAlphaBetaProducts _ _ _ [] = error "Input string cannot be empty."
-memoAlphaBetaProducts _ _ _ [Terminal t] = return $ Set.singleton [t]
+memoAlphaBetaProducts k _ _ [Terminal t] = return $ Set.singleton $ take k [t]
 memoAlphaBetaProducts _ first_map _ [Nonterminal nt] = return $ first_map Map.! nt
 memoAlphaBetaProducts k _ self string = Set.unions <$> mapM bothSubProducts alpha_betas
   where
@@ -277,7 +278,7 @@ memoAlphaBetaProducts k _ self string = Set.unions <$> mapM bothSubProducts alph
 -- on them.
 alphaBetaProducts :: (Ord nt, Ord t) => Int -> Map nt (Set [t]) -> [Symbol nt t] -> Set [t]
 alphaBetaProducts _ _ [] = error "Input string cannot be empty."
-alphaBetaProducts _ _ [Terminal t] = Set.singleton [t]
+alphaBetaProducts k _ [Terminal t] = Set.singleton $ take k [t]
 alphaBetaProducts _ first_map [Nonterminal nt] = first_map Map.! nt
 alphaBetaProducts k first_map string = Set.unions $ map subProducts alpha_betas
   where
@@ -285,7 +286,7 @@ alphaBetaProducts k first_map string = Set.unions $ map subProducts alpha_betas
     subProduct = alphaBetaProducts k first_map
     subProducts = uncurry (truncatedProduct k) . both subProduct
 
--- | Creates a memoized alphaBeta function given a the lookahead and grammar. 
+-- | Creates a memoized alphaBeta function given a the lookahead and grammar.
 mkMemoAlphaBetaProducts :: (Show nt, Show t, Ord nt, Ord t) => Int -> Grammar nt t -> MemoFunction [Symbol nt t] (Set [t])
 mkMemoAlphaBetaProducts k grammar = memoAlphaBetaProducts k first_map
   where
@@ -297,10 +298,11 @@ data AlphaBetaMemoizedContext nt t = AlphaBetaMemoizedContext
   { alphaBetaFunction :: MemoFunction [Symbol nt t] (Set [t]),
     alphaBetaState :: Map [Symbol nt t] (Set [t]),
     look :: Int
-  } deriving (Generic)
+  }
+  deriving (Generic)
 
 instance (Ord t, Ord nt) => Semigroup (AlphaBetaMemoizedContext nt t) where
-  a <> b = a { alphaBetaState = new_state }
+  a <> b = a {alphaBetaState = new_state}
     where
       a_state = alphaBetaState a
       b_state = alphaBetaState b
@@ -311,11 +313,11 @@ instance (NFData t, NFData nt) => NFData (AlphaBetaMemoizedContext nt t)
 -- | Creates the initial context used for the memoized first function.
 initFirstMemoizedContext :: (Show nt, Show t, Ord nt, Ord t) => Int -> Grammar nt t -> AlphaBetaMemoizedContext nt t
 initFirstMemoizedContext k grammar =
-  AlphaBetaMemoizedContext {
-    alphaBetaFunction = mkMemoAlphaBetaProducts k grammar,
-    alphaBetaState = Map.empty,
-    look = k
-  }
+  AlphaBetaMemoizedContext
+    { alphaBetaFunction = mkMemoAlphaBetaProducts k grammar,
+      alphaBetaState = Map.empty,
+      look = k
+    }
 
 -- | Creates the initial context used for the memoized last function.
 initLastMemoizedContext ::
@@ -324,11 +326,11 @@ initLastMemoizedContext ::
   Grammar nt t ->
   AlphaBetaMemoizedContext nt t
 initLastMemoizedContext q grammar =
-  AlphaBetaMemoizedContext {
-    alphaBetaFunction = mkMemoAlphaBetaProducts q (reverseGrammar grammar),
-    alphaBetaState = Map.empty,
-    look = q
-  }
+  AlphaBetaMemoizedContext
+    { alphaBetaFunction = mkMemoAlphaBetaProducts q (reverseGrammar grammar),
+      alphaBetaState = Map.empty,
+      look = q
+    }
 
 -- | Every possible way to split a string in two.
 alphaBeta :: [a] -> [([a], [a])]
@@ -338,7 +340,7 @@ alphaBeta string
   where
     auxiliary _ [] = error "Input may not be empty."
     auxiliary _ [_] = []
-    auxiliary taken (x:xs) = (new_taken, xs) : auxiliary new_taken xs
+    auxiliary taken (x : xs) = (new_taken, xs) : auxiliary new_taken xs
       where
         new_taken = taken ++ [x]
 
@@ -364,7 +366,7 @@ firstMemoized ctx wi = updatCtx $ runMemoized alphaBetaProducts' wi state
   where
     state = alphaBetaState ctx
     alphaBetaProducts' = alphaBetaFunction ctx
-    updatCtx = Bifunctor.second (\state' -> ctx { alphaBetaState = state' })
+    updatCtx = Bifunctor.second (\state' -> ctx {alphaBetaState = state'})
 
 -- | Given a first map which maps nonterminals to their first sets and a string
 -- of symbols compute the first set of that string.
@@ -389,18 +391,19 @@ first k grammar = first' k first_map
   where
     first_map = firstMap k grammar
 
-unextendMap :: (Ord nt, Ord t) =>
+unextendMap ::
+  (Ord nt, Ord t) =>
   Map (ExtendedNonterminal nt) (Set [ExtendedTerminal t]) ->
   Map nt (Set [t])
 unextendMap = unextendValues . unextendKeys
   where
     unextendKeys =
       Map.mapKeys unextendNT
-      . Map.filterWithKey (\k _ -> k/=ExtendedStart)
-    unextendValues = fmap (Set.map (fmap unextendT . filter (/=End)))
+        . Map.filterWithKey (\k _ -> k /= ExtendedStart)
+    unextendValues = fmap (Set.map (fmap unextendT . filter (/= End)))
 
 initFollowMap ::
-  Ord nt =>
+  (Ord nt) =>
   Int ->
   Grammar (ExtendedNonterminal nt) (ExtendedTerminal t) ->
   ExtendedNonterminal nt ->
@@ -430,20 +433,21 @@ followMap' ::
   Int ->
   Grammar (ExtendedNonterminal nt) (ExtendedTerminal t) ->
   ExtendedNonterminal nt ->
-  State (AlphaBetaMemoizedContext (ExtendedNonterminal nt) (ExtendedTerminal t))
-  (Map (ExtendedNonterminal nt) (Set [ExtendedTerminal t]))
+  State
+    (AlphaBetaMemoizedContext (ExtendedNonterminal nt) (ExtendedTerminal t))
+    (Map (ExtendedNonterminal nt) (Set [ExtendedTerminal t]))
 followMap' k grammar old_start = fixedPointIteration init_follow_map
   where
     init_follow_map = initFollowMap k grammar old_start
     right_productions = concatMap rightProductons $ productions grammar
-    
+
     fixedPointIteration follow_map = do
       result <- mapM (auxiliary follow_map) right_productions
       let new_follow_map = Map.unionsWith Set.union result
       if follow_map == new_follow_map
         then return new_follow_map
         else fixedPointIteration new_follow_map
-    
+
     auxiliary follow_map' (aj, (ai, w')) = do
       first_set <- useFirst w'
       let subset = truncatedProduct k first_set (follow_map' Map.! aj)
@@ -467,7 +471,7 @@ lastAndBefore q grammar = (last_ctx, (before_map Map.!))
   where
     reversed_grammar = reverseGrammar grammar
     before_map = Set.map reverse <$> follow_map
-    (last_ctx, follow_map) = firstAndFollow' q reversed_grammar 
+    (last_ctx, follow_map) = firstAndFollow' q reversed_grammar
 
 firstAndFollow ::
   (Show nt, Show t, Ord nt, Ord t) =>
@@ -486,12 +490,12 @@ firstAndFollow' ::
 firstAndFollow' k grammar = (first_ctx, follow_map)
   where
     (first_map, follow_map) = firstAndFollowMaps k grammar
-    first_ctx = AlphaBetaMemoizedContext 
-      {
-        alphaBetaFunction = memoAlphaBetaProducts k first_map,
-        alphaBetaState = Map.empty,
-        look = k
-      }
+    first_ctx =
+      AlphaBetaMemoizedContext
+        { alphaBetaFunction = memoAlphaBetaProducts k first_map,
+          alphaBetaState = Map.empty,
+          look = k
+        }
 
 firstAndFollowMaps ::
   (Show nt, Show t, Ord nt, Ord t) =>
@@ -507,12 +511,12 @@ firstAndFollowMaps k grammar = (first_map, follow_map)
     extended_follow_map = evalState initFollowMap' extended_first_ctx
     follow_map = unextendMap extended_follow_map
     first_map = unextendMap extended_first_map
-    extended_first_ctx = AlphaBetaMemoizedContext 
-      {
-        alphaBetaFunction = memoAlphaBetaProducts k extended_first_map,
-        alphaBetaState = Map.empty,
-        look = k
-      }
+    extended_first_ctx =
+      AlphaBetaMemoizedContext
+        { alphaBetaFunction = memoAlphaBetaProducts k extended_first_map,
+          alphaBetaState = Map.empty,
+          look = k
+        }
 
 -- | Computes the follow set for a given nonterminal.
 follow :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> nt -> Set [t]
@@ -535,11 +539,11 @@ before q grammar = Set.map reverse . (befores Map.!)
 -- | Creates a LL(k) table for a given grammar.
 llTable :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> Maybe (Map (nt, [t]) Int)
 llTable k grammar = do
-    let keys = Map.keysSet <$> tables
-    let result = unionsIfDisjoint keys
-    case result of
-      Just _ -> Just $ Map.unions tables
-      _ -> Nothing
+  let keys = Map.keysSet <$> tables
+  let result = unionsIfDisjoint keys
+  case result of
+    Just _ -> Just $ Map.unions tables
+    _ -> Nothing
   where
     first'' = first k grammar
     follow'' = follow k grammar
@@ -558,38 +562,39 @@ mapToStr grammar = unlines . fmap (\((a, b), set) -> [i|(#{a}, #{unwords $ fmap 
     prods = productions grammar
     f = unwords . fmap show . symbols . (prods List.!!)
 
-
 -- | Creates a LL(k) table for a given grammar.
-llTableM :: (Ord nt, Ord t, Show nt, Show t) =>
+llTableM ::
+  (Ord nt, Ord t, Show nt, Show t) =>
   Int ->
   Grammar nt t ->
   (nt -> Set [t]) ->
   State (AlphaBetaMemoizedContext nt t) (Either String (Map (nt, [t]) Int))
 llTableM k grammar follow''
-  |  k <= 0 = return $ Left "Error: Lookahead must be positive."
+  | k <= 0 = return $ Left "Error: Lookahead must be positive."
   | otherwise = do
-    let prods = productions grammar
-    tables <- zipWithM tableEntry [0..] prods
-    let table = Map.unionsWith Set.union tables
-    let unwrapped = head . Set.toList <$> table
-    let conflicts = Map.filter ((1<) . Set.size) table
-    return $ if null conflicts
-      then Right unwrapped
-      else Left $ [i|LL(#{k}) Table Conflicts:\n|] ++ mapToStr grammar conflicts
-    where
-      tableEntry i' (Production nt a) = do
-        first_set <- useFirst a
-        let follow_set = follow'' nt
-        let first_follow_prod = toList $ truncatedProduct k first_set follow_set
-        return $ Map.fromList [((nt, y), Set.singleton i') | y <- first_follow_prod]
+      let prods = productions grammar
+      tables <- zipWithM tableEntry [0 ..] prods
+      let table = Map.unionsWith Set.union tables
+      let unwrapped = head . Set.toList <$> table
+      let conflicts = Map.filter ((1 <) . Set.size) table
+      return $
+        if null conflicts
+          then Right unwrapped
+          else Left $ [i|LL(#{k}) Table Conflicts:\n|] ++ mapToStr grammar conflicts
+  where
+    tableEntry i' (Production nt a) = do
+      first_set <- useFirst a
+      let follow_set = follow'' nt
+      let first_follow_prod = toList $ truncatedProduct k first_set follow_set
+      return $ Map.fromList [((nt, y), Set.singleton i') | y <- first_follow_prod]
 
-unionIfDisjoint :: Ord a => Set a -> Set a -> Maybe (Set a)
-unionIfDisjoint a b = 
+unionIfDisjoint :: (Ord a) => Set a -> Set a -> Maybe (Set a)
+unionIfDisjoint a b =
   if a `Set.disjoint` b
     then Just $ a `Set.union` b
-    else Nothing 
+    else Nothing
 
-unionsIfDisjoint :: Ord a =>  [Set a] -> Maybe (Set a)
+unionsIfDisjoint :: (Ord a) => [Set a] -> Maybe (Set a)
 unionsIfDisjoint = foldM unionIfDisjoint Set.empty
 
 -- | Given a 3-tuple where the first element is the input string, the second is
