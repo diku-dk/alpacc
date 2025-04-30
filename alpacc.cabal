@@ -17,6 +17,8 @@ extra-source-files:
   futhark/parser.fut
   futhark/lexer.fut
   cuda/lexer.cu
+  cuda/common.cu
+  cuda/parser.cu
 
 library
   default-language:   GHC2021
@@ -69,6 +71,7 @@ library
     Alpacc.Generator.Cuda.Cudafy
     Alpacc.Generator.Cuda.Generator
     Alpacc.Generator.Cuda.Lexer
+    Alpacc.Generator.Cuda.Parser
     Alpacc.Generator.Generator
     Alpacc.Lexer.RegularExpression
     Alpacc.Lexer.NFA

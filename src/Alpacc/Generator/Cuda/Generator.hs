@@ -9,8 +9,12 @@ import Alpacc.Generator.Generator
 import Alpacc.Grammar
 import Alpacc.Types
 import Data.Either.Extra
+import Data.FileEmbed
 import Data.Map (Map)
 import Data.Map qualified as Map hiding (Map)
+
+common :: String
+common = $(embedStringFile "cuda/common.cu")
 
 generateLexer :: CFG -> Either String String
 generateLexer cfg = do
@@ -25,7 +29,8 @@ generateLexer cfg = do
   lexer_str <- Lexer.generateLexer lexer terminal_index_map terminal_type
   return $
     unlines
-      [ lexer_str
+      [ common,
+        lexer_str
       ]
 
 generator :: Generator
