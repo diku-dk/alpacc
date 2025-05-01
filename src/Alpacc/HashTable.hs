@@ -20,6 +20,8 @@ import Data.Maybe
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.String.Interpolate (i)
+import Data.Text (Text)
+import Data.Text qualified as Text
 import System.Random.Stateful
 
 data LevelOne i v = LevelOne
@@ -108,7 +110,7 @@ hashTableMem ::
   (Show v, IntType t) =>
   t ->
   HashTable Integer v ->
-  Either String (HashTableMem Integer v)
+  Either Text (HashTableMem Integer v)
 hashTableMem int hash_table
   | array_size <= intTypeMaxBound int = do
       return $
@@ -146,10 +148,10 @@ initHashTable' ::
   t ->
   Map [Integer] v ->
   g ->
-  m (Either String (HashTable Integer v))
+  m (Either Text (HashTable Integer v))
 initHashTable' int table g
-  | not is_valid = return $ Left "Error: Every key in the Map must be of the same length."
-  | Just int < int' || isNothing int' = return $ Left [i|Error: #{int} is too small to create a hash table.|]
+  | not is_valid = pure $ Left "Error: Every key in the Map must be of the same length."
+  | Just int < int' || isNothing int' = pure $ Left $ Text.pack [i|Error: #{int} is too small to create a hash table.|]
   | otherwise = do
       consts <- getConsts int consts_size g
       elements <-
@@ -164,7 +166,7 @@ initHashTable' int table g
           $ List.sortOn fst
           $ (\a -> (hash int size consts $ fst a, a))
             <$> Map.toList table
-      return $
+      pure $
         Right $
           HashTable
             { levelTwoConsts = consts,
@@ -191,7 +193,7 @@ initHashTable ::
   t ->
   Int ->
   Map [Integer] v ->
-  Either String (HashTable Integer v)
+  Either Text (HashTable Integer v)
 initHashTable int n table =
   runStateGen_ (mkStdGen n) (initHashTable' int table)
 
@@ -207,6 +209,6 @@ hashTable ::
   t ->
   Int ->
   Map [Integer] v ->
-  Either String (HashTableMem Integer v)
+  Either Text (HashTableMem Integer v)
 hashTable int s t = do
   initHashTable int s t >>= hashTableMem int

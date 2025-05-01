@@ -46,6 +46,8 @@ import Data.Sequence qualified as Seq hiding (Seq (..), (<|), (><), (|>))
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.String.Interpolate (i)
+import Data.Text (Text)
+import Data.Text qualified as Text
 import Data.Tuple.Extra (both)
 import GHC.Generics
 import Prelude hiding (last)
@@ -555,12 +557,18 @@ llTable k grammar = do
         follow_set = follow'' nt
         first_follow_prod = toList $ truncatedProduct k first_set follow_set
 
-mapToStr :: (Ord nt, Ord t, Show nt, Show t) => Grammar nt t -> Map (nt, [t]) (Set Int) -> String
-mapToStr grammar = unlines . fmap (\((a, b), set) -> [i|(#{a}, #{unwords $ fmap show b}): |] ++ setToStr a set) . Map.toList
+mapToStr :: (Ord nt, Ord t, Show nt, Show t) => Grammar nt t -> Map (nt, [t]) (Set Int) -> Text
+mapToStr grammar =
+  Text.unlines
+    . fmap
+      ( \((a, b), set) ->
+          Text.pack [i|(#{a}, #{unwords $ fmap show b}): |] <> setToStr a set
+      )
+    . Map.toList
   where
-    setToStr a = (++ ";") . (show a ++) . (" = " ++) . List.intercalate " | " . fmap f . Set.toList
+    setToStr a = (<> ";") . (Text.pack (show a) <>) . (" = " <>) . Text.intercalate " | " . fmap f . Set.toList
     prods = productions grammar
-    f = unwords . fmap show . symbols . (prods List.!!)
+    f = Text.unwords . fmap (Text.pack . show) . symbols . (prods List.!!)
 
 -- | Creates a LL(k) table for a given grammar.
 llTableM ::
@@ -568,7 +576,7 @@ llTableM ::
   Int ->
   Grammar nt t ->
   (nt -> Set [t]) ->
-  State (AlphaBetaMemoizedContext nt t) (Either String (Map (nt, [t]) Int))
+  State (AlphaBetaMemoizedContext nt t) (Either Text (Map (nt, [t]) Int))
 llTableM k grammar follow''
   | k <= 0 = return $ Left "Error: Lookahead must be positive."
   | otherwise = do
@@ -580,7 +588,7 @@ llTableM k grammar follow''
       return $
         if null conflicts
           then Right unwrapped
-          else Left $ [i|LL(#{k}) Table Conflicts:\n|] ++ mapToStr grammar conflicts
+          else Left $ Text.pack [i|LL(#{k}) Table Conflicts:\n|] <> mapToStr grammar conflicts
   where
     tableEntry i' (Production nt a) = do
       first_set <- useFirst a

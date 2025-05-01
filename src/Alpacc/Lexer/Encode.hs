@@ -16,8 +16,9 @@ import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NonEmpty hiding (NonEmpty)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map hiding (Map)
+import Data.Text (Text)
 
-errorMessage :: String
+errorMessage :: Text
 errorMessage = "Error: Happend during Parallel Lexing genration, contact a maintainer."
 
 data Mask64 = Mask64
@@ -33,7 +34,7 @@ findBitSize = (int_size -) . countLeadingZeros . max 1 . pred
   where
     int_size = finiteBitSize (zeroBits :: Int)
 
-masks :: [Int] -> Either String Masks64
+masks :: [Int] -> Either Text Masks64
 masks sizes = do
   unless (all (0 <) sizes) $ Left "Error: Negative sizes were used to encode the masks for the states in a data parallel lexer. This should not happen, contact a maintainer."
   unless (sum bit_sizes <= 64) $ Left "Error: There are too many tokens and/or states to create a data parallel lexer."
@@ -54,28 +55,20 @@ data ParallelLexerMasks = ParallelLexerMasks
   }
   deriving (Eq, Ord, Show)
 
-extEndoType :: ParallelLexer t k -> Either String UInt
+extEndoType :: ParallelLexer t k -> Either Text UInt
 extEndoType (ParallelLexer {endomorphismsSize = e, tokenSize = t}) =
   maybeToEither errorMessage . toIntType . (2 ^) . sum $ findBitSize <$> [e, t, 1]
 
-parallelLexerToMasks64 :: ParallelLexer t k -> Either String Masks64
+parallelLexerToMasks64 :: ParallelLexer t k -> Either Text Masks64
 parallelLexerToMasks64 (ParallelLexer {endomorphismsSize = e, tokenSize = t}) =
   masks [e, t, 1]
-
-{-
-encodeMasks64 :: Masks64 -> NonEmpty Int -> Either String Int
-encodeMasks64 m@(Masks64 ms) elems
-  | NonEmpty.length ms == NonEmpty.length elems =
-    pure $ unsafeEncodeMasks64 m elems
-  | otherwise = Left errorMessage
--}
 
 unsafeEncodeMasks64 :: Masks64 -> NonEmpty Int -> Int
 unsafeEncodeMasks64 (Masks64 ms) elems =
   let x = offset <$> ms
    in sum $ NonEmpty.zipWith shift elems x
 
-masks64ToParallelLexerMasks :: Masks64 -> Either String ParallelLexerMasks
+masks64ToParallelLexerMasks :: Masks64 -> Either Text ParallelLexerMasks
 masks64ToParallelLexerMasks (Masks64 ls) = do
   let ls0 = NonEmpty.toList ls
   (idx, ls1) <- aux ls0
@@ -111,7 +104,7 @@ parallelLexerMasksToMasks64 lexer_masks =
         Mask64 {mask = mask_produce, offset = offset_produce}
       ]
 
-lexerMasks :: ParallelLexer t k -> Either String ParallelLexerMasks
+lexerMasks :: ParallelLexer t k -> Either Text ParallelLexerMasks
 lexerMasks lexer = do
   ms <- parallelLexerToMasks64 lexer
   masks64ToParallelLexerMasks ms
@@ -146,7 +139,7 @@ intParallelLexer ::
   (Ord t, Ord k) =>
   Map (Maybe k) Int ->
   ParallelLexer t (EndoData k) ->
-  Either String (IntParallelLexer t)
+  Either Text (IntParallelLexer t)
 intParallelLexer to_int parallel_lexer = do
   ms <- lexerMasks parallel_lexer
   let encode = encodeEndoData ms to_int

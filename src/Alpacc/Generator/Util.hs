@@ -1,4 +1,4 @@
-module Alpacc.Generator.Futhark.Util
+module Alpacc.Generator.Util
   ( lpad,
     rpad,
   )

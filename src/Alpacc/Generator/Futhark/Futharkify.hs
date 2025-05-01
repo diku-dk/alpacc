@@ -10,16 +10,17 @@ import Data.Array as Array hiding (Array)
 import Data.Array.IArray as IArray
 import Data.Array.Unboxed (UArray)
 import Data.Foldable
-import Data.List qualified as List
 import Data.String.Interpolate (i)
+import Data.Text (Text)
+import Data.Text qualified as Text
 import Numeric.Natural
 
 newtype NTuple a = NTuple [a] deriving (Show, Eq, Ord, Read, Foldable)
 
-newtype RawString = RawString String deriving (Show, Eq, Ord, Read)
+newtype RawString = RawString Text deriving (Show, Eq, Ord, Read)
 
 class Futharkify a where
-  futharkify :: a -> String
+  futharkify :: a -> Text
 
 instance Futharkify UInt where
   futharkify U8 = "u8"
@@ -37,32 +38,32 @@ instance Futharkify RawString where
   futharkify (RawString s) = s
 
 instance Futharkify String where
-  futharkify = show
+  futharkify = Text.pack . show
 
 instance Futharkify Int where
-  futharkify = show
+  futharkify = Text.pack . show
 
 instance Futharkify Bool where
   futharkify True = "true"
   futharkify False = "false"
 
 instance Futharkify Natural where
-  futharkify = show
+  futharkify = Text.pack . show
 
 instance Futharkify Integer where
-  futharkify = show
+  futharkify = Text.pack . show
 
 instance (Futharkify a, Futharkify b) => Futharkify (a, b) where
-  futharkify (a, b) = [i|(#{futharkify a}, #{futharkify b})|]
+  futharkify (a, b) = Text.pack [i|(#{futharkify a}, #{futharkify b})|]
 
 instance (Futharkify a) => Futharkify [a] where
-  futharkify = ("[" <>) . (<> "]") . List.intercalate ", " . fmap futharkify
+  futharkify = ("[" <>) . (<> "]") . Text.intercalate ", " . fmap futharkify
 
 instance (Futharkify a) => Futharkify (NTuple a) where
   futharkify =
     ("(" <>)
       . (<> ")")
-      . List.intercalate ", "
+      . Text.intercalate ", "
       . fmap futharkify
       . toList
 

@@ -8,13 +8,14 @@ import Alpacc.Types
 import Data.Array as Array hiding (Array)
 import Data.Array.IArray as IArray
 import Data.Array.Unboxed (UArray)
-import Data.List qualified as List
+import Data.Text (Text)
+import Data.Text qualified as Text
 import Numeric.Natural
 
-newtype RawString = RawString String deriving (Show, Eq, Ord, Read)
+newtype RawString = RawString Text deriving (Show, Eq, Ord, Read)
 
 class Cudafy a where
-  cudafy :: a -> String
+  cudafy :: a -> Text
 
 instance Cudafy UInt where
   cudafy U8 = "unsigned char"
@@ -32,23 +33,23 @@ instance Cudafy RawString where
   cudafy (RawString s) = s
 
 instance Cudafy String where
-  cudafy = show
+  cudafy = Text.pack . show
 
 instance Cudafy Int where
-  cudafy = show
+  cudafy = Text.pack . show
 
 instance Cudafy Bool where
   cudafy True = "true"
   cudafy False = "false"
 
 instance Cudafy Natural where
-  cudafy = show
+  cudafy = Text.pack . show
 
 instance Cudafy Integer where
-  cudafy = show
+  cudafy = Text.pack . show
 
 instance (Cudafy a) => Cudafy [a] where
-  cudafy = ("{" <>) . (<> "}") . List.intercalate ", " . fmap cudafy
+  cudafy = ("{" <>) . (<> "}") . Text.intercalate ", " . fmap cudafy
 
 instance (Cudafy a) => Cudafy (Array i a) where
   cudafy = cudafy . Array.elems

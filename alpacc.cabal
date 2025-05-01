@@ -67,12 +67,12 @@ library
     Alpacc.Generator.Futhark.Parser
     Alpacc.Generator.Futhark.Futharkify
     Alpacc.Generator.Futhark.Generator
-    Alpacc.Generator.Futhark.Util
     Alpacc.Generator.Cuda.Cudafy
     Alpacc.Generator.Cuda.Generator
     Alpacc.Generator.Cuda.Lexer
     Alpacc.Generator.Cuda.Parser
     Alpacc.Generator.Generator
+    Alpacc.Generator.Util
     Alpacc.Lexer.RegularExpression
     Alpacc.Lexer.NFA
     Alpacc.Lexer.DFA
