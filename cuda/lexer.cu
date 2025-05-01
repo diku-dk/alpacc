@@ -547,9 +547,3 @@ bool lexer_full(
 
   return ctx.isAccept();
 }
-
-int main(int32_t argc, char *argv[]) {
-  return lexer_stream<WriteAscii>(WriteAscii());
-}
-
-

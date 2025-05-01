@@ -6,6 +6,7 @@ import Alpacc.Generator.Futhark.Generator qualified as Futhark
 import Alpacc.Generator.Generator (Generator (..))
 import Data.Maybe
 import Data.Text (Text)
+import Data.Text qualified as Text
 import Data.Text.IO qualified as TextIO
 import Options.Applicative
 import System.Exit (exitFailure)
@@ -147,9 +148,9 @@ options =
         <> header "Alpacc"
     )
 
-writeProgram :: String -> String -> IO ()
+writeProgram :: String -> Text -> IO ()
 writeProgram program_path program = do
-  writeFile program_path program
+  TextIO.writeFile program_path program
   putStrLn ("The parser " ++ program_path ++ " was created.")
 
 extension :: Parameters -> String
@@ -178,7 +179,7 @@ readContents opts =
     StdInput -> TextIO.getContents
     FileInput path -> TextIO.readFile path
 
-generateProgram :: Parameters -> CFG -> Either String String
+generateProgram :: Parameters -> CFG -> Either Text Text
 generateProgram opts cfg =
   case generator opts of
     GenBoth -> lexerParserGenerator gen q k cfg
@@ -210,6 +211,6 @@ main = do
 
   case either_program of
     Left e -> do
-      hPutStrLn stderr e
+      TextIO.hPutStrLn stderr e
       exitFailure
     Right program -> writeProgram program_path program

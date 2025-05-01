@@ -15,8 +15,10 @@ import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map hiding (Map)
 import Data.Maybe
 import Data.Set qualified as Set hiding (Set)
+import Data.Text (Text)
+import Data.Text qualified as Text
 
-errorMessage :: String
+errorMessage :: Text
 errorMessage = "Error: Happend during Parallel Lexing genration, contact a maintainer."
 
 data Endomorphism
@@ -80,7 +82,7 @@ instance Sim Endomorphism S where
   toState s endo =
     if a <= s && s <= b
       then (producing UArray.! s, endo' UArray.! s)
-      else error errorMessage
+      else error $ Text.unpack errorMessage
     where
       (Endomorphism endo' producing) = endo
       (a, b) = bounds endo'
@@ -98,5 +100,5 @@ intDfaParallelLexer ::
   (Ord t, Ord s, Enum t, Bounded t, Ord k) =>
   Map (Maybe k) Int ->
   DFALexer t s k ->
-  Either String (IntParallelLexer t)
+  Either Text (IntParallelLexer t)
 intDfaParallelLexer m = intParallelLexer m . dfaParallelLexer

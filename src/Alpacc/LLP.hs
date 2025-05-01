@@ -30,6 +30,8 @@ import Data.Sequence qualified as Seq hiding (Seq (..), (<|), (><), (|>))
 import Data.Set (Set)
 import Data.Set qualified as Set hiding (Set)
 import Data.String.Interpolate (i)
+import Data.Text (Text)
+import Data.Text qualified as Text
 import Data.Tuple.Extra (both, fst3, thd3)
 import GHC.Generics
 import Prelude hiding (last)
@@ -205,7 +207,7 @@ initLlpContext ::
   Int ->
   Int ->
   Grammar nt t ->
-  Either String (LlpContext nt t)
+  Either Text (LlpContext nt t)
 initLlpContext q k grammar
   | q < 0 = Left "Error: Lookback must be non-negative."
   | k < 1 = Left "Error: Lookahead must be positive."
@@ -375,7 +377,7 @@ llpCollectionMemo ::
   State
     (LlpContext nt t)
     ( Either
-        String
+        Text
         ( Map
             ([AugmentedTerminal t], [AugmentedTerminal t])
             ( [Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)],
@@ -409,7 +411,9 @@ llpCollectionMemo = do
     tryInsert q k m (key, a)
       | key `Map.notMember` m = Right new_map
       | a' == a = Right new_map
-      | otherwise = Left [i|The grammar is not LLP(#{q}, #{k}) due to the admissible pair #{key_str} could result in the initial pushdown store #{a_str} and #{a_str'}.|]
+      | otherwise =
+          Left $
+            Text.pack [i|The grammar is not LLP(#{q}, #{k}) due to the admissible pair #{key_str} could result in the initial pushdown store #{a_str} and #{a_str'}.|]
       where
         a' = m Map.! key
         new_map = Map.insert key a m
@@ -512,7 +516,7 @@ llpParserTableWithStarts ::
   Int ->
   Grammar nt t ->
   Either
-    String
+    Text
     ( Map
         ([AugmentedTerminal t], [AugmentedTerminal t])
         ( [Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)],
@@ -539,7 +543,7 @@ llpParserTableWithStartsHomomorphisms ::
   Int ->
   Grammar nt t ->
   Either
-    String
+    Text
     ( Map
         ([AugmentedTerminal t], [AugmentedTerminal t])
         ( [Bracket (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t))],
@@ -569,7 +573,7 @@ llpParserTable ::
   State
     (LlpContext nt t)
     ( Either
-        String
+        Text
         ( Map
             ([AugmentedTerminal t], [AugmentedTerminal t])
             ([Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)], [Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)], [Int])
@@ -619,7 +623,7 @@ llpParse ::
   Int ->
   Grammar nt t ->
   [t] ->
-  Either String [Int]
+  Either Text [Int]
 llpParse q k grammar string = do
   table' <- llpParserTableWithStarts q k grammar
   let padded_string = addStoppers $ aug string

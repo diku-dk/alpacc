@@ -352,12 +352,12 @@ hasDuplicates = Set.toList . auxiliary Set.empty Set.empty
         new_visited = Set.insert x visited
         new_dups = Set.insert x dups
 
-grammarError :: (Ord nt, Ord t, Show nt, Show t) => Grammar nt t -> Maybe String
+grammarError :: (Ord nt, Ord t, Show nt, Show t) => Grammar nt t -> Maybe Text
 grammarError grammar
-  | not $ null nt_dups = Just [i|The given grammar contains duplicate nonterminals because of #{nt_dups_str}.|]
-  | not $ null t_dups = Just [i|The given grammar contains duplicate terminals because of #{t_dups_str}.|]
-  | not $ null p_dups = Just [i|The given grammar contains duplicate productions because of #{p_dups_str}.|]
-  | not $ null nonproductive = Just [i|The given grammar contains nonproductive productions due to the following nonterminals #{nonproductive_str}.|]
+  | not $ null nt_dups = Just $ Text.pack [i|The given grammar contains duplicate nonterminals because of #{nt_dups_str}.|]
+  | not $ null t_dups = Just $ Text.pack [i|The given grammar contains duplicate terminals because of #{t_dups_str}.|]
+  | not $ null p_dups = Just $ Text.pack [i|The given grammar contains duplicate productions because of #{p_dups_str}.|]
+  | not $ null nonproductive = Just $ Text.pack [i|The given grammar contains nonproductive productions due to the following nonterminals #{nonproductive_str}.|]
   | otherwise = Nothing
   where
     nts = Set.fromList $ nonterminals grammar

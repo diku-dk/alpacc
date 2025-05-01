@@ -4,7 +4,7 @@ module Alpacc.Generator.Futhark.Parser
 where
 
 import Alpacc.Generator.Futhark.Futharkify
-import Alpacc.Generator.Futhark.Util
+import Alpacc.Generator.Util
 import Alpacc.Grammar
 import Alpacc.HashTable
 import Alpacc.LLP
@@ -22,9 +22,11 @@ import Data.List qualified as List
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.String.Interpolate (i)
+import Data.Text (Text)
+import Data.Text qualified as Text
 import Data.Tuple.Extra
 
-futharkParser :: String
+futharkParser :: Text
 futharkParser = $(embedStringFile "futhark/parser.fut")
 
 padLLPTableKeys ::
@@ -65,12 +67,12 @@ llpTableToStrings ::
 llpTableToStrings max_ao max_pi =
   fmap (BI.bimap f g)
   where
-    auxiliary (LBracket a) = "left " ++ show a
-    auxiliary (RBracket a) = "right " ++ show a
+    auxiliary (LBracket a) = "left " <> futharkify a
+    auxiliary (RBracket a) = "right " <> futharkify a
     aoPad = rpad "epsilon" max_ao
     piPad = rpad "empty_production" max_pi
     f = fmap RawString . aoPad . fmap auxiliary
-    g = fmap RawString . piPad . fmap show
+    g = fmap RawString . piPad . fmap futharkify
 
 padAndStringifyTable ::
   (Ord nt, Ord t) =>
@@ -94,9 +96,11 @@ padAndStringifyTable empty_terminal q k max_ao max_pi =
     . padLLPTableKeys empty_terminal q k
     .: toIntLLPTable
 
-declarations :: String
+declarations :: Text
 declarations =
-  [i|
+  Text.strip $
+    Text.pack
+      [i|
 type terminal = terminal_module.t
 type production = production_module.t
 type bracket = bracket_module.t
@@ -114,7 +118,7 @@ def right (s : bracket) : bracket =
 
 findBracketIntegral ::
   Map (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)) Int ->
-  Either String UInt
+  Either Text UInt
 findBracketIntegral index_map
   | max_size < 0 = Left "Max size may not be negative."
   | max_size < 2 ^ (8 - 1 :: Int) - 1 = Right U8
@@ -127,7 +131,7 @@ findBracketIntegral index_map
 
 findProductionIntegral ::
   [Production nt t] ->
-  Either String UInt
+  Either Text UInt
 findProductionIntegral =
   maybeToEither err
     . toIntType
@@ -140,24 +144,24 @@ productionToTerminal ::
   (Ord nt, Ord t) =>
   Map (Symbol (AugmentedNonterminal (Either nt t)) (AugmentedTerminal t)) Int ->
   [Production (AugmentedNonterminal (Either nt t)) (AugmentedTerminal t)] ->
-  String
+  Text
 productionToTerminal symbol_to_index prods =
-  ([i|sized number_of_productions [|] ++) $
-    (++ "]") $
-      List.intercalate "\n," $
+  (Text.pack [i|sized number_of_productions [|] <>) $
+    (<> "]") $
+      Text.intercalate "\n," $
         p
           . nonterminal
           <$> prods
   where
     p (AugmentedNonterminal (Right t)) =
-      [i|#some #{x}|]
+      Text.pack [i|#some #{x}|]
       where
         x = symbol_to_index Map.! Terminal (AugmentedTerminal t)
     p _ = "#none"
 
 productionToArity ::
   [Production (AugmentedNonterminal (Either nt t)) (AugmentedTerminal t)] ->
-  Either String String
+  Either Text Text
 productionToArity prods =
   if 32767 < max_arity
     then Left "A production contains a right-hand side too many nonterminals"
@@ -169,10 +173,10 @@ productionToArity prods =
     arities = arity <$> prods
     max_arity = maximum arities
     arities_str =
-      ([i|def production_to_arity: [number_of_productions]i16 = sized number_of_productions [|] ++) $
-        (++ "]") $
-          List.intercalate "\n," $
-            show <$> arities
+      (Text.pack [i|def production_to_arity: [number_of_productions]i16 = sized number_of_productions [|] <>) $
+        (<> "]") $
+          Text.intercalate "\n," $
+            futharkify <$> arities
 
 maxAoPi :: Map k ([v], [v']) -> (Int, Int)
 maxAoPi table = (max_alpha_omega, max_pi)
@@ -181,7 +185,7 @@ maxAoPi table = (max_alpha_omega, max_pi)
     max_alpha_omega = maximum $ length . fst <$> values
     max_pi = maximum $ length . snd <$> values
 
-createNe :: Int -> Int -> String
+createNe :: Int -> Int -> Text
 createNe max_alpha_omega max_pi = futharkify ne
   where
     stacks = replicate max_alpha_omega (RawString "epsilon")
@@ -190,13 +194,15 @@ createNe max_alpha_omega max_pi = futharkify ne
 
 -- | Creates a string that is a tuple where a variable is indexed from 0 to
 -- n - 1 in the Futhark language.
-toTupleIndexArray :: (Show a, Num a, Enum a) => String -> a -> String
+toTupleIndexArray :: (Show a, Num a, Enum a) => Text -> a -> Text
 toTupleIndexArray name n =
   futharkify $ NTuple $ map (indexArray name) [0 .. n - 1]
 
-createHashFunction :: Int -> Int -> String
+createHashFunction :: Int -> Int -> Text
 createHashFunction q k =
-  [i|
+  Text.strip $
+    Text.pack
+      [i|
 def hash_no_mod #{a_arg} #{b_arg} =
   #{body}
 |]
@@ -204,25 +210,25 @@ def hash_no_mod #{a_arg} #{b_arg} =
     qk = q + k
     a_arg = futharkify $ NTuple $ map RawString as
     b_arg = futharkify $ NTuple $ map RawString bs
-    as = ["a" ++ show j | j <- [0 .. (qk - 1)]]
-    bs = ["b" ++ show j | j <- [0 .. (qk - 1)]]
-    concatWith a b c = b ++ a ++ c
+    as = ["a" <> futharkify j | j <- [0 .. (qk - 1)]]
+    bs = ["b" <> futharkify j | j <- [0 .. (qk - 1)]]
+    concatWith a b c = b <> a <> c
     body =
       if qk <= 0
         then ""
         else
           List.foldl1 (concatWith " terminal_module.+ ") $
             zipWith
-              ( ("(" ++)
-                  . (++ ")")
+              ( ("(" <>)
+                  . (<> ")")
                   .: concatWith " terminal_module.* "
               )
               as
               bs
 
 -- | Creates a string that indexes an array in the Futhark language.
-indexArray :: (Show a) => String -> a -> RawString
-indexArray name = RawString . (name ++) . ("[" ++) . (++ "]") . show
+indexArray :: (Show a) => Text -> a -> RawString
+indexArray name = RawString . (name <>) . ("[" <>) . (<> "]") . Text.pack . show
 
 -- | Creates Futhark source code which contains a parallel parser that can
 -- create the productions list for a input which is indexes of terminals.
@@ -232,7 +238,7 @@ generateParser ::
   Int ->
   Grammar (Either nt t) t ->
   Map (Symbol (AugmentedNonterminal (Either nt t)) (AugmentedTerminal t)) Int ->
-  Either String (String, IInt)
+  Either Text (Text, IInt)
 generateParser q k grammar symbol_index_map = do
   start_terminal <- maybeToEither "The left turnstile \"⊢\" terminal could not be found, you should complain to a developer." maybe_start_terminal
   end_terminal <- maybeToEither "The right turnstile \"⊣\" terminal could not be found, you should complain to a developer." maybe_end_terminal
@@ -263,7 +269,8 @@ generateParser q k grammar symbol_index_map = do
   let hash_table_size = ABase.numElements consts_array
   return . (,terminal_type) $
     futharkParser
-      <> [i|
+      <> (Text.strip . Text.pack)
+        [i|
 module parser = mk_parser {
 
 module terminal_module = #{futharkify terminal_type}

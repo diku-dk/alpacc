@@ -13,10 +13,14 @@ import Alpacc.Types
 import Data.Either.Extra
 import Data.Map qualified as Map
 import Data.String.Interpolate (i)
+import Data.Text (Text)
+import Data.Text qualified as Text
 
-parentVectorTest :: String
+parentVectorTest :: Text
 parentVectorTest =
-  [i|
+  Text.strip $
+    Text.pack
+      [i|
 -- ==
 -- entry: test_previous_equal_or_smaller
 -- compiled random input { [100]i32 }
@@ -25,9 +29,11 @@ entry test_previous_equal_or_smaller [n] (arr: [n]i32): bool =
   parser.test_previous_equal_or_smaller arr
 |]
 
-bothFunction :: String
+bothFunction :: Text
 bothFunction =
-  [i|
+  Text.strip $
+    Text.pack
+      [i|
 entry parse s =
   match lexer.lex 16777216 s
   case #some r -> parser.parse r
@@ -43,25 +49,29 @@ entry pre_productions s =
   case #some r -> map (.0) r |> parser.pre_productions 
   case #none -> []
 |]
-    ++ parentVectorTest
+      <> parentVectorTest
 
-lexerFunction :: IInt -> String
+lexerFunction :: IInt -> Text
 lexerFunction t =
-  [i|
+  Text.strip $
+    Text.pack
+      [i|
 entry lex s =
   match lexer.lex 16777216 s
   case #some r -> unzip3 r
   case #none -> ([], [], [])
 |]
 
-parserFunction :: String
+parserFunction :: Text
 parserFunction =
-  [i|
+  Text.strip $
+    Text.pack
+      [i|
 entry parse = parser.parse
 |]
-    ++ parentVectorTest
+      <> parentVectorTest
 
-generate :: Int -> Int -> CFG -> Either String String
+generate :: Int -> Int -> CFG -> Either Text Text
 generate q k cfg = do
   grammar <- extendByTerminals <$> cfgToGrammar cfg
   let terminal_index_map = toTerminalIndexMap $ terminals grammar
@@ -71,14 +81,14 @@ generate q k cfg = do
   (parser, terminal_type) <- Parser.generateParser q k grammar symbol_index_map
   lexer <- cfgToDFALexer cfg
   lexer_str <- Lexer.generateLexer lexer terminal_index_map terminal_type
-  return $
-    unlines
+  pure $
+    Text.unlines
       [ parser,
         lexer_str,
         bothFunction
       ]
 
-generateLexer :: CFG -> Either String String
+generateLexer :: CFG -> Either Text Text
 generateLexer cfg = do
   t_rules <- everyTRule cfg
   let terminal_index_map = toTerminalIndexMap (ruleT <$> t_rules)
@@ -89,19 +99,19 @@ generateLexer cfg = do
           Map.size terminal_index_map
   lexer <- cfgToDFALexer cfg
   lexer_str <- Lexer.generateLexer lexer terminal_index_map terminal_type
-  return $
-    unlines
+  pure $
+    Text.unlines
       [ lexer_str,
         lexerFunction terminal_type
       ]
 
-generateParser :: Int -> Int -> CFG -> Either String String
+generateParser :: Int -> Int -> CFG -> Either Text Text
 generateParser q k cfg = do
   grammar <- extendByTerminals <$> cfgToGrammar cfg
   let symbol_index_map = toSymbolIndexMap (terminals grammar) (nonterminals grammar)
   (parser, _) <- Parser.generateParser q k grammar symbol_index_map
-  return $
-    unlines
+  pure $
+    Text.unlines
       [ parser,
         parserFunction
       ]

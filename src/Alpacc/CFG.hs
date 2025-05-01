@@ -56,7 +56,7 @@ symbolTerminal (Nonterminal _) = mempty
 ruleTerminals :: NTRule -> Set T
 ruleTerminals = foldMap (foldMap symbolTerminal) . ruleProductions
 
-cfgToGrammar :: CFG -> Either String (Grammar NT T)
+cfgToGrammar :: CFG -> Either Text (Grammar NT T)
 cfgToGrammar (CFG {ntRules = []}) = Left "CFG has no production rules."
 cfgToGrammar (CFG {tRules, ntRules}) =
   let productions = concatMap ruleProds ntRules
@@ -75,12 +75,12 @@ cfgToGrammar (CFG {tRules, ntRules}) =
     ruleProds NTRule {ruleNT, ruleProductions} =
       map (Production ruleNT) ruleProductions
 
-everyTRule :: CFG -> Either String [TRule]
+everyTRule :: CFG -> Either Text [TRule]
 everyTRule cfg@(CFG {tRules}) = do
   implicit_t_rules <- implicitTRules cfg
   return $ tRules ++ implicit_t_rules
 
-implicitTRules :: CFG -> Either String [TRule]
+implicitTRules :: CFG -> Either Text [TRule]
 implicitTRules (CFG {tRules, ntRules}) = mapM implicitLitToRegEx implicit
   where
     declared = map ruleT tRules
@@ -88,12 +88,12 @@ implicitTRules (CFG {tRules, ntRules}) = mapM implicitLitToRegEx implicit
     implicitLitToRegEx t@(TLit s) = Right $ TRule {ruleT = t, ruleRegex = regex}
       where
         regex = foldl1 Concat $ fmap Literal (Text.unpack s)
-    implicitLitToRegEx (T s) = Left $ "Can not create literal from: " <> Text.unpack s
+    implicitLitToRegEx (T s) = Left $ "Can not create literal from: " <> s
 
 tRuleToTuple :: TRule -> (T, RegEx (NonEmpty Word8))
 tRuleToTuple (TRule {ruleT = t, ruleRegex = regex}) = (t, NonEmpty.fromList <$> toWord8 regex)
 
-cfgToDFALexer :: CFG -> Either String (DFALexer Word8 Int T)
+cfgToDFALexer :: CFG -> Either Text (DFALexer Word8 Int T)
 cfgToDFALexer (CFG {tRules = []}) = Left "CFG has no lexical rules."
 cfgToDFALexer cfg@(CFG {tRules}) = do
   implicit_t_rules <- implicitTRules cfg
@@ -103,7 +103,7 @@ cfgToDFALexer cfg@(CFG {tRules}) = do
   let terminal_map = Map.fromList t_rule_tuples
   let x = find (producesEpsilon . snd) t_rule_tuples
   case x of
-    Just (t, _) -> Left [i|Error: #{t} may not produce empty strings.|]
+    Just (t, _) -> Left $ Text.pack [i|Error: #{t} may not produce empty strings.|]
     Nothing -> Right $ lexerDFA order_map (0 :: Int) terminal_map
 
 type Parser = Parsec Void Text

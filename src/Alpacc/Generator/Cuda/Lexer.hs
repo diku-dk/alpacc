@@ -11,19 +11,18 @@ import Data.FileEmbed
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.String.Interpolate (i)
+import Data.Text (Text)
+import Data.Text qualified as Text
 import Data.Word (Word8)
 
-cudaLexer :: String
+cudaLexer :: Text
 cudaLexer = $(embedStringFile "cuda/lexer.cu")
-
-errorMessage :: String
-errorMessage = [i|Error: Happend during Cuda code generation contact a maintainer.|]
 
 generateLexer ::
   DFALexer Word8 Int T ->
   Map T Int ->
   IInt ->
-  Either String String
+  Either Text Text
 generateLexer lexer terminal_index_map terminal_type = do
   int_parallel_lexer <- intDfaParallelLexer new_token_map lexer
   let ParallelLexerMasks
@@ -39,7 +38,9 @@ generateLexer lexer terminal_index_map terminal_type = do
   let accept_array = acceptArray parallel_lexer
   endomorphism_type <- extEndoType parallel_lexer
   Right $
-    [i|
+    Text.strip $
+      Text.pack
+        [i|
 using token_t = #{cudafy terminal_type};
 using state_t = #{cudafy endomorphism_type};
 
@@ -63,7 +64,7 @@ state_t h_compose[NUM_STATES * NUM_STATES] =
 bool h_accept[NUM_STATES] =
   #{cudafy $ accept_array};
 |]
-      <> cudaLexer
+        <> cudaLexer
   where
     defToken t = [i|#define IGNORE_TOKEN #{t}|]
     ignore_token =
