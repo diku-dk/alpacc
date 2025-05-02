@@ -34,7 +34,9 @@ generate q k cfg = do
     Text.unlines
       [ common,
         lexer_str,
+        "",
         parser,
+        "",
         Text.strip $
           Text.pack
             [i|
@@ -58,6 +60,7 @@ generateLexer cfg = do
     Text.unlines
       [ common,
         lexer_str,
+        "",
         Text.strip $
           Text.pack
             [i|

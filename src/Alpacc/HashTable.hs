@@ -4,6 +4,8 @@ module Alpacc.HashTable
     hash,
     HashTableMem (..),
     UInt (..),
+    hashTableMemSize,
+    hashTableType,
   )
 where
 
@@ -11,6 +13,7 @@ import Alpacc.Types
 import Control.Monad
 import Data.Array (Array)
 import Data.Array qualified as Array
+import Data.Array.Base as ABase
 import Data.Composition
 import Data.Function
 import Data.List qualified as List
@@ -197,8 +200,14 @@ initHashTable ::
 initHashTable int n table =
   runStateGen_ (mkStdGen n) (initHashTable' int table)
 
-hashTableSize :: (Show t, IntType t) => Int -> Maybe t
-hashTableSize = toIntType . (4 *) . fromIntegral
+hashTableType :: (Show t, IntType t) => Int -> Maybe t
+hashTableType = toIntType . (4 *) . fromIntegral
+
+hashTableMemSize :: HashTableMem Integer v -> Int
+hashTableMemSize = numElements . elementArray
+
+hashTableSize :: HashTableMem Integer v -> Int
+hashTableSize = numElements . constsArray
 
 -- | To use this function for generating a hash table you should use
 -- the function hashTableSize to determine the correct size for your
