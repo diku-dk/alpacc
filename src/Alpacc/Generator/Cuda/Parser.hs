@@ -37,6 +37,16 @@ generateParser ::
   Map (Symbol (AugmentedNonterminal (Either nt t)) (AugmentedTerminal t)) Int ->
   Either Text (Text, IInt)
 generateParser q k grammar symbol_index_map = do
+  (start_terminal, end_terminal) <- startEndIndex symbol_index_map
+  table <- llpParserTableWithStartsHomomorphisms q k grammar
+  bracket_type <- findBracketIntegral symbol_index_map
+  production_type <- findProductionIntegral $ productions grammar
   return . (,I64) $
     cudaParser
-      <> Text.strip (Text.pack [i|test|])
+      <> Text.strip
+        ( Text.pack
+            [i|
+const size_t Q = #{q};
+const size_t K = #{k};
+|]
+        )
