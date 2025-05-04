@@ -7,10 +7,7 @@ import Alpacc.Generator.Cuda.Cudafy
 import Alpacc.Generator.Util
 import Alpacc.Grammar
 import Alpacc.HashTable
-import Alpacc.LLP
-  ( Bracket (..),
-    llpParserTableWithStartsHomomorphisms,
-  )
+import Alpacc.LLP (Bracket (..))
 import Alpacc.Types
 import Control.DeepSeq
 import Data.Array.Base as ABase
@@ -34,13 +31,13 @@ generateParser ::
   Int ->
   Int ->
   Grammar (Either nt t) t ->
-  Map (Symbol (AugmentedNonterminal (Either nt t)) (AugmentedTerminal t)) Int ->
+  Map (Symbol (AugmentedNonterminal (Either nt t)) (AugmentedTerminal t)) Integer ->
   Either Text (Text, IInt)
 generateParser q k grammar symbol_index_map = do
   (start_terminal, end_terminal) <- startEndIndex symbol_index_map
-  table <- llpParserTableWithStartsHomomorphisms q k grammar
-  bracket_type <- findBracketIntegral symbol_index_map
-  production_type <- findProductionIntegral $ productions grammar
+  -- table <- llpParserTableWithStartsHomomorphisms q k grammar
+  -- bracket_type <- findBracketIntegral symbol_index_map
+  -- production_type <- findProductionIntegral $ productions grammar
   return . (,I64) $
     cudaParser
       <> Text.strip

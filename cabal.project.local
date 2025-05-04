@@ -1,1 +1,3 @@
+ignore-project: False
 profiling: True
+profiling-detail: toplevel-functions

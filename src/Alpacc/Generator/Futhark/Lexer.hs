@@ -22,13 +22,13 @@ futharkLexer = $(embedStringFile "futhark/lexer.fut")
 errorMessage :: Text
 errorMessage = Text.pack [i|Error: Happend during Futhark code generation contact a maintainer.|]
 
-defEndomorphismSize :: ParallelLexer Word8 Int -> Text
+defEndomorphismSize :: (Integral i) => ParallelLexer Word8 i -> Text
 defEndomorphismSize =
   ("def endomorphism_size: i64 = " <>)
     . futharkify
     . endomorphismsSize
 
-transitionsToEndomorphismsArray :: ParallelLexer Word8 Int -> Either Text Text
+transitionsToEndomorphismsArray :: (Futharkify i, Integral i) => ParallelLexer Word8 i -> Either Text Text
 transitionsToEndomorphismsArray parallel_lexer = do
   vals <-
     maybeToEither errorMessage $
@@ -44,7 +44,7 @@ transitionsToEndomorphismsArray parallel_lexer = do
   where
     to_endo = endomorphisms parallel_lexer
 
-compositionsArray :: UInt -> ParallelLexer Word8 Int -> Text
+compositionsArray :: (Futharkify i, Integral i) => UInt -> ParallelLexer Word8 i -> Text
 compositionsArray int parallel_lexer =
   Text.pack
     [i|def compositions : [endomorphism_size * endomorphism_size]endomorphism =
@@ -54,15 +54,15 @@ compositionsArray int parallel_lexer =
     ps = futharkify $ p <$> listCompositions parallel_lexer
     p = RawString . (<> futharkify int) . futharkify
 
-ignoreFunction :: Map T Int -> Text
+ignoreFunction :: (Futharkify i, Integral i) => Map T i -> Text
 ignoreFunction terminal_index_map =
   case T "ignore" `Map.lookup` terminal_index_map of
-    Just j -> Text.pack [i|def is_ignore (t : terminal) : bool = #{j} == t|]
+    Just j -> Text.pack [i|def is_ignore (t : terminal) : bool = #{futharkify j} == t|]
     Nothing -> Text.pack [i|def is_ignore (_ : terminal) : bool = false|]
 
 generateLexer ::
   DFALexer Word8 Int T ->
-  Map T Int ->
+  Map T Integer ->
   IInt ->
   Either Text Text
 generateLexer lexer terminal_index_map terminal_type = do

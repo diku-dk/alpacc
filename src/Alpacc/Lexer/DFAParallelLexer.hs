@@ -11,6 +11,7 @@ import Alpacc.Lexer.ParallelLexing
 import Data.Array.Base (IArray (..))
 import Data.Array.Unboxed (UArray)
 import Data.Array.Unboxed qualified as UArray hiding (UArray)
+import Data.Bits
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map hiding (Map)
 import Data.Maybe
@@ -97,8 +98,8 @@ dfaParallelLexer lexer' = parallelLexer lexer endo_table
     endo_table = endomorphismTable lexer
 
 intDfaParallelLexer ::
-  (Ord t, Ord s, Enum t, Bounded t, Ord k) =>
-  Map (Maybe k) Int ->
+  (Ord t, Ord s, Enum t, Bounded t, Ord k, Integral i, Bits i) =>
+  Map (Maybe k) i ->
   DFALexer t s k ->
-  Either Text (IntParallelLexer t)
+  Either Text (IntParallelLexer t i)
 intDfaParallelLexer m = intParallelLexer m . dfaParallelLexer

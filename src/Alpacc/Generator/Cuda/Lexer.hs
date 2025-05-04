@@ -20,7 +20,7 @@ cudaLexer = $(embedStringFile "cuda/lexer.cu")
 
 generateLexer ::
   DFALexer Word8 Int T ->
-  Map T Int ->
+  Map T Integer ->
   IInt ->
   Either Text Text
 generateLexer lexer terminal_index_map terminal_type = do

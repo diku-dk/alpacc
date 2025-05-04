@@ -407,14 +407,14 @@ extendByTerminals grammar = new_grammar
           productions = nts_prods ++ ts_prods
         }
 
-toTerminalIndexMap :: (Ord t) => [t] -> Map t Int
+toTerminalIndexMap :: (Ord t) => [t] -> Map t Integer
 toTerminalIndexMap = Map.fromList . flip zip [0 ..]
 
 toSymbolIndexMap ::
   (Ord t, Ord nt) =>
   [t] ->
   [nt] ->
-  Map (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)) Int
+  Map (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)) Integer
 toSymbolIndexMap ts nts = Map.union aug_terminal_map nts_map
   where
     terminal_map = Map.mapKeys AugmentedTerminal $ toTerminalIndexMap ts
