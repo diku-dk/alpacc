@@ -16,26 +16,25 @@ module type parser_context = {
   val epsilon: bracket_module.t
   val q: i64
   val k: i64
-  val max_ao: i64
-  val max_pi: i64
-  type look_type
-  val hash_table_size: i64
-  val hash_table_mem_size: i64
+  val stacks_size: i64
+  val productions_size: i64
+  val hash_table_level_one_size: i64
+  val hash_table_level_two_size: i64
   val number_of_terminals: i64
   val number_of_productions: i64
   val production_to_terminal: [number_of_productions](opt terminal_module.t)
   val production_to_arity: [number_of_productions]i16
-  val array_to_look_type [n]: [n]terminal_module.t -> look_type
   val start_terminal: terminal_module.t
   val end_terminal: terminal_module.t
-  val ne: ([max_ao]bracket_module.t, [max_pi]production_module.t)
-  val hash_table: [hash_table_mem_size](opt (look_type, ([max_ao]bracket_module.t, [max_pi]production_module.t)))
-  val offset_array: [hash_table_size]i64
-  val size_array: [hash_table_size]i64
-  val consts_array: [hash_table_size](opt look_type)
-  val consts: look_type
-  val hash_no_mod: look_type -> look_type -> terminal_module.t
-  val look_eq: look_type -> look_type -> bool
+  val level_two_offsets: [hash_table_level_two_size]i64
+  val level_one_keys_offsets: [hash_table_level_one_size]i64
+  val level_one_stack_offsets: [hash_table_level_one_size]i64
+  val level_one_production_offsets: [hash_table_level_one_size]i64
+  val keys_array: [hash_table_level_one_size]terminal_module.t
+  val stacks_array: [stacks_size]bracket_module.t
+  val productions_array: [productions_size]production_module.t
+  val level_one_consts: [q + k]i64
+  val level_two_consts: [hash_table_level_one_size][q + k]i64
 }
 
 module mk_parser(P: parser_context) = {
@@ -54,18 +53,22 @@ module mk_parser(P: parser_context) = {
   def is_left (s: bracket): bool =
     bracket_module.get_bit (bracket_module.num_bits - 1) s
     |> bool.i32
-  
-  def keys [n] (arr: [n]terminal): [n]P.look_type =
-    let arr' =
-      (replicate P.q empty_terminal)
-      ++ arr
-      ++ (replicate P.k empty_terminal)
-    in iota (n)
-       |> map (
-            \i ->
-              arr'[i:i + P.q + P.k]
-              |> P.array_to_look_type
-          )
+
+  #[inline]
+  def hash [n] (arr: [n]terminal) (consts: [P.k + P.q]i64) (size: i64) (i: i64): i64 =
+    let res =
+      loop x = 0 for j < P.q + P.k do
+      let t = if i + j < P.q then empty_terminal else arr[i + j - P.q]
+      in terminal_module.to_i64 t * consts[j]
+    in res % size
+                                                       
+  def keys [n] (arr: [n]terminal): [n]i64 =
+    tabulate n (\i ->
+                  let seg_offset =
+                    hash arr P.level_one_consts hash_table_level_one_size i
+                  let offset =
+                    hash arr P.level_two_consts[seg_offset] hash_table_level_one_size i
+               )
 
   def depths [n] (input: [n]bracket): opt ([n]i64) =
     let left_brackets =

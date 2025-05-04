@@ -63,7 +63,7 @@ parallelLexerToMasks64 :: ParallelLexer t k -> Either Text Masks64
 parallelLexerToMasks64 (ParallelLexer {endomorphismsSize = e, tokenSize = t}) =
   masks [e, t, 1]
 
-unsafeEncodeMasks64 :: Masks64 -> NonEmpty Int -> Int
+unsafeEncodeMasks64 :: (Bits i, Integral i) => Masks64 -> NonEmpty i -> i
 unsafeEncodeMasks64 (Masks64 ms) elems =
   let x = offset <$> ms
    in sum $ NonEmpty.zipWith shift elems x
@@ -110,15 +110,15 @@ lexerMasks lexer = do
   masks64ToParallelLexerMasks ms
 
 encodeEndoData ::
-  (Ord k) =>
+  (Ord k, Bits i, Integral i) =>
   ParallelLexerMasks ->
-  Map (Maybe k) Int ->
+  Map (Maybe k) i ->
   EndoData k ->
-  Int
+  i
 encodeEndoData lexer_masks to_int endo_data =
   do
     unsafeEncodeMasks64 ms
-    $ NonEmpty.fromList [e, t, p]
+    $ NonEmpty.fromList [fromIntegral e, t, p]
   where
     ms = parallelLexerMasksToMasks64 lexer_masks
     EndoData
@@ -126,20 +126,20 @@ encodeEndoData lexer_masks to_int endo_data =
         token = maybe_token,
         isProducing = produce
       } = endo_data
-    p = fromEnum produce
+    p = fromIntegral $ fromEnum produce
     t = to_int Map.! maybe_token
 
-data IntParallelLexer t = IntParallelLexer
-  { parLexer :: !(ParallelLexer t Int),
+data IntParallelLexer t i = IntParallelLexer
+  { parLexer :: !(ParallelLexer t i),
     parMasks :: !ParallelLexerMasks
   }
   deriving (Show, Eq, Ord)
 
 intParallelLexer ::
-  (Ord t, Ord k) =>
-  Map (Maybe k) Int ->
+  (Ord t, Ord k, Bits i, Integral i) =>
+  Map (Maybe k) i ->
   ParallelLexer t (EndoData k) ->
-  Either Text (IntParallelLexer t)
+  Either Text (IntParallelLexer t i)
 intParallelLexer to_int parallel_lexer = do
   ms <- lexerMasks parallel_lexer
   let encode = encodeEndoData ms to_int

@@ -27,43 +27,6 @@ import Data.Tuple.Extra
 futharkParser :: Text
 futharkParser = $(embedStringFile "futhark/parser.fut")
 
-llpTableToStrings ::
-  Int ->
-  Int ->
-  Map ([t], [t]) ([Bracket Int], [Int]) ->
-  Map ([t], [t]) ([RawString], [RawString])
-llpTableToStrings max_ao max_pi =
-  fmap (BI.bimap f g)
-  where
-    auxiliary (LBracket a) = "left " <> futharkify a
-    auxiliary (RBracket a) = "right " <> futharkify a
-    aoPad = rpad "epsilon" max_ao
-    piPad = rpad "empty_production" max_pi
-    f = fmap RawString . aoPad . fmap auxiliary
-    g = fmap RawString . piPad . fmap futharkify
-
-padAndStringifyTable ::
-  (Ord nt, Ord t) =>
-  Int ->
-  Int ->
-  Int ->
-  Int ->
-  Int ->
-  Map (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)) Int ->
-  Map
-    ( [AugmentedTerminal t],
-      [AugmentedTerminal t]
-    )
-    ( [Bracket (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t))],
-      [Int]
-    ) ->
-  Map [Int] ([RawString], [RawString])
-padAndStringifyTable empty_terminal q k max_ao max_pi =
-  Map.mapKeys (uncurry (++))
-    . llpTableToStrings max_ao max_pi
-    . padLLPTableKeys empty_terminal q k
-    .: toIntLLPTable
-
 declarations :: Text
 declarations =
   Text.strip $
@@ -86,7 +49,7 @@ def right (s : bracket) : bracket =
 
 productionToTerminal ::
   (Ord nt, Ord t) =>
-  Map (Symbol (AugmentedNonterminal (Either nt t)) (AugmentedTerminal t)) Int ->
+  Map (Symbol (AugmentedNonterminal (Either nt t)) (AugmentedTerminal t)) Integer ->
   [Production (AugmentedNonterminal (Either nt t)) (AugmentedTerminal t)] ->
   Text
 productionToTerminal symbol_to_index prods =
@@ -121,20 +84,6 @@ productionToArity prods =
         (<> "]") $
           Text.intercalate "\n," $
             futharkify <$> arities
-
-maxAoPi :: Map k ([v], [v']) -> (Int, Int)
-maxAoPi table = (max_alpha_omega, max_pi)
-  where
-    values = Map.elems table
-    max_alpha_omega = maximum $ length . fst <$> values
-    max_pi = maximum $ length . snd <$> values
-
-createNe :: Int -> Int -> Text
-createNe max_alpha_omega max_pi = futharkify ne
-  where
-    stacks = replicate max_alpha_omega (RawString "epsilon")
-    rules = replicate max_pi (RawString "empty_production")
-    ne = NTuple [stacks, rules]
 
 -- | Creates a string that is a tuple where a variable is indexed from 0 to
 -- n - 1 in the Futhark language.
@@ -172,7 +121,12 @@ def hash_no_mod #{a_arg} #{b_arg} =
 
 -- | Creates a string that indexes an array in the Futhark language.
 indexArray :: (Show a) => Text -> a -> RawString
-indexArray name = RawString . (name <>) . ("[" <>) . (<> "]") . Text.pack . show
+indexArray name =
+  RawString . (name <>) . ("[" <>) . (<> "]") . Text.pack . show
+
+futharkifyBracket :: (Futharkify a) => Bracket a -> RawString
+futharkifyBracket (LBracket a) = RawString . ("left " <>) $ futharkify a
+futharkifyBracket (RBracket a) = RawString . ("right " <>) $ futharkify a
 
 -- | Creates Futhark source code which contains a parallel parser that can
 -- create the productions list for a input which is indexes of terminals.
@@ -181,30 +135,16 @@ generateParser ::
   Int ->
   Int ->
   Grammar (Either nt t) t ->
-  Map (Symbol (AugmentedNonterminal (Either nt t)) (AugmentedTerminal t)) Int ->
+  Map (Symbol (AugmentedNonterminal (Either nt t)) (AugmentedTerminal t)) Integer ->
   Either Text (Text, IInt)
 generateParser q k grammar symbol_index_map = do
   (start_terminal, end_terminal) <- startEndIndex symbol_index_map
-  table <- llpParserTableWithStartsHomomorphisms q k grammar
   bracket_type <- findBracketIntType symbol_index_map
   production_type <- findProductionIntType grammar
-  terminal_type <- findTerminalIntType table
+  (hash_table, (max_ao, max_pi), terminal_type) <- llpHashTable q k grammar symbol_index_map
   arities <- productionToArity prods
-  let (max_ao, max_pi) = maxAoPi table
-  let empty_terminal = emptyTerminal terminal_type
-  let integer_table =
-        padAndStringifyTable empty_terminal q k max_ao max_pi symbol_index_map table
-  hash_table <- hashTable terminal_type 13 $ Map.mapKeys (fmap fromIntegral) integer_table
-  let ne = createNe max_ao max_pi
-  let offsets_array_str = futharkify $ offsetArray hash_table
-  let hash_table_mem_size = hashTableMemSize hash_table
-  let hash_table_str = futharkify $ fmap (first NTuple) <$> elementArray hash_table
-  let consts_array = constsArray hash_table
-  let consts_array_str = futharkify $ fmap (fmap NTuple) consts_array
-  let size_array = futharkify $ sizeArray hash_table
-  let consts = futharkify $ NTuple $ initHashConsts hash_table
-  let hash_table_size = hashTableSize hash_table
-  return . (,terminal_type) $
+  let brackets = futharkifyBracket <$> stacksArray hash_table
+  pure . (,terminal_type) $
     futharkParser
       <> (Text.strip . Text.pack)
         [i|
@@ -216,47 +156,50 @@ module bracket_module = #{futharkify bracket_type}
 
 #{declarations}
 
-type look_type = #{look_type}
-
-def look_eq: look_type -> look_type -> bool = (==)
-
 def number_of_terminals: i64 = #{number_of_terminals}
 def number_of_productions: i64 = #{number_of_productions} 
+def hash_table_level_one_size: i64 = #{hashTableLevelOneSize hash_table}
+def hash_table_level_two_size: i64 = #{hashTableLevelTwoSize hash_table}
 def q: i64 = #{q}
 def k: i64 = #{k}
-def hash_table_size: i64 = #{hash_table_size}
-def hash_table_mem_size: i64 = #{hash_table_mem_size}
-def max_ao: i64 = #{max_ao}
-def max_pi: i64 = #{max_pi}
 def start_terminal: terminal = #{start_terminal}
 def end_terminal: terminal = #{end_terminal}
 def production_to_terminal: [number_of_productions](opt terminal) =
   #{prods_to_ters}
 #{arities}
 
-#{createHashFunction q k}
+def level_two_offsets =
+  #{futharkify $ levelTwoOffsets hash_table}
 
-def array_to_look_type [n] (arr: [n]terminal): look_type =
-  #{toTupleIndexArray "arr" (q+k)}
+def level_one_keys_array =
+  #{futharkify $ levelOneKeysOffsets hash_table}
 
-def hash_table =
-  #{hash_table_str} :> [hash_table_mem_size](opt (look_type, ([max_ao]bracket, [max_pi]production)))
+def level_one_stack_offsets =
+  #{futharkify $ levelOneStacksOffsets hash_table}
 
-def offset_array =
-  #{offsets_array_str} :> [hash_table_size]i64
+def level_one_production_offsets =
+  #{futharkify $ levelOneProductionsOffsets hash_table}
 
-let size_array =
-  #{size_array} :> [hash_table_size]i64
+def keys_array =
+  #{futharkify $ keysArray hash_table}
 
-def consts_array =
-  #{consts_array_str} :> [hash_table_size](opt look_type)
+def stacks_array =
+  #{futharkify brackets}
 
-def consts =
-  #{consts} :> look_type
+def productions_array =
+  #{futharkify $ productionsArray hash_table}
 
-def ne: ([max_ao]bracket, [max_pi]production) =
-  let (a,b) = #{ne}
-  in (sized max_ao a, sized max_pi b)
+def stacks_size =
+  #{futharkify $ sum $ levelOneStacksSizes hash_table}
+
+def productions_size =
+  #{futharkify $ sum $ levelOneProductionsSizes hash_table}
+
+def level_one_consts =
+  #{futharkify $ constsArray hash_table}
+
+def level_two_consts =
+  #{futharkify $ initHashConsts hash_table}
 }
 |]
   where
@@ -266,7 +209,3 @@ def ne: ([max_ao]bracket, [max_pi]production) =
     number_of_terminals = length terminals'
     augmented_grammar = augmentGrammar grammar
     terminals' = terminals augmented_grammar
-    look_type =
-      futharkify $
-        NTuple $
-          replicate (q + k) (RawString "terminal")
