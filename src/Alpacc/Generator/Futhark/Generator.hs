@@ -8,6 +8,7 @@ import Alpacc.Generator.Futhark.Futharkify
 import Alpacc.Generator.Futhark.Lexer qualified as Lexer
 import Alpacc.Generator.Futhark.Parser qualified as Parser
 import Alpacc.Generator.Generator
+import Alpacc.Generator.Util
 import Alpacc.Grammar
 import Alpacc.Types
 import Data.Either.Extra
@@ -51,8 +52,8 @@ entry pre_productions s =
 |]
       <> parentVectorTest
 
-lexerFunction :: IInt -> Text
-lexerFunction t =
+lexerFunction :: Text
+lexerFunction =
   Text.strip $
     Text.pack
       [i|
@@ -78,7 +79,8 @@ generate q k cfg = do
   let ts = terminals grammar
   let nts = nonterminals grammar
   let symbol_index_map = toSymbolIndexMap ts nts
-  (parser, terminal_type) <- Parser.generateParser q k grammar symbol_index_map
+  terminal_type <- findAugmentedTerminalIntType grammar
+  parser <- Parser.generateParser q k terminal_type grammar symbol_index_map
   lexer <- cfgToDFALexer cfg
   lexer_str <- Lexer.generateLexer lexer terminal_index_map terminal_type
   pure $
@@ -92,24 +94,21 @@ generateLexer :: CFG -> Either Text Text
 generateLexer cfg = do
   t_rules <- everyTRule cfg
   let terminal_index_map = toTerminalIndexMap (ruleT <$> t_rules)
-  terminal_type :: IInt <-
-    maybeToEither "Error: Too many terminals." $
-      toIntType $
-        fromIntegral $
-          Map.size terminal_index_map
+  terminal_type <- findTerminalIntType terminal_index_map
   lexer <- cfgToDFALexer cfg
   lexer_str <- Lexer.generateLexer lexer terminal_index_map terminal_type
   pure $
     Text.unlines
       [ lexer_str,
-        lexerFunction terminal_type
+        lexerFunction
       ]
 
 generateParser :: Int -> Int -> CFG -> Either Text Text
 generateParser q k cfg = do
   grammar <- extendByTerminals <$> cfgToGrammar cfg
   let symbol_index_map = toSymbolIndexMap (terminals grammar) (nonterminals grammar)
-  (parser, _) <- Parser.generateParser q k grammar symbol_index_map
+  terminal_type <- findAugmentedTerminalIntType grammar
+  parser <- Parser.generateParser q k terminal_type grammar symbol_index_map
   pure $
     Text.unlines
       [ parser,
