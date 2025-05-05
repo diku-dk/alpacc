@@ -5,7 +5,9 @@ module Alpacc.HashTable
     hash,
     HashTableMem (..),
     UInt (..),
-    hashTableType,
+    stacksSize,
+    productionsSize,
+    hashKey,
   )
 where
 
@@ -16,6 +18,7 @@ import Data.Array qualified as Array
 import Data.Array.Base as ABase
 import Data.Bifunctor
 import Data.Composition
+import Data.Foldable
 import Data.Function
 import Data.List qualified as List
 import Data.Map (Map)
@@ -60,8 +63,8 @@ data HashTableMem i v1 v2 = HashTableMem
     levelOneKeysOffsets :: !(Array i i),
     levelOneStacksOffsets :: !(Array i i),
     levelOneProductionsOffsets :: !(Array i i),
-    levelOneStacksSizes :: !(Array i i),
-    levelOneProductionsSizes :: !(Array i i),
+    levelOneStacksShape :: !(Array i i),
+    levelOneProductionsShape :: !(Array i i),
     constsArray :: !(Array i [i]),
     initHashConsts :: ![i],
     sizeArray :: !(Array i i)
@@ -89,8 +92,13 @@ getConsts ::
   g ->
   m [Integer]
 getConsts t n =
-  replicateM n
-    . uniformRM (intTypeMinBound t, intTypeMaxBound t)
+  replicateM n . getNonZero
+  where
+    getNonZero gen = do
+      x <- uniformRM (intTypeMinBound t, intTypeMaxBound t) gen
+      if x == 0
+        then getNonZero gen
+        else pure x
 
 hasCollisions :: (Ord b) => (a -> b) -> [a] -> Bool
 hasCollisions = auxiliary Set.empty
@@ -138,18 +146,19 @@ countArraySize :: (Integral i) => Maybe (LevelOne i v) -> i
 countArraySize Nothing = 0
 countArraySize (Just a) = levelOneSize a
 
-constructlevelTwoArray ::
+constructLevelTwoOffsets ::
   (Integral i, Array.Ix i) =>
   HashTable i v ->
   Array i i
-constructlevelTwoArray hash_table =
+constructLevelTwoOffsets hash_table =
   listToArray $
-    init $
-      scanl (+) 0 $
-        Array.elems size_array
+    zipWith (\f o -> if f then o else 0) flags $
+      scanl (+) 0 vals
   where
     level_two_elements = levelTwoElements hash_table
-    size_array = countArraySize <$> level_two_elements
+    flags = fmap isJust size_array
+    vals = fmap (fromMaybe 0) size_array
+    size_array = fmap levelOneSize <$> toList level_two_elements
 
 constructKeysValuesArray ::
   (Integral i, Array.Ix i, Show i, Show v) =>
@@ -158,7 +167,7 @@ constructKeysValuesArray ::
 constructKeysValuesArray hash_table =
   bimap listToArray listToArray $
     unzip $
-      concat $
+      mconcat $
         mapMaybe (fmap (catMaybes . Array.elems . levelOneElements)) $
           Array.elems level_two_elements
   where
@@ -167,51 +176,49 @@ constructKeysValuesArray hash_table =
 data Layout = Compact | Spacious
 
 constructLevelOneOffsets ::
-  (Integral i, Array.Ix i, Show i) =>
+  (Integral i, Array.Ix i, Show i, Show v) =>
   HashTable i v ->
   (v -> i) ->
   Layout ->
   Array i i
-constructLevelOneOffsets hash_table g b =
-  listToArray $
-    init $
-      scanl (+) 0 flags
+constructLevelOneOffsets hash_table g layout =
+  listToArray
+    $ fmap snd
+    $ ( case layout of
+          Compact -> filter fst
+          Spacious -> fmap (\(f, o) -> if f then (f, o) else (f, 0))
+      )
+    $ zip flags
+    $ scanl (+) 0 is
   where
-    level_two_elements = levelTwoElements hash_table
-    flags =
-      mconcat
-        $ mapMaybe
-          ( fmap
-              ( fmap (maybe 0 (g . snd))
-                  . ( case b of
-                        Compact -> filter isJust
-                        Spacious -> id
-                    )
-                  . Array.elems
-                  . levelOneElements
-              )
-          )
-        $ Array.elems level_two_elements
+    flat = toList $ flattenHashTable hash_table
+    flags = isJust <$> flat
+    is = maybe 0 g <$> flat
 
-constructLevelOneSizes ::
+flattenHashTable :: (Integral i, Array.Ix i) => HashTable i v -> Array i (Maybe v)
+flattenHashTable =
+  listToArray
+    . mconcat
+    . mapMaybe
+      ( fmap
+          ( fmap (fmap snd)
+              . Array.elems
+              . levelOneElements
+          )
+      )
+    . Array.elems
+    . levelTwoElements
+
+constructLevelOneShape ::
   (Integral i, Array.Ix i, Show i) =>
   HashTable i [v] ->
   Array i i
-constructLevelOneSizes hash_table =
-  listToArray vals
-  where
-    level_two_elements = levelTwoElements hash_table
-    vals =
-      mconcat
-        $ mapMaybe
-          ( fmap
-              ( fmap (List.genericLength . snd)
-                  . catMaybes
-                  . Array.elems
-                  . levelOneElements
-              )
-          )
-        $ Array.elems level_two_elements
+constructLevelOneShape =
+  listToArray
+    . fmap List.genericLength
+    . catMaybes
+    . toList
+    . flattenHashTable
 
 constructConstsArray :: HashTable i v -> Array i [i]
 constructConstsArray hash_table =
@@ -249,8 +256,8 @@ hashTableMem int hash_table
             levelOneKeysOffsets = level_one_keys_offsets,
             levelOneStacksOffsets = level_one_stacks_offsets,
             levelOneProductionsOffsets = level_one_productions_offsets,
-            levelOneStacksSizes = level_one_stacks_sizes,
-            levelOneProductionsSizes = level_one_productions_sizes,
+            levelOneStacksShape = level_one_stacks_sizes,
+            levelOneProductionsShape = level_one_productions_sizes,
             keysArray = keys_array,
             stacksArray = stacks_array,
             productionsArray = productions_array,
@@ -263,17 +270,17 @@ hashTableMem int hash_table
     level_one_keys_offsets = constructLevelOneOffsets hash_table (const 1) Spacious
     hash_table_stacks = fmap fst hash_table
     hash_table_productions = fmap snd hash_table
-    level_one_stacks_sizes = constructLevelOneSizes hash_table_stacks
-    level_one_productions_sizes = constructLevelOneSizes hash_table_productions
+    level_one_stacks_sizes = constructLevelOneShape hash_table_stacks
+    level_one_productions_sizes = constructLevelOneShape hash_table_productions
     level_one_stacks_offsets = constructLevelOneOffsets hash_table_stacks List.genericLength Compact
     level_one_productions_offsets = constructLevelOneOffsets hash_table_productions List.genericLength Compact
     level_two_consts = levelTwoConsts hash_table
     level_two_elements = levelTwoElements hash_table
-    level_two_offsets = constructlevelTwoArray hash_table
+    level_two_offsets = constructLevelTwoOffsets hash_table
     (keys_array, values_array) = constructKeysValuesArray hash_table
     (stacks_array, productions_array) = splitValues values_array
     consts_array = constructConstsArray hash_table
-    size_array = countArraySize <$> level_two_elements
+    size_array = listToArray $ countArraySize <$> toList level_two_elements
     array_size = sum size_array
 
 initHashTable' ::
@@ -284,7 +291,7 @@ initHashTable' ::
   m (Either Text (HashTable Integer v))
 initHashTable' int table g
   | not is_valid = pure $ Left "Error: Every key in the Map must be of the same length."
-  | Just int < int' || isNothing int' = pure $ Left $ Text.pack [i|Error: #{int} is too small to create a hash table.|]
+  | int' < Just int = pure $ Left $ Text.pack [i|Error: #{int} is too small to create a hash table.|]
   | otherwise = do
       consts <- getConsts int consts_size g
       elements <-
@@ -331,24 +338,53 @@ initHashTable ::
 initHashTable int n table =
   runStateGen_ (mkStdGen n) (initHashTable' int table)
 
-hashTableType :: (Show t, IntType t) => Int -> Maybe t
-hashTableType = toIntType . (4 *) . fromIntegral
-
 hashTableLevelOneSize :: HashTableMem Integer v1 v2 -> Int
 hashTableLevelOneSize = numElements . levelOneKeysOffsets
 
 hashTableLevelTwoSize :: HashTableMem Integer v1 v2 -> Int
 hashTableLevelTwoSize = numElements . levelTwoOffsets
 
+stacksSize :: (Num i) => HashTableMem i v1 v2 -> i
+stacksSize = sum . levelOneStacksShape
+
+productionsSize :: (Num i) => HashTableMem i v1 v2 -> i
+productionsSize = sum . levelOneProductionsShape
+
 -- | To use this function for generating a hash table you should use
 -- the function hashTableSize to determine the correct size for your
 -- hash table. There is some lead way in choosing a type but it might
 -- take more time.
 hashTable ::
-  (Show v1, Show v2, IntType t, Show t, Ord t, IntType t) =>
+  (Show v1, Show v2, IntType t, Show t, Ord t) =>
   t ->
   Int ->
   Map [Integer] ([v1], [v2]) ->
   Either Text (HashTableMem Integer v1 v2)
 hashTable int s t = do
   initHashTable int s t >>= hashTableMem int
+
+-- | Calculates key offset and verifies it points to the correct key
+hashKey ::
+  (IntType t) =>
+  t ->
+  HashTableMem Integer v1 v2 ->
+  [Integer] ->
+  Maybe Integer
+hashKey intType mem key = do
+  let levelTwoConsts = initHashConsts mem
+      levelTwoSize = ABase.numElements (levelTwoOffsets mem)
+      segOffset = fromInteger $ hash intType (toInteger levelTwoSize) levelTwoConsts key
+
+  let constsForSegment = constsArray mem ABase.! segOffset
+      sizeForSegment = sizeArray mem ABase.! segOffset
+
+  guard (sizeForSegment > 0)
+
+  let j = fromInteger $ hash intType (toInteger sizeForSegment) constsForSegment (map toInteger key)
+
+  let levelTwoOffset = levelTwoOffsets mem ABase.! segOffset
+      idx = levelTwoOffset + j
+  let keyOffset = levelOneKeysOffsets mem ABase.! idx
+      storedKey = keysArray mem ABase.! keyOffset
+  guard (storedKey == key)
+  return keyOffset

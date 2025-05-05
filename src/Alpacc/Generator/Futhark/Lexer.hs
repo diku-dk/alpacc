@@ -63,7 +63,7 @@ ignoreFunction terminal_index_map =
 generateLexer ::
   DFALexer Word8 Int T ->
   Map T Integer ->
-  IInt ->
+  UInt ->
   Either Text Text
 generateLexer lexer terminal_index_map terminal_type = do
   int_parallel_lexer <- intDfaParallelLexer new_token_map lexer

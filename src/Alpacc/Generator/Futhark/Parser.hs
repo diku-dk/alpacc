@@ -85,45 +85,6 @@ productionToArity prods =
           Text.intercalate "\n," $
             futharkify <$> arities
 
--- | Creates a string that is a tuple where a variable is indexed from 0 to
--- n - 1 in the Futhark language.
-toTupleIndexArray :: (Show a, Num a, Enum a) => Text -> a -> Text
-toTupleIndexArray name n =
-  futharkify $ NTuple $ map (indexArray name) [0 .. n - 1]
-
-createHashFunction :: Int -> Int -> Text
-createHashFunction q k =
-  Text.strip $
-    Text.pack
-      [i|
-def hash_no_mod #{a_arg} #{b_arg} =
-  #{body}
-|]
-  where
-    qk = q + k
-    a_arg = futharkify $ NTuple $ map RawString as
-    b_arg = futharkify $ NTuple $ map RawString bs
-    as = ["a" <> futharkify j | j <- [0 .. (qk - 1)]]
-    bs = ["b" <> futharkify j | j <- [0 .. (qk - 1)]]
-    concatWith a b c = b <> a <> c
-    body =
-      if qk <= 0
-        then ""
-        else
-          List.foldl1 (concatWith " terminal_module.+ ") $
-            zipWith
-              ( ("(" <>)
-                  . (<> ")")
-                  .: concatWith " terminal_module.* "
-              )
-              as
-              bs
-
--- | Creates a string that indexes an array in the Futhark language.
-indexArray :: (Show a) => Text -> a -> RawString
-indexArray name =
-  RawString . (name <>) . ("[" <>) . (<> "]") . Text.pack . show
-
 futharkifyBracket :: (Futharkify a) => Bracket a -> RawString
 futharkifyBracket (LBracket a) = RawString . ("left " <>) $ futharkify a
 futharkifyBracket (RBracket a) = RawString . ("right " <>) $ futharkify a
@@ -134,17 +95,18 @@ generateParser ::
   (NFData t, NFData nt, Ord nt, Show nt, Show t, Ord t) =>
   Int ->
   Int ->
+  UInt ->
   Grammar (Either nt t) t ->
   Map (Symbol (AugmentedNonterminal (Either nt t)) (AugmentedTerminal t)) Integer ->
-  Either Text (Text, IInt)
-generateParser q k grammar symbol_index_map = do
+  Either Text Text
+generateParser q k terminal_type grammar symbol_index_map = do
   (start_terminal, end_terminal) <- startEndIndex symbol_index_map
   bracket_type <- findBracketIntType symbol_index_map
   production_type <- findProductionIntType grammar
-  (hash_table, (max_ao, max_pi), terminal_type) <- llpHashTable q k grammar symbol_index_map
+  hash_table <- llpHashTable q k I64 terminal_type grammar symbol_index_map
   arities <- productionToArity prods
   let brackets = futharkifyBracket <$> stacksArray hash_table
-  pure . (,terminal_type) $
+  pure $
     futharkParser
       <> (Text.strip . Text.pack)
         [i|
@@ -168,38 +130,47 @@ def production_to_terminal: [number_of_productions](opt terminal) =
   #{prods_to_ters}
 #{arities}
 
-def level_two_offsets =
-  #{futharkify $ levelTwoOffsets hash_table}
+def level_two_offsets: [hash_table_level_two_size]i64 =
+  #{futharkify $ levelTwoOffsets hash_table} :> [hash_table_level_two_size]i64
 
-def level_one_keys_array =
-  #{futharkify $ levelOneKeysOffsets hash_table}
+def level_two_shape: [hash_table_level_two_size]i64 =
+  #{futharkify $ sizeArray hash_table} :> [hash_table_level_two_size]i64
 
-def level_one_stack_offsets =
-  #{futharkify $ levelOneStacksOffsets hash_table}
+def level_one_keys_offsets: [hash_table_level_one_size]i64 =
+  #{futharkify $ levelOneKeysOffsets hash_table} :> [hash_table_level_one_size]i64
 
-def level_one_production_offsets =
-  #{futharkify $ levelOneProductionsOffsets hash_table}
+def level_one_stacks_offsets: [hash_table_level_two_size]i64 =
+  #{futharkify $ levelOneStacksOffsets hash_table} :> [hash_table_level_two_size]i64
 
-def keys_array =
-  #{futharkify $ keysArray hash_table}
+def level_one_productions_offsets: [hash_table_level_two_size]i64 =
+  #{futharkify $ levelOneProductionsOffsets hash_table} :> [hash_table_level_two_size]i64
 
-def stacks_array =
-  #{futharkify brackets}
+def keys_array: [hash_table_level_two_size][q + k]terminal =
+  #{futharkify $ keysArray hash_table} :> [hash_table_level_two_size][q + k]terminal
 
-def productions_array =
-  #{futharkify $ productionsArray hash_table}
+def stacks_size: i64 =
+  #{futharkify $ stacksSize hash_table}
 
-def stacks_size =
-  #{futharkify $ sum $ levelOneStacksSizes hash_table}
+def productions_size: i64 =
+  #{futharkify $ productionsSize hash_table}
 
-def productions_size =
-  #{futharkify $ sum $ levelOneProductionsSizes hash_table}
+def stacks_array: [stacks_size]bracket  =
+  #{futharkify brackets} :> [stacks_size]bracket
 
-def level_one_consts =
-  #{futharkify $ constsArray hash_table}
+def productions_array: [productions_size]production =
+  #{futharkify $ productionsArray hash_table} :> [productions_size]production
 
-def level_two_consts =
-  #{futharkify $ initHashConsts hash_table}
+def stacks_shape: [hash_table_level_two_size]i64 =
+  #{futharkify $ levelOneStacksShape hash_table} :> [hash_table_level_two_size]i64
+
+def productions_shape: [hash_table_level_two_size]i64 =
+  #{futharkify $ levelOneProductionsShape hash_table} :> [hash_table_level_two_size]i64
+
+def level_one_consts: [hash_table_level_two_size][q + k]i64 =
+  #{futharkify $ constsArray hash_table} :> [hash_table_level_two_size][q + k]i64
+
+def level_two_consts: [q + k]i64 =
+  #{futharkify $ initHashConsts hash_table} :> [q + k]i64
 }
 |]
   where

@@ -10,9 +10,11 @@ module Alpacc.Generator.Util
     emptyTerminal,
     llpHashTable,
     padLLPTableValues,
+    findAugmentedTerminalIntType,
   )
 where
 
+import Alpacc.Debug
 import Alpacc.Grammar
 import Alpacc.HashTable
 import Alpacc.LLP
@@ -89,7 +91,31 @@ findProductionIntType =
     . length
     . productions
   where
-    err = "Error: There are too many productions to find a Futhark integral type."
+    err = "Error: There are too many productions to find a integral type."
+
+findTerminalIntType ::
+  Map t a ->
+  Either Text UInt
+findTerminalIntType =
+  maybeToEither err
+    . toIntType
+    . fromIntegral
+    . length
+  where
+    err = "Error: There are too many terminals to find a integral type."
+
+findAugmentedTerminalIntType ::
+  Grammar nt t ->
+  Either Text UInt
+findAugmentedTerminalIntType =
+  maybeToEither err
+    . toIntType
+    . (+ 2)
+    . fromIntegral
+    . length
+    . terminals
+  where
+    err = "Error: There are too many terminals to find a integral type."
 
 findBracketIntType ::
   Map (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)) Integer ->
@@ -100,27 +126,12 @@ findBracketIntType index_map
   | max_size < 2 ^ (16 - 1 :: Int) - 1 = Right U16
   | max_size < 2 ^ (32 - 1 :: Int) - 1 = Right U32
   | max_size < 2 ^ (64 - 1 :: Int) - 1 = Right U64
-  | otherwise = Left "Error: There are too many symbols to find a Futhark integral type."
+  | otherwise = Left "Error: There are too many symbols to find a integral type."
   where
     max_size = toInteger $ maximum index_map
 
-findTerminalIntType ::
-  Map k v ->
-  Either Text IInt
-findTerminalIntType =
-  maybeToEither "Error: The LLP table is too large."
-    . hashTableType
-    . Map.size
-
 emptyTerminal :: (IntType i) => i -> Integer
 emptyTerminal = intTypeMaxBound
-
-maxAoPi :: Map k ([v], [v']) -> (Int, Int)
-maxAoPi table = (max_alpha_omega, max_pi)
-  where
-    values = Map.elems table
-    max_alpha_omega = maximum $ length . fst <$> values
-    max_pi = maximum $ length . snd <$> values
 
 padLLPTableValues ::
   Int ->
@@ -134,20 +145,22 @@ padLLPTableValues max_ao max_pi =
     piPad = rpad Nothing max_pi . fmap Just
 
 llpHashTable ::
-  (Show nt, Show t, Ord nt, Ord t, NFData nt, NFData t) =>
+  (Show nt, Show t, Ord nt, Ord t, NFData nt, NFData t, IntType i, IntType t', Show i, Show t', Ord i) =>
   Int ->
   Int ->
+  i ->
+  t' ->
   Grammar nt t ->
   Map (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)) Integer ->
-  Either Text (HashTableMem Integer (Bracket Integer) Int, (Int, Int), IInt)
-llpHashTable q k grammar symbol_to_index = do
+  Either Text (HashTableMem Integer (Bracket Integer) Int)
+llpHashTable q k t terminal_type grammar symbol_to_index = do
   table <- llpParserTableWithStartsHomomorphisms q k grammar
-  terminal_type <- findTerminalIntType table
   let empty_terminal = emptyTerminal terminal_type
-      (max_ao, max_pi) = maxAoPi table
       int_table =
         Map.mapKeys (uncurry (<>)) $
           padLLPTableKeys empty_terminal q k $
             toIntLLPTable symbol_to_index table
-  hash_table <- hashTable terminal_type 13 int_table
-  pure (hash_table, (max_ao, max_pi), terminal_type)
+  tbl <- hashTable t 1 int_table
+  -- mapM_ (maybeToEither "error" . hashKey t tbl) $ Map.keys int_table
+
+  pure tbl
