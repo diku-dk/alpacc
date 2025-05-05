@@ -169,14 +169,13 @@ module mk_parser (P: parser_context) = {
                      (offsets: [k]i64)
                      (keys: [n]i64): []a =
     let shape = gather sizes keys
-    let (seg_idxs, idxs) = #[trace] repl_segm_iota shape
+    let (seg_idxs, idxs) = repl_segm_iota shape
     let dest = replicate (length idxs) arr[0]
     let seg_offset = gather offsets keys
     let stack_offsets =
       gather seg_offset seg_idxs
       |> map2 (+) idxs
       |> flip zip (indices idxs)
-      |> (\a -> #[trace] a)
     in gather_scatter dest stack_offsets arr
 
   def construct_stacks =
