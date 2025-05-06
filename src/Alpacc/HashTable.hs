@@ -11,6 +11,7 @@ module Alpacc.HashTable
   )
 where
 
+import Alpacc.Debug
 import Alpacc.Types
 import Control.Monad
 import Data.Array (Array)
@@ -112,19 +113,20 @@ hasCollisions = auxiliary Set.empty
 
 initLevelOne ::
   (StatefulGen g m, IntType t) =>
+  Integer ->
   t ->
   Map [Integer] v ->
   g ->
   m (LevelOne Integer v)
-initLevelOne int table g = do
+initLevelOne inc int table g = do
   consts <- getConsts int consts_size g
   if hasCollisions (hash int size consts) keys
-    then initLevelOne int table g
+    then initLevelOne (inc + 1) int table g
     else result consts
   where
     keys = Map.keys table
     consts_size = if null keys then 0 else length $ head keys
-    size = (fromIntegral (Map.size table) :: Integer) ^ (2 :: Int)
+    size = inc + (fromIntegral (Map.size table) :: Integer) ^ (2 :: Int)
 
     result consts = do
       let dead_table = Map.fromList $ (,Nothing) <$> [0 .. size - 1]
@@ -324,7 +326,7 @@ initHashTable' int table g
     dead_table = Map.fromList $ (,Nothing) <$> [0 .. size - 1]
     toLevelOne xs = do
       let table' = Map.fromList $ map snd xs
-      hash_table <- initLevelOne int table' g
+      hash_table <- initLevelOne 0 int table' g
       return $ (k,) $ Just hash_table
       where
         (k, _) = head xs

@@ -67,36 +67,60 @@ module mk_lexer(L: lexer_context) = {
   def traverse [n] (prev_endo: endomorphism) (str: [n]u8): *[n]endomorphism =
     map2 (trans_to_endo prev_endo) str (iota n)
     |> scan compose L.identity_endomorphism
+
+  def take_right a b =
+    if b == i64.highest then a else b
     
   def lex_step [n] (offset: i64)
                    (prev_endo: endomorphism)
+                   (prev_start: i64)
                    (str: [n]u8):
-                   ([](i64, terminal), endomorphism) =
-    let endos = traverse prev_endo str
-    let last_endo = endos[n - 1]
-    let is = filter (\i -> not (i == 0 && offset == 0) && is_produce endos[i]) (0i64..<n)
-    in (map (\i ->
-               let e = if i == 0 then prev_endo else endos[i - 1]
-               in (offset + i, to_terminal e)) is,
-        last_endo)
+                   ([](terminal, (i64, i64)), endomorphism, i64) =
+    if n == 0
+    then ([], prev_endo, prev_start)
+    else
+      let endos = traverse prev_endo str
+      let flags =
+        tabulate n (\i -> i != n - 1 &&
+                          is_produce endos[i + 1] &&
+                          (not <-< L.is_ignore <-< to_terminal) endos[i])
+      let is =
+        map i64.bool flags
+        |> scan (+) 0
+      let offsets = map2 (\f o -> if f then o - 1 else -1) flags is
+      let starts =
+        tabulate n (\i -> if is_produce endos[i] then i else i64.highest)
+        |> scan take_right i64.highest
+      let ends = iota n
+      let vs = zip (map to_terminal endos) (zip starts ends)
+      let dest = replicate n (L.terminal_module.u8 0, (0, 0))
+      let result =
+        scatter dest offsets vs
+        |> map (\(t, (s, e)) -> (t, (s + offset, 1 + e + offset)))
+      let result[0] = (copy result[0].0, (prev_start, result[0].1.1))
+      let size = is[n - 1]
+      let last_endo = endos[n - 1]
+      let last_start = starts[n - 1]
+      in ( result[0:size]
+         , last_endo
+         , if last_start != i64.highest then offset + last_start else prev_start
+         )
   
   def lex [n]
           (chunk_size: i32)
           (str: [n]u8): opt ([](terminal, (i64, i64))) =
     let chunk_size' = i64.i32 chunk_size
-    let (res, final_endo) =
-      loop (res'', init_endo) = ([], L.identity_endomorphism) for offset in 0..chunk_size'..<n do
-      let m = i64.min (offset + chunk_size') n
-      let (res', last_endo) = lex_step offset init_endo str[offset:m]
-      in (res'' ++ res', last_endo)
-    let (final_starts, final_ters) = unzip res
-    let final_ends = final_starts ++ [n]
-    let final_starts = rotate (-1) <| final_starts ++ [0]
-    let final_ters = final_ters ++ [to_terminal final_endo]
-    let result =
-      zip final_ters (zip final_starts final_ends)
-      |> filter (not <-< L.is_ignore <-< (.0))
-      |> some
+    let (res, final_endo, final_start) =
+      loop (res'', init_endo, init_start) = ([], L.identity_endomorphism, 0) for offset in 0..chunk_size'..<n do
+      let m = i64.min (offset + chunk_size' + 1) n
+      let (res', last_endo, last_start) = lex_step offset init_endo init_start str[offset:m]
+      in (res'' ++ res', last_endo, last_start)
+    let last_terminal = to_terminal final_endo
+    let last =
+      if L.is_ignore last_terminal
+      then []
+      else #[trace] [(to_terminal final_endo, (final_start, n))]
+    let result = some (res ++ last)
     in if is_accept final_endo
        then result
        else #none 

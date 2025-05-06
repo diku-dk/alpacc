@@ -253,7 +253,7 @@ lexer(LexerCtx<I, J> ctx, unsigned char* d_string, token_t* d_tokens, J* d_start
           }
       } else if (is_in_block) {
           states[lid_off] = IDENTITY;
-      } else if (lid_off == ITEMS_PER_THREAD * BLOCK_SIZE) {
+      } else if (lid_off == ITEMS_PER_THREAD * BLOCK_SIZE && !is_last_chunk) {
           next_block_first_state = ctx.toState(chars_reg[reg_off]);
       }
     }
@@ -285,7 +285,7 @@ lexer(LexerCtx<I, J> ctx, unsigned char* d_string, token_t* d_tokens, J* d_start
         is_next_produce |= gid == size - 1;
         is_next_produce &= is_not_ignore;
       } else {
-        is_next_produce &= is_not_ignore && gid != size - 1;
+        is_next_produce &= is_not_ignore;
       }
 
       indices[lid] = is_produce(state) ? gid : ctx.take_right.identity;
