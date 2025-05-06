@@ -59,7 +59,9 @@ lexerFunction =
       [i|
 entry lex s =
   match lexer.lex 16777216 s
-  case #some r -> unzip3 r
+  case #some r -> let (tokens, spans) = unzip r
+                  let (starts, ends) = unzip spans
+                  in (tokens, starts, ends)
   case #none -> ([], [], [])
 |]
 
