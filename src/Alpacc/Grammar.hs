@@ -158,6 +158,14 @@ data Grammar nt t = Grammar
 
 instance (NFData t, NFData nt) => NFData (Grammar nt t)
 
+instance Functor (Grammar nt) where
+  fmap f (Grammar s ts nts ps) =
+    Grammar s (f <$> ts) nts (fmap f <$> ps)
+
+instance Bifunctor Grammar where
+  bimap f g (Grammar s ts nts ps) =
+    Grammar (f s) (g <$> ts) (f <$> nts) (bimap f g <$> ps)
+
 -- | Finds a grammar by its left handside.
 findProductions :: (Eq nt) => Grammar nt t -> nt -> [Production nt t]
 findProductions grammar nt = filterNt $ productions grammar
@@ -414,17 +422,9 @@ toSymbolIndexMap ::
   (Ord t, Ord nt) =>
   [t] ->
   [nt] ->
-  Map (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)) Integer
-toSymbolIndexMap ts nts = Map.union aug_terminal_map nts_map
+  Map (Symbol nt t) Integer
+toSymbolIndexMap ts nts = Map.union ts_map nts_map
   where
-    terminal_map = Map.mapKeys AugmentedTerminal $ toTerminalIndexMap ts
-    max_index = maximum terminal_map
-    new_terminals =
-      Map.union terminal_map $
-        Map.fromList
-          [ (LeftTurnstile, max_index + 1),
-            (RightTurnstile, max_index + 2)
-          ]
-    aug_terminal_map = Map.mapKeys Terminal new_terminals
-    nts' = (++ [Nonterminal Start]) $ Nonterminal . AugmentedNonterminal <$> nts
-    nts_map = Map.fromList $ zip nts' [max_index + 3 ..]
+    ts_map = Map.mapKeys Terminal $ toTerminalIndexMap ts
+    max_index = maximum ts_map
+    nts_map = Map.fromList $ zip (map Nonterminal nts) [max_index ..]

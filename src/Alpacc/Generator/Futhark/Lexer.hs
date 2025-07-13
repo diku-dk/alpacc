@@ -1,48 +1,19 @@
 module Alpacc.Generator.Futhark.Lexer (generateLexer) where
 
 import Alpacc.Generator.Futhark.Futharkify
-import Alpacc.Grammar
-import Alpacc.Lexer.DFA
-import Alpacc.Lexer.DFAParallelLexer
+import Alpacc.Generator.Generator
 import Alpacc.Lexer.Encode
 import Alpacc.Lexer.ParallelLexing
 import Alpacc.Types
-import Data.Either.Extra
 import Data.FileEmbed
-import Data.Map (Map)
-import Data.Map qualified as Map
 import Data.String.Interpolate (i)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Word (Word8)
+import Prelude hiding (lex)
 
 futharkLexer :: Text
 futharkLexer = $(embedStringFile "futhark/lexer.fut")
-
-errorMessage :: Text
-errorMessage = Text.pack [i|Error: Happend during Futhark code generation contact a maintainer.|]
-
-defEndomorphismSize :: (Integral i) => ParallelLexer Word8 i -> Text
-defEndomorphismSize =
-  ("def endomorphism_size: i64 = " <>)
-    . futharkify
-    . endomorphismsSize
-
-transitionsToEndomorphismsArray :: (Futharkify i, Integral i) => ParallelLexer Word8 i -> Either Text Text
-transitionsToEndomorphismsArray parallel_lexer = do
-  vals <-
-    maybeToEither errorMessage $
-      mapM
-        (fmap futharkify . flip Map.lookup to_endo)
-        [0 .. 255]
-  let result =
-        ("def transitions_to_endomorphisms : [256]endomorphism = sized 256 " <>) $
-          (<> "]") $
-            ("[" <>) $
-              Text.intercalate ",\n" vals
-  pure result
-  where
-    to_endo = endomorphisms parallel_lexer
 
 compositionsArray :: (Futharkify i, Integral i) => UInt -> ParallelLexer Word8 i -> Text
 compositionsArray int parallel_lexer =
@@ -54,45 +25,19 @@ compositionsArray int parallel_lexer =
     ps = futharkify $ p <$> listCompositions parallel_lexer
     p = RawString . (<> futharkify int) . futharkify
 
-ignoreFunction :: (Futharkify i, Integral i) => Map T i -> Text
-ignoreFunction terminal_index_map =
-  case T "ignore" `Map.lookup` terminal_index_map of
-    Just j -> Text.pack [i|def is_ignore (t : terminal) : bool = #{futharkify j} == t|]
-    Nothing -> Text.pack [i|def is_ignore (_ : terminal) : bool = false|]
-
-generateLexer ::
-  DFALexer Word8 Int T ->
-  Map T Integer ->
-  UInt ->
-  Either Text Text
-generateLexer lexer terminal_index_map terminal_type = do
-  int_parallel_lexer <- intDfaParallelLexer new_token_map lexer
-  let ParallelLexerMasks
-        { tokenMask = token_mask,
-          tokenOffset = token_offset,
-          indexMask = index_mask,
-          indexOffset = index_offset,
-          producingMask = produce_mask,
-          producingOffset = produce_offset
-        } = parMasks int_parallel_lexer
-  let parallel_lexer = parLexer int_parallel_lexer
-  let _identity = identity parallel_lexer
-  let accept_array = acceptArray parallel_lexer
-  endomorphism_type <- extEndoType parallel_lexer
-  transitions_to_endo <- transitionsToEndomorphismsArray parallel_lexer
-  let compositions_table = compositionsArray endomorphism_type parallel_lexer
-  Right $
-    futharkLexer
-      <> (Text.strip . Text.pack)
-        [i|
+generateLexer :: UInt -> Lexer -> Text
+generateLexer terminal_type lex =
+  futharkLexer
+    <> (Text.strip . Text.pack)
+      [i|
 module lexer = mk_lexer {
   module terminal_module = #{futharkify terminal_type}
-  module endomorphism_module = #{futharkify endomorphism_type}
+  module endomorphism_module = #{futharkify state_type}
 
   type endomorphism = endomorphism_module.t
   type terminal = terminal_module.t
   
-  def identity_endomorphism: endomorphism = #{_identity}
+  def identity_endomorphism: endomorphism = #{iden}
   def dead_terminal: terminal = #{dead_token}
   def endo_mask: endomorphism = #{index_mask}
   def endo_offset: endomorphism = #{index_offset}
@@ -100,21 +45,33 @@ module lexer = mk_lexer {
   def terminal_offset: endomorphism = #{token_offset}
   def produce_mask: endomorphism = #{produce_mask}
   def produce_offset: endomorphism = #{produce_offset}
-
-  #{ignoreFunction terminal_index_map}
-
-  #{defEndomorphismSize parallel_lexer}
+  
+  def endomorphism_size: i64 = #{endomorphisms_size}
   
   def accept_array: [endomorphism_size]bool =
     sized endomorphism_size #{futharkify accept_array}
 
-  #{transitions_to_endo}
+  def transitions_to_endomorphisms : [256]endomorphism =
+    sized 256 #{transitions}
 
   #{compositions_table}
 }
 |]
   where
-    dead_token = succ $ maximum terminal_index_map
-    new_token_map =
-      Map.insert Nothing dead_token $
-        Map.mapKeys Just terminal_index_map
+    int_parallel_lexer = lexer lex
+    ParallelLexerMasks
+      { tokenMask = token_mask,
+        tokenOffset = token_offset,
+        indexMask = index_mask,
+        indexOffset = index_offset,
+        producingMask = produce_mask,
+        producingOffset = produce_offset
+      } = parMasks int_parallel_lexer
+    dead_token = deadToken lex
+    parallel_lexer = parLexer int_parallel_lexer
+    endomorphisms_size = endomorphismsSize parallel_lexer
+    iden = identity parallel_lexer
+    accept_array = acceptArray parallel_lexer
+    state_type = stateType lex
+    transitions = futharkify $ transitionToState lex
+    compositions_table = compositionsArray state_type parallel_lexer

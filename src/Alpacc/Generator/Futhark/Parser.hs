@@ -4,6 +4,7 @@ module Alpacc.Generator.Futhark.Parser
 where
 
 import Alpacc.Generator.Futhark.Futharkify
+import Alpacc.Generator.Generator
 import Alpacc.Generator.Util
 import Alpacc.Grammar
 import Alpacc.HashTable
@@ -27,11 +28,23 @@ import Data.Tuple.Extra
 futharkParser :: Text
 futharkParser = $(embedStringFile "futhark/parser.fut")
 
-declarations :: Text
-declarations =
-  Text.strip $
-    Text.pack
+futharkifyBracket :: (Futharkify a) => Bracket a -> RawString
+futharkifyBracket (LBracket a) = RawString . ("left " <>) $ futharkify a
+futharkifyBracket (RBracket a) = RawString . ("right " <>) $ futharkify a
+
+-- | Creates Futhark source code which contains a parallel parser that can
+-- create the productions list for a input which is indexes of terminals.
+generateParser :: UInt -> Parser -> Text
+generateParser terminal_type parser =
+  futharkParser
+    <> (Text.strip . Text.pack)
       [i|
+module parser = mk_parser {
+
+module terminal_module = #{futharkify terminal_type}
+module production_module = #{futharkify production_type}
+module bracket_module = #{futharkify bracket_type}
+
 type terminal = terminal_module.t
 type production = production_module.t
 type bracket = bracket_module.t
@@ -45,78 +58,6 @@ def left (s : bracket) : bracket =
 
 def right (s : bracket) : bracket =
   bracket_module.set_bit (bracket_module.num_bits - 1) s 0
-|]
-
-productionToTerminal ::
-  (Ord nt, Ord t) =>
-  Map (Symbol (AugmentedNonterminal (Either nt t)) (AugmentedTerminal t)) Integer ->
-  [Production (AugmentedNonterminal (Either nt t)) (AugmentedTerminal t)] ->
-  Text
-productionToTerminal symbol_to_index prods =
-  (Text.pack [i|sized number_of_productions [|] <>) $
-    (<> "]") $
-      Text.intercalate "\n," $
-        p
-          . nonterminal
-          <$> prods
-  where
-    p (AugmentedNonterminal (Right t)) =
-      Text.pack [i|#some #{x}|]
-      where
-        x = symbol_to_index Map.! Terminal (AugmentedTerminal t)
-    p _ = "#none"
-
-productionToArity ::
-  [Production (AugmentedNonterminal (Either nt t)) (AugmentedTerminal t)] ->
-  Either Text Text
-productionToArity prods =
-  if 32767 < max_arity
-    then Left "A production contains a right-hand side too many nonterminals"
-    else Right arities_str
-  where
-    isNt (Nonterminal _) = 1 :: Integer
-    isNt _ = 0
-    arity = sum . fmap isNt . symbols
-    arities = arity <$> prods
-    max_arity = maximum arities
-    arities_str =
-      (Text.pack [i|def production_to_arity: [number_of_productions]i16 = sized number_of_productions [|] <>) $
-        (<> "]") $
-          Text.intercalate "\n," $
-            futharkify <$> arities
-
-futharkifyBracket :: (Futharkify a) => Bracket a -> RawString
-futharkifyBracket (LBracket a) = RawString . ("left " <>) $ futharkify a
-futharkifyBracket (RBracket a) = RawString . ("right " <>) $ futharkify a
-
--- | Creates Futhark source code which contains a parallel parser that can
--- create the productions list for a input which is indexes of terminals.
-generateParser ::
-  (NFData t, NFData nt, Ord nt, Show nt, Show t, Ord t) =>
-  Int ->
-  Int ->
-  UInt ->
-  Grammar (Either nt t) t ->
-  Map (Symbol (AugmentedNonterminal (Either nt t)) (AugmentedTerminal t)) Integer ->
-  Either Text Text
-generateParser q k terminal_type grammar symbol_index_map = do
-  (start_terminal, end_terminal) <- startEndIndex symbol_index_map
-  bracket_type <- findBracketIntType symbol_index_map
-  production_type <- findProductionIntType grammar
-  hash_table <- llpHashTable q k I64 terminal_type grammar symbol_index_map
-  arities <- productionToArity prods
-  let brackets = futharkifyBracket <$> stacksArray hash_table
-  pure $
-    futharkParser
-      <> (Text.strip . Text.pack)
-        [i|
-module parser = mk_parser {
-
-module terminal_module = #{futharkify terminal_type}
-module production_module = #{futharkify production_type}
-module bracket_module = #{futharkify bracket_type}
-
-#{declarations}
 
 def number_of_terminals: i64 = #{number_of_terminals}
 def number_of_productions: i64 = #{number_of_productions} 
@@ -128,7 +69,7 @@ def start_terminal: terminal = #{start_terminal}
 def end_terminal: terminal = #{end_terminal}
 def production_to_terminal: [number_of_productions](opt terminal) =
   #{prods_to_ters}
-#{arities}
+def production_to_arity: [number_of_productions]i16 = sized number_of_productions 
 
 def level_two_offsets: [hash_table_level_two_size]i64 =
   #{futharkify $ levelTwoOffsets hash_table} :> [hash_table_level_two_size]i64
@@ -174,9 +115,9 @@ def level_two_consts: [q + k]i64 =
 }
 |]
   where
-    prods = productions augmented_grammar
-    number_of_productions = length prods
-    prods_to_ters = productionToTerminal symbol_index_map prods
-    number_of_terminals = length terminals'
-    augmented_grammar = augmentGrammar grammar
-    terminals' = terminals augmented_grammar
+    production_type = productionType parser
+    bracket_type = bracketType parser
+    q = lookback parser
+    k = lookahead parser
+    start_terminal = startTerminal parser
+    end_terminal = endTerminal parser

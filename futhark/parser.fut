@@ -13,8 +13,6 @@ module type parser_context = {
   module production_module: integral
   module bracket_module: integral
   val empty_terminal : terminal_module.t
-  val empty_production : production_module.t
-  val epsilon : bracket_module.t
   val q : i64
   val k : i64
   val stacks_size : i64
@@ -51,8 +49,6 @@ module mk_parser (P: parser_context) = {
   type bracket = bracket_module.t
 
   def empty_terminal = P.empty_terminal
-  def empty_production = P.empty_production
-  def epsilon = P.epsilon
 
   def is_left (s: bracket) : bool =
     bracket_module.get_bit (bracket_module.num_bits - 1) s
@@ -66,18 +62,18 @@ module mk_parser (P: parser_context) = {
     |> i64.sum
     |> (% size)
 
-  def get_key [n] (arr: [n]terminal) (i: i64): [P.q + P.k]terminal =
+  def get_key [n] (arr: [n]terminal) (i: i64) : [P.q + P.k]terminal =
     #[inline]
     #[sequential]
     tabulate (P.q + P.k)
              (\j ->
                 if i + j < P.q then empty_terminal else arr[i + j - P.q])
 
-  def array_equal [n] 'a (eq: a -> a -> bool) (as: [n]a) (bs: [n]a): bool =
+  def array_equal [n] 'a (eq: a -> a -> bool) (as: [n]a) (bs: [n]a) : bool =
     #[sequential]
     map2 eq as bs
     |> and
-                                                                        
+
   def keys [n] (arr: [n]terminal) : [n]i64 =
     tabulate n
              (\i ->
@@ -92,8 +88,8 @@ module mk_parser (P: parser_context) = {
                    then key_offset
                    else -1)
 
-  def valid_keys [n]: [n]i64 -> bool =
-    all (\i -> 0<= i && i < P.hash_table_level_one_size) 
+  def valid_keys [n] : [n]i64 -> bool =
+    all (\i -> 0 <= i && i < P.hash_table_level_one_size)
 
   def depths [n] (input: [n]bracket) : opt ([n]i64) =
     let left_brackets =
@@ -133,16 +129,16 @@ module mk_parser (P: parser_context) = {
          |> and
     case #none -> false
 
-  def gather [n] [m] 'a (arr: [n]a) (is: [m]i64): [m]a =
+  def gather [n] [m] 'a (arr: [n]a) (is: [m]i64) : [m]a =
     map (\i -> arr[i]) is
 
-  def gather_scatter 'a [n][m][k]
+  def gather_scatter 'a [n] [m] [k]
                      (dest: *[n]a)
                      (mapping: [m](i64, i64))
-                     (vs: [k]a): *[n]a =
-  let (is', is) = unzip mapping
-  let vs = gather vs is'
-  in scatter dest is vs
+                     (vs: [k]a) : *[n]a =
+    let (is', is) = unzip mapping
+    let vs = gather vs is'
+    in scatter dest is vs
 
   def exscan [n] 'a (op: a -> a -> a) (ne: a) (as: [n]a) =
     if length as == 0
@@ -151,23 +147,23 @@ module mk_parser (P: parser_context) = {
          let l = copy res[0]
          let res[0] = ne
          in (l, res)
-  
+
   def create_flags [n] 't
                    (default: t)
                    (flags: [n]t)
                    (shape: [n]i64) : []t =
-  let (m, offsets) = exscan (+) 0 shape
-  let idxs =
-    map2 (\i j -> if i == 0 then -1 else j)
-         shape
-         offsets
-  in scatter (replicate m default) idxs flags
+    let (m, offsets) = exscan (+) 0 shape
+    let idxs =
+      map2 (\i j -> if i == 0 then -1 else j)
+           shape
+           offsets
+    in scatter (replicate m default) idxs flags
 
   def segmented_copy [n] [m] [k] 'a
                      (arr: [m]a)
                      (sizes: [k]i64)
                      (offsets: [k]i64)
-                     (keys: [n]i64): []a =
+                     (keys: [n]i64) : []a =
     let shape = gather sizes keys
     let (seg_idxs, idxs) = repl_segm_iota shape
     let dest = replicate (length idxs) arr[0]
@@ -180,10 +176,10 @@ module mk_parser (P: parser_context) = {
 
   def construct_stacks =
     segmented_copy P.stacks_array P.stacks_shape P.level_one_stacks_offsets
-                   
+
   def construct_productions =
     segmented_copy P.productions_array P.productions_shape P.level_one_productions_offsets
-    
+
   def to_keys arr =
     let arr' = [P.start_terminal] ++ arr ++ [P.end_terminal]
     let idxs = keys arr'
