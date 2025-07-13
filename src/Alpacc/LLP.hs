@@ -206,9 +206,9 @@ initLlpContext ::
   (Ord nt, Ord t, Show nt, Show t) =>
   Int ->
   Int ->
-  Grammar nt t ->
+  Grammar (AugmentedNonterminal nt) (AugmentedTerminal t) ->
   Either Text (LlpContext nt t)
-initLlpContext q k grammar
+initLlpContext q k augmented_grammar
   | q < 0 = Left "Error: Lookback must be non-negative."
   | k < 1 = Left "Error: Lookahead must be positive."
   | otherwise = do
@@ -225,7 +225,6 @@ initLlpContext q k grammar
             table = ll_table
           }
   where
-    augmented_grammar = augmentGrammar grammar
     (first_ctx, followFunction) = firstAndFollow k augmented_grammar
     (last_ctx, beforeFunction) = lastAndBefore q augmented_grammar
 
@@ -514,7 +513,7 @@ llpParserTableWithStarts ::
   (Ord nt, Ord t, Show nt, Show t, NFData t, NFData nt) =>
   Int ->
   Int ->
-  Grammar nt t ->
+  Grammar (AugmentedNonterminal nt) (AugmentedTerminal t) ->
   Either
     Text
     ( Map
@@ -541,7 +540,7 @@ llpParserTableWithStartsHomomorphisms ::
   (NFData t, NFData nt, Ord nt, Show nt, Show t, Ord t) =>
   Int ->
   Int ->
-  Grammar nt t ->
+  Grammar (AugmentedNonterminal nt) (AugmentedTerminal t) ->
   Either
     Text
     ( Map
@@ -625,7 +624,8 @@ llpParse ::
   [t] ->
   Either Text [Int]
 llpParse q k grammar string = do
-  table' <- llpParserTableWithStarts q k grammar
+  let augmented_grammar = augmentGrammar grammar
+  table' <- llpParserTableWithStarts q k augmented_grammar
   let padded_string = addStoppers $ aug string
   pairs <- maybeToEither "Could not be parsed." . sequence $ pairLookup table' q k padded_string
   thd3 <$> maybeToEither "Could not be parsed." (glueAll pairs)

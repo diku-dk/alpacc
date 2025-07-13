@@ -72,7 +72,7 @@ toIntLLPTable symbol_index_map table = table'
     table' = first (fmap (fmap toIndex)) <$> table_index_keys
     toIndex = (symbol_index_map Map.!)
 
-startEndIndex :: (Ord nt, Ord t) => Map (Symbol (AugmentedNonterminal (Either nt t)) (AugmentedTerminal t)) Integer -> Either Text (Integer, Integer)
+startEndIndex :: (Ord nt, Ord t) => Map (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)) Integer -> Either Text (Integer, Integer)
 startEndIndex symbol_index_map = do
   start_terminal <- maybeToEither "The left turnstile \"⊢\" terminal could not be found, you should complain to a developer." maybe_start_terminal
   end_terminal <- maybeToEither "The right turnstile \"⊣\" terminal could not be found, you should complain to a developer." maybe_end_terminal
@@ -150,7 +150,7 @@ llpHashTable ::
   Int ->
   i ->
   t' ->
-  Grammar nt t ->
+  Grammar (AugmentedNonterminal nt) (AugmentedTerminal t) ->
   Map (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)) Integer ->
   Either Text (HashTableMem Integer (Bracket Integer) Int)
 llpHashTable q k t terminal_type grammar symbol_to_index = do
@@ -160,7 +160,4 @@ llpHashTable q k t terminal_type grammar symbol_to_index = do
         Map.mapKeys (uncurry (<>)) $
           padLLPTableKeys empty_terminal q k $
             toIntLLPTable symbol_to_index table
-  tbl <- hashTable t 1 int_table
-  -- mapM_ (maybeToEither "error" . hashKey t tbl) $ Map.keys int_table
-
-  pure tbl
+  hashTable t 1 int_table
