@@ -5,25 +5,14 @@ where
 
 import Alpacc.Generator.Futhark.Futharkify
 import Alpacc.Generator.Generator
-import Alpacc.Generator.Util
-import Alpacc.Grammar
 import Alpacc.HashTable
 import Alpacc.LLP
   ( Bracket (..),
-    llpParserTableWithStartsHomomorphisms,
   )
-import Alpacc.Types
-import Control.DeepSeq
-import Data.Bifunctor qualified as BI
-import Data.Composition
 import Data.FileEmbed
-import Data.List qualified as List
-import Data.Map (Map)
-import Data.Map qualified as Map
 import Data.String.Interpolate (i)
 import Data.Text (Text)
 import Data.Text qualified as Text
-import Data.Tuple.Extra
 
 futharkParser :: Text
 futharkParser = $(embedStringFile "futhark/parser.fut")
@@ -49,10 +38,6 @@ type terminal = terminal_module.t
 type production = production_module.t
 type bracket = bracket_module.t
 
-def empty_terminal : terminal = terminal_module.highest
-def empty_production : production = production_module.highest
-def epsilon : bracket = bracket_module.highest
-
 def left (s : bracket) : bracket =
   bracket_module.set_bit (bracket_module.num_bits - 1) s 1
 
@@ -68,7 +53,7 @@ def k: i64 = #{k}
 def start_terminal: terminal = #{start_terminal}
 def end_terminal: terminal = #{end_terminal}
 def production_to_terminal: [number_of_productions](opt terminal) =
-  #{prods_to_ters}
+  #{production_to_terminal}
 def production_to_arity: [number_of_productions]i16 = sized number_of_productions 
 
 def level_two_offsets: [hash_table_level_two_size]i64 =
@@ -121,3 +106,8 @@ def level_two_consts: [q + k]i64 =
     k = lookahead parser
     start_terminal = startTerminal parser
     end_terminal = endTerminal parser
+    hash_table = llpTable parser
+    number_of_productions = numberOfProductions parser
+    number_of_terminals = numberOfTerminals parser
+    brackets = futharkifyBracket <$> stacksArray hash_table
+    production_to_terminal = futharkify $ productionToTerminal parser

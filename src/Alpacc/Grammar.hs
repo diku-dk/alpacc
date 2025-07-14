@@ -27,8 +27,6 @@ module Alpacc.Grammar
     grammarDuplicates,
     grammarError,
     extendByTerminals,
-    toTerminalIndexMap,
-    toSymbolIndexMap,
   )
 where
 
@@ -414,17 +412,3 @@ extendByTerminals grammar = new_grammar
           nonterminals = new_nts,
           productions = nts_prods ++ ts_prods
         }
-
-toTerminalIndexMap :: (Ord t) => [t] -> Map t Integer
-toTerminalIndexMap = Map.fromList . flip zip [0 ..]
-
-toSymbolIndexMap ::
-  (Ord t, Ord nt) =>
-  [t] ->
-  [nt] ->
-  Map (Symbol nt t) Integer
-toSymbolIndexMap ts nts = Map.union ts_map nts_map
-  where
-    ts_map = Map.mapKeys Terminal $ toTerminalIndexMap ts
-    max_index = maximum ts_map
-    nts_map = Map.fromList $ zip (map Nonterminal nts) [max_index ..]

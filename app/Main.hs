@@ -3,7 +3,12 @@ module Main where
 import Alpacc.CFG
 import Alpacc.Generator.Cuda.Generator qualified as Cuda
 import Alpacc.Generator.Futhark.Generator qualified as Futhark
-import Alpacc.Generator.Generator (Generator (..))
+import Alpacc.Generator.Generator
+  ( Generator (..),
+    mkLexer,
+    mkLexerParser,
+    mkParser,
+  )
 import Data.Maybe
 import Data.Text (Text)
 import Data.Text qualified as Text
@@ -182,9 +187,9 @@ readContents opts =
 generateProgram :: Parameters -> CFG -> Either Text Text
 generateProgram opts cfg =
   case generator opts of
-    GenBoth -> lexerParserGenerator gen q k cfg
-    GenLexer -> lexerGenerator gen cfg
-    GenParser -> parserGenerator gen q k cfg
+    GenBoth -> generate gen <$> mkLexerParser q k cfg
+    GenLexer -> generate gen <$> mkLexer cfg
+    GenParser -> generate gen <$> mkParser q k cfg
   where
     q = lookback opts
     k = lookahead opts

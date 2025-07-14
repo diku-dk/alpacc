@@ -99,7 +99,8 @@ dfaParallelLexer lexer' = parallelLexer lexer endo_table
 
 intDfaParallelLexer ::
   (Ord t, Ord s, Enum t, Bounded t, Ord k, Integral i, Bits i) =>
-  Map (Maybe k) i ->
+  Map k i ->
+  i ->
   DFALexer t s k ->
   Either Text (IntParallelLexer t i)
-intDfaParallelLexer m = intParallelLexer m . dfaParallelLexer
+intDfaParallelLexer m d = intParallelLexer m d . dfaParallelLexer

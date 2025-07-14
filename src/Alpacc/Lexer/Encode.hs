@@ -112,10 +112,11 @@ lexerMasks lexer = do
 encodeEndoData ::
   (Ord k, Bits i, Integral i) =>
   ParallelLexerMasks ->
-  Map (Maybe k) i ->
+  i ->
+  Map k i ->
   EndoData k ->
   i
-encodeEndoData lexer_masks to_int endo_data =
+encodeEndoData lexer_masks dead_token to_int endo_data =
   do
     unsafeEncodeMasks64 ms
     $ NonEmpty.fromList [fromIntegral e, t, p]
@@ -127,7 +128,10 @@ encodeEndoData lexer_masks to_int endo_data =
         isProducing = produce
       } = endo_data
     p = fromIntegral $ fromEnum produce
-    t = to_int Map.! maybe_token
+    t =
+      case maybe_token of
+        Just t' -> to_int Map.! t'
+        Nothing -> dead_token
 
 data IntParallelLexer t i = IntParallelLexer
   { parLexer :: !(ParallelLexer t i),
@@ -137,12 +141,13 @@ data IntParallelLexer t i = IntParallelLexer
 
 intParallelLexer ::
   (Ord t, Ord k, Bits i, Integral i) =>
-  Map (Maybe k) i ->
+  Map k i ->
+  i ->
   ParallelLexer t (EndoData k) ->
   Either Text (IntParallelLexer t i)
-intParallelLexer to_int parallel_lexer = do
+intParallelLexer to_int dead_token parallel_lexer = do
   ms <- lexerMasks parallel_lexer
-  let encode = encodeEndoData ms to_int
+  let encode = encodeEndoData ms dead_token to_int
   let new_compositions = fmap encode <$> compositions parallel_lexer
   let new_endomorphims = encode <$> endomorphisms parallel_lexer
   let new_identity = encode $ identity parallel_lexer

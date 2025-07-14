@@ -6,7 +6,6 @@ module Alpacc.Generator.Util
     startEndIndex,
     findProductionIntType,
     findBracketIntType,
-    findTerminalIntType,
     emptyTerminal,
     llpHashTable,
     padLLPTableValues,
@@ -92,17 +91,6 @@ findProductionIntType =
     . productions
   where
     err = "Error: There are too many productions to find a integral type."
-
-findTerminalIntType ::
-  Map t a ->
-  Either Text UInt
-findTerminalIntType =
-  maybeToEither err
-    . toIntType
-    . fromIntegral
-    . length
-  where
-    err = "Error: There are too many terminals to find a integral type."
 
 findAugmentedTerminalIntType ::
   Grammar nt t ->

@@ -3,7 +3,7 @@ module Alpacc.Generator.Generator
     Lexer (..),
     Parser (..),
     AnalyzerKind (..),
-    CodeGenerator (..),
+    Generator (..),
     mkLexer,
     mkParser,
     mkLexerParser,
@@ -18,14 +18,16 @@ import Alpacc.LLP (Bracket)
 import Alpacc.Lexer.DFAParallelLexer
 import Alpacc.Lexer.Encode
 import Alpacc.Lexer.ParallelLexing
+import Alpacc.Types
 import Data.Either.Extra
+import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Text (Text)
 import Data.Word
 
-data CodeGenerator
-  = CodeGenerator
-  { generate :: Analyzer -> Either Text Text
+data Generator
+  = Generator
+  { generate :: Analyzer -> Text
   }
 
 data Lexer
@@ -57,6 +59,7 @@ data Parser
     productionType :: UInt,
     llpTable :: HashTableMem Integer (Bracket Integer) Int,
     arities :: [Integer],
+    productionToTerminal :: [Maybe Integer],
     numberOfProductions :: Int,
     numberOfTerminals :: Int
   }
@@ -71,30 +74,67 @@ data AnalyzerKind
 data Analyzer
   = Analyzer
   { terminalType :: UInt,
-    generatorKind :: AnalyzerKind
+    analyzerKind :: AnalyzerKind
   }
   deriving (Show)
+
+toTerminalIndexMap :: (Ord t) => [t] -> Map t Integer
+toTerminalIndexMap = Map.fromList . flip zip [0 ..]
+
+toSymbolIndexMap ::
+  (Ord t, Ord nt) =>
+  Map t Integer ->
+  [nt] ->
+  Map (Symbol nt t) Integer
+toSymbolIndexMap ts_map nts =
+  Map.union (Map.mapKeys Terminal ts_map) nts_map
+  where
+    max_index = maximum ts_map
+    nts_map = Map.fromList $ zip (map Nonterminal nts) [max_index ..]
+
+mkTerminalType ::
+  Map t Integer ->
+  Either Text (Integer, UInt)
+mkTerminalType ts_map =
+  fmap (dead_token,) $
+    maybeToEither err $
+      toIntType dead_token
+  where
+    dead_token = succ $ maximum ts_map
+    err = "Error: There are too many terminals to find a integral type."
+
+mkProductionToTerminal ::
+  (Ord nt, Ord t) =>
+  Map (Symbol (AugmentedNonterminal (Either nt t)) (AugmentedTerminal t)) Integer ->
+  [Production (AugmentedNonterminal (Either nt t)) (AugmentedTerminal t)] ->
+  [Maybe Integer]
+mkProductionToTerminal symbol_to_index prods =
+  p . nonterminal <$> prods
+  where
+    p (AugmentedNonterminal (Right t)) = Just x
+      where
+        x = symbol_to_index Map.! Terminal (AugmentedTerminal t)
+    p _ = Nothing
 
 mkLexer :: CFG -> Either Text Analyzer
 mkLexer cfg = do
   t_rules <- everyTRule cfg
-  let terminal_map = toTerminalIndexMap ((Just . ruleT <$> t_rules) ++ [Nothing])
-      dead_token = terminal_map Map.! Nothing
-  terminal_type <- findTerminalIntType terminal_map
+  let terminal_map = toTerminalIndexMap (ruleT <$> t_rules)
+  (dead_token, terminal_type) <- mkTerminalType terminal_map
   lexer <- cfgToDFALexer cfg
-  parallel_lexer <- intDfaParallelLexer terminal_map lexer
+  parallel_lexer <- intDfaParallelLexer terminal_map dead_token lexer
   state_type <- extEndoType $ parLexer parallel_lexer
   transition_to_state <- transitionToStateArray parallel_lexer
   pure $
     Analyzer
-      { generatorKind =
+      { analyzerKind =
           Lex $
             Lexer
               { stateType = state_type,
                 lexer = parallel_lexer,
                 deadToken = dead_token,
                 transitionToState = transition_to_state,
-                ignoreToken = Map.lookup (Just (T "ignore")) terminal_map
+                ignoreToken = Map.lookup (T "ignore") terminal_map
               },
         terminalType = terminal_type
       }
@@ -109,69 +149,84 @@ mkArities = fmap arity . productions
 mkParser :: Int -> Int -> CFG -> Either Text Analyzer
 mkParser q k cfg = do
   grammar <- augmentGrammar . extendByTerminals <$> cfgToGrammar cfg
-  let symbol_index_map = toSymbolIndexMap (terminals grammar) (nonterminals grammar)
-      terminal_map = toTerminalIndexMap $ terminals grammar
-  terminal_type <- findTerminalIntType terminal_map
+  let terminal_map = toTerminalIndexMap $ terminals grammar
+      symbol_index_map = toSymbolIndexMap terminal_map (nonterminals grammar)
+      production_to_terminal = mkProductionToTerminal symbol_index_map $ productions grammar
+  (_, terminal_type) <- mkTerminalType terminal_map
   (start_terminal, end_terminal) <- startEndIndex symbol_index_map
   bracket_type <- findBracketIntType symbol_index_map
   production_type <- findProductionIntType grammar
   hash_table <- llpHashTable q k U64 terminal_type grammar symbol_index_map
   pure $
     Analyzer
-      { generatorKind =
+      { analyzerKind =
           Parse $
             Parser
               { startTerminal = start_terminal,
                 endTerminal = end_terminal,
                 bracketType = bracket_type,
+                lookback = q,
+                lookahead = k,
                 productionType = production_type,
+                productionToTerminal = production_to_terminal,
                 llpTable = hash_table,
-                arities = mkArities grammar
+                arities = mkArities grammar,
+                numberOfTerminals = length $ terminals grammar,
+                numberOfProductions = length $ productions grammar
               },
         terminalType = terminal_type
       }
 
-addDeadToken :: Grammar nt t -> Grammar nt (Maybe t)
-addDeadToken g = g' {terminals = terminals g' ++ [Nothing]}
+unaugmentTerminalMap :: (Ord t) => Map (AugmentedTerminal t) a -> Map t a
+unaugmentTerminalMap =
+  Map.mapKeys unaug
+    . Map.filterWithKey isTer
   where
-    g' = Just <$> g
+    unaug (AugmentedTerminal a) = a
+    unaug _ = error "This should not happened."
+    isTer (AugmentedTerminal _) _ = True
+    isTer _ _ = False
 
 mkLexerParser :: Int -> Int -> CFG -> Either Text Analyzer
 mkLexerParser q k cfg = do
   grammar <-
     augmentGrammar
       . extendByTerminals
-      . addDeadToken
       <$> cfgToGrammar cfg
-  let symbol_index_map = toSymbolIndexMap (terminals grammar) (nonterminals grammar)
-      terminal_map = toTerminalIndexMap (terminals grammar)
-      dead_token = terminal_map Map.! (AugmentedTerminal Nothing)
-  terminal_type <- findAugmentedTerminalIntType grammar
+  let terminal_map = toTerminalIndexMap (terminals grammar)
+  (dead_token, terminal_type) <- mkTerminalType terminal_map
+  let symbol_index_map = toSymbolIndexMap terminal_map (nonterminals grammar)
+      production_to_terminal = mkProductionToTerminal symbol_index_map $ productions grammar
   (start_terminal, end_terminal) <- startEndIndex symbol_index_map
   bracket_type <- findBracketIntType symbol_index_map
   production_type <- findProductionIntType grammar
   hash_table <- llpHashTable q k U64 terminal_type grammar symbol_index_map
   lexer <- cfgToDFALexer cfg
-  parallel_lexer <- intDfaParallelLexer terminal_map lexer
+  parallel_lexer <- intDfaParallelLexer (unaugmentTerminalMap terminal_map) dead_token lexer
   state_type <- extEndoType $ parLexer parallel_lexer
   transition_to_state <- transitionToStateArray parallel_lexer
   pure $
     Analyzer
-      { generatorKind =
+      { analyzerKind =
           Both
             ( Lexer
                 { stateType = state_type,
                   lexer = parallel_lexer,
                   deadToken = dead_token,
                   transitionToState = transition_to_state,
-                  ignoreToken = Map.lookup (AugmentedTerminal (Just (T "ignore"))) terminal_map
+                  ignoreToken = Map.lookup (AugmentedTerminal (T "ignore")) terminal_map
                 }
             )
             ( Parser
                 { startTerminal = start_terminal,
                   endTerminal = end_terminal,
+                  lookback = q,
+                  lookahead = k,
                   bracketType = bracket_type,
                   productionType = production_type,
+                  numberOfTerminals = length $ terminals grammar,
+                  numberOfProductions = length $ productions grammar,
+                  productionToTerminal = production_to_terminal,
                   llpTable = hash_table,
                   arities = mkArities grammar
                 }
