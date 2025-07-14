@@ -3,16 +3,9 @@ module Alpacc.Generator.Futhark.Generator
   )
 where
 
-import Alpacc.CFG
-import Alpacc.Generator.Futhark.Futharkify
 import Alpacc.Generator.Futhark.Lexer qualified as Lexer
 import Alpacc.Generator.Futhark.Parser qualified as Parser
 import Alpacc.Generator.Generator
-import Alpacc.Generator.Util
-import Alpacc.Grammar
-import Alpacc.Types
-import Data.Either.Extra
-import Data.Map qualified as Map
 import Data.String.Interpolate (i)
 import Data.Text (Text)
 import Data.Text qualified as Text
@@ -74,53 +67,30 @@ entry parse = parser.parse
 |]
       <> parentVectorTest
 
-generate :: Int -> Int -> CFG -> Either Text Text
-generate q k cfg = do
-  grammar <- extendByTerminals <$> cfgToGrammar cfg
-  let terminal_index_map = toTerminalIndexMap $ terminals grammar
-  let ts = terminals grammar
-  let nts = nonterminals grammar
-  let symbol_index_map = toSymbolIndexMap ts nts
-  terminal_type <- findAugmentedTerminalIntType grammar
-  parser <- Parser.generateParser q k terminal_type grammar symbol_index_map
-  lexer <- cfgToDFALexer cfg
-  lexer_str <- Lexer.generateLexer lexer terminal_index_map terminal_type
-  pure $
-    Text.unlines
-      [ parser,
-        lexer_str,
-        bothFunction
-      ]
-
-generateLexer :: CFG -> Either Text Text
-generateLexer cfg = do
-  t_rules <- everyTRule cfg
-  let terminal_index_map = toTerminalIndexMap (ruleT <$> t_rules)
-  terminal_type <- findTerminalIntType terminal_index_map
-  lexer <- cfgToDFALexer cfg
-  lexer_str <- Lexer.generateLexer lexer terminal_index_map terminal_type
-  pure $
-    Text.unlines
-      [ lexer_str,
-        lexerFunction
-      ]
-
-generateParser :: Int -> Int -> CFG -> Either Text Text
-generateParser q k cfg = do
-  grammar <- extendByTerminals <$> cfgToGrammar cfg
-  let symbol_index_map = toSymbolIndexMap (terminals grammar) (nonterminals grammar)
-  terminal_type <- findAugmentedTerminalIntType grammar
-  parser <- Parser.generateParser q k terminal_type grammar symbol_index_map
-  pure $
-    Text.unlines
-      [ parser,
-        parserFunction
-      ]
+auxiliary :: Analyzer -> Text
+auxiliary analyzer =
+  case analyzerKind analyzer of
+    Lex lexer ->
+      Text.unlines
+        [ Lexer.generateLexer terminal_type lexer,
+          lexerFunction
+        ]
+    Parse parser ->
+      Text.unlines
+        [ Parser.generateParser terminal_type parser,
+          parserFunction
+        ]
+    Both lexer parser ->
+      Text.unlines
+        [ Lexer.generateLexer terminal_type lexer,
+          Parser.generateParser terminal_type parser,
+          bothFunction
+        ]
+  where
+    terminal_type = terminalType analyzer
 
 generator :: Generator
 generator =
   Generator
-    { lexerParserGenerator = generate,
-      lexerGenerator = generateLexer,
-      parserGenerator = generateParser
+    { generate = auxiliary
     }
