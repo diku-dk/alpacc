@@ -53,6 +53,7 @@ data Parser
   = Parser
   { startTerminal :: Integer,
     endTerminal :: Integer,
+    emptyTerminal :: Integer,
     lookback :: Int,
     lookahead :: Int,
     bracketType :: UInt,
@@ -152,11 +153,11 @@ mkParser q k cfg = do
   let terminal_map = toTerminalIndexMap $ terminals grammar
       symbol_index_map = toSymbolIndexMap terminal_map (nonterminals grammar)
       production_to_terminal = mkProductionToTerminal symbol_index_map $ productions grammar
-  (_, terminal_type) <- mkTerminalType terminal_map
+  (empty_terminal, terminal_type) <- mkTerminalType terminal_map
   (start_terminal, end_terminal) <- startEndIndex symbol_index_map
   bracket_type <- findBracketIntType symbol_index_map
   production_type <- findProductionIntType grammar
-  hash_table <- llpHashTable q k U64 terminal_type grammar symbol_index_map
+  hash_table <- llpHashTable q k I64 empty_terminal grammar symbol_index_map
   pure $
     Analyzer
       { analyzerKind =
@@ -167,6 +168,7 @@ mkParser q k cfg = do
                 bracketType = bracket_type,
                 lookback = q,
                 lookahead = k,
+                emptyTerminal = empty_terminal,
                 productionType = production_type,
                 productionToTerminal = production_to_terminal,
                 llpTable = hash_table,
@@ -197,10 +199,11 @@ mkLexerParser q k cfg = do
   (dead_token, terminal_type) <- mkTerminalType terminal_map
   let symbol_index_map = toSymbolIndexMap terminal_map (nonterminals grammar)
       production_to_terminal = mkProductionToTerminal symbol_index_map $ productions grammar
+      empty_terminal = dead_token
   (start_terminal, end_terminal) <- startEndIndex symbol_index_map
   bracket_type <- findBracketIntType symbol_index_map
   production_type <- findProductionIntType grammar
-  hash_table <- llpHashTable q k U64 terminal_type grammar symbol_index_map
+  hash_table <- llpHashTable q k I64 empty_terminal grammar symbol_index_map
   lexer <- cfgToDFALexer cfg
   parallel_lexer <- intDfaParallelLexer (unaugmentTerminalMap terminal_map) dead_token lexer
   state_type <- extEndoType $ parLexer parallel_lexer
@@ -222,6 +225,7 @@ mkLexerParser q k cfg = do
                   endTerminal = end_terminal,
                   lookback = q,
                   lookahead = k,
+                  emptyTerminal = empty_terminal,
                   bracketType = bracket_type,
                   productionType = production_type,
                   numberOfTerminals = length $ terminals grammar,

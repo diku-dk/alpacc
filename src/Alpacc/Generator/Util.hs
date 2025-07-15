@@ -6,14 +6,12 @@ module Alpacc.Generator.Util
     startEndIndex,
     findProductionIntType,
     findBracketIntType,
-    emptyTerminal,
     llpHashTable,
     padLLPTableValues,
     findAugmentedTerminalIntType,
   )
 where
 
-import Alpacc.Debug
 import Alpacc.Grammar
 import Alpacc.HashTable
 import Alpacc.LLP
@@ -118,9 +116,6 @@ findBracketIntType index_map
   where
     max_size = toInteger $ maximum index_map
 
-emptyTerminal :: (IntType i) => i -> Integer
-emptyTerminal = intTypeMaxBound
-
 padLLPTableValues ::
   Int ->
   Int ->
@@ -133,18 +128,17 @@ padLLPTableValues max_ao max_pi =
     piPad = rpad Nothing max_pi . fmap Just
 
 llpHashTable ::
-  (Show nt, Show t, Ord nt, Ord t, NFData nt, NFData t, IntType i, IntType t', Show i, Show t', Ord i) =>
+  (Show nt, Show t, Ord nt, Ord t, NFData nt, NFData t, IntType i, Show i, Ord i) =>
   Int ->
   Int ->
   i ->
-  t' ->
+  Integer ->
   Grammar (AugmentedNonterminal nt) (AugmentedTerminal t) ->
   Map (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)) Integer ->
   Either Text (HashTableMem Integer (Bracket Integer) Int)
-llpHashTable q k t terminal_type grammar symbol_to_index = do
+llpHashTable q k t empty_terminal grammar symbol_to_index = do
   table <- llpParserTableWithStartsHomomorphisms q k grammar
-  let empty_terminal = emptyTerminal terminal_type
-      int_table =
+  let int_table =
         Map.mapKeys (uncurry (<>)) $
           padLLPTableKeys empty_terminal q k $
             toIntLLPTable symbol_to_index table

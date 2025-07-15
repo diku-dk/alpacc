@@ -6,6 +6,7 @@ import Alpacc.Lexer.Encode
 import Alpacc.Lexer.ParallelLexing
 import Alpacc.Types
 import Data.FileEmbed
+import Data.Maybe
 import Data.String.Interpolate (i)
 import Data.Text (Text)
 import Data.Text qualified as Text
@@ -39,6 +40,7 @@ module lexer = mk_lexer {
   
   def identity_endomorphism: endomorphism = #{iden}
   def dead_terminal: terminal = #{dead_token}
+  def ignore_terminal: opt terminal = #{futharkify ignore_token}
   def endo_mask: endomorphism = #{index_mask}
   def endo_offset: endomorphism = #{index_offset}
   def terminal_mask: endomorphism = #{token_mask}
@@ -68,6 +70,7 @@ module lexer = mk_lexer {
         producingOffset = produce_offset
       } = parMasks int_parallel_lexer
     dead_token = deadToken lex
+    ignore_token = ignoreToken lex
     parallel_lexer = parLexer int_parallel_lexer
     endomorphisms_size = endomorphismsSize parallel_lexer
     iden = identity parallel_lexer

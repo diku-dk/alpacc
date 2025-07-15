@@ -50,11 +50,13 @@ def hash_table_level_one_size: i64 = #{hashTableLevelOneSize hash_table}
 def hash_table_level_two_size: i64 = #{hashTableLevelTwoSize hash_table}
 def q: i64 = #{q}
 def k: i64 = #{k}
+def empty_terminal: terminal = #{empty_terminal}
 def start_terminal: terminal = #{start_terminal}
 def end_terminal: terminal = #{end_terminal}
 def production_to_terminal: [number_of_productions](opt terminal) =
-  #{production_to_terminal}
-def production_to_arity: [number_of_productions]i16 = sized number_of_productions 
+  #{production_to_terminal} :> [number_of_productions](opt terminal)
+def production_to_arity: [number_of_productions]i64 =
+  #{ari} :> [number_of_productions]i64
 
 def level_two_offsets: [hash_table_level_two_size]i64 =
   #{futharkify $ levelTwoOffsets hash_table} :> [hash_table_level_two_size]i64
@@ -106,8 +108,10 @@ def level_two_consts: [q + k]i64 =
     k = lookahead parser
     start_terminal = startTerminal parser
     end_terminal = endTerminal parser
+    empty_terminal = emptyTerminal parser
     hash_table = llpTable parser
     number_of_productions = numberOfProductions parser
     number_of_terminals = numberOfTerminals parser
     brackets = futharkifyBracket <$> stacksArray hash_table
     production_to_terminal = futharkify $ productionToTerminal parser
+    ari = futharkify $ arities parser
