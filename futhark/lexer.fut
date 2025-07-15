@@ -16,7 +16,7 @@ module type lexer_context = {
   val endo_offset : endomorphism_module.t
   val terminal_offset : endomorphism_module.t
   val produce_offset : endomorphism_module.t
-  val is_ignore : terminal_module.t -> bool
+  val ignore_terminal : opt terminal_module.t
   val transitions_to_endomorphisms : [256]endomorphism_module.t
   val compositions : [endomorphism_size * endomorphism_size]endomorphism_module.t
   val dead_terminal : terminal_module.t
@@ -69,6 +69,11 @@ module mk_lexer (L: lexer_context) = {
   def take_right a b =
     if b == i64.highest then a else b
 
+  def is_ignore t =
+    match L.ignore_terminal
+    case #some t' -> t L.terminal_module.== t'
+    case #none -> false
+
   def lex_step [n]
                (offset: i64)
                (prev_endo: endomorphism)
@@ -79,7 +84,7 @@ module mk_lexer (L: lexer_context) = {
       tabulate n (\i ->
                     i != n - 1
                     && is_produce endos[i + 1]
-                    && (not <-< L.is_ignore <-< to_terminal) endos[i])
+                    && (not <-< is_ignore <-< to_terminal) endos[i])
     let is =
       map i64.bool flags
       |> scan (+) 0
@@ -114,9 +119,9 @@ module mk_lexer (L: lexer_context) = {
         in (res'' ++ res', last_endo, last_start)
     let last_terminal = to_terminal final_endo
     let last =
-      if L.is_ignore last_terminal
+      if is_ignore last_terminal
       then []
-      else #[trace] [(to_terminal final_endo, (final_start, n))]
+      else [(to_terminal final_endo, (final_start, n))]
     let result = some (res ++ last)
     in if is_accept final_endo
        then result

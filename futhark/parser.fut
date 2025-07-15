@@ -22,7 +22,7 @@ module type parser_context = {
   val number_of_terminals : i64
   val number_of_productions : i64
   val production_to_terminal : [number_of_productions](opt terminal_module.t)
-  val production_to_arity : [number_of_productions]i16
+  val production_to_arity : [number_of_productions]i64
   val start_terminal : terminal_module.t
   val end_terminal : terminal_module.t
   val level_two_offsets : [hash_table_level_two_size]i64
@@ -57,10 +57,10 @@ module mk_parser (P: parser_context) = {
   def hash [n] (arr: [n]terminal) (consts: [n]i64) (size: i64) : i64 =
     #[inline]
     #[sequential]
-    map terminal_module.to_i64 arr
+    map (terminal_module.to_i64) arr
     |> map2 (*) consts
     |> i64.sum
-    |> (% size)
+    |> (% (i64.max 1 size))
 
   def get_key [n] (arr: [n]terminal) (i: i64) : [P.q + P.k]terminal =
     #[inline]
@@ -201,7 +201,7 @@ module mk_parser (P: parser_context) = {
   def production_to_terminal (p: production) : opt terminal =
     copy P.production_to_terminal[production_module.to_i64 p]
 
-  def production_to_arity (p: production) : i16 =
+  def production_to_arity (p: production) : i64 =
     copy P.production_to_arity[production_module.to_i64 p]
 
   def productions [n] (arr: [n]terminal) : []production =
@@ -257,7 +257,7 @@ module mk_parser (P: parser_context) = {
   def parents [n] (ps: [n]production) : [n]i64 =
     let tree =
       map production_to_arity ps
-      |> map ((+ -1) <-< i64.i16)
+      |> map (+ -1)
       |> exscan (+) 0
       |> (.1)
       |> mk_tree i64.min i64.highest
