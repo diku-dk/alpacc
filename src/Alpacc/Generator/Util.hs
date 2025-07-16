@@ -4,11 +4,8 @@ module Alpacc.Generator.Util
     padLLPTableKeys,
     toIntLLPTable,
     startEndIndex,
-    findProductionIntType,
-    findBracketIntType,
     llpHashTable,
     padLLPTableValues,
-    findAugmentedTerminalIntType,
   )
 where
 
@@ -77,44 +74,6 @@ startEndIndex symbol_index_map = do
   where
     maybe_start_terminal = Map.lookup (Terminal RightTurnstile) symbol_index_map
     maybe_end_terminal = Map.lookup (Terminal LeftTurnstile) symbol_index_map
-
-findProductionIntType ::
-  Grammar nt t ->
-  Either Text UInt
-findProductionIntType =
-  maybeToEither err
-    . toIntType
-    . fromIntegral
-    . length
-    . productions
-  where
-    err = "Error: There are too many productions to find a integral type."
-
-findAugmentedTerminalIntType ::
-  Grammar nt t ->
-  Either Text UInt
-findAugmentedTerminalIntType =
-  maybeToEither err
-    . toIntType
-    . (+ 2)
-    . fromIntegral
-    . length
-    . terminals
-  where
-    err = "Error: There are too many terminals to find a integral type."
-
-findBracketIntType ::
-  Map (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)) Integer ->
-  Either Text UInt
-findBracketIntType index_map
-  | max_size < 0 = Left "Max size may not be negative."
-  | max_size < 2 ^ (8 - 1 :: Int) - 1 = Right U8
-  | max_size < 2 ^ (16 - 1 :: Int) - 1 = Right U16
-  | max_size < 2 ^ (32 - 1 :: Int) - 1 = Right U32
-  | max_size < 2 ^ (64 - 1 :: Int) - 1 = Right U64
-  | otherwise = Left "Error: There are too many symbols to find a integral type."
-  where
-    max_size = toInteger $ maximum index_map
 
 padLLPTableValues ::
   Int ->

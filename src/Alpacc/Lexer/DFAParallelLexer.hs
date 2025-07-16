@@ -4,6 +4,7 @@ module Alpacc.Lexer.DFAParallelLexer
   )
 where
 
+import Alpacc.Encode
 import Alpacc.Lexer.DFA
 import Alpacc.Lexer.Encode
 import Alpacc.Lexer.FSA
@@ -99,8 +100,7 @@ dfaParallelLexer lexer' = parallelLexer lexer endo_table
 
 intDfaParallelLexer ::
   (Ord t, Ord s, Enum t, Bounded t, Ord k, Integral i, Bits i) =>
-  Map k i ->
-  i ->
+  TerminalEncoder k ->
   DFALexer t s k ->
   Either Text (IntParallelLexer t i)
-intDfaParallelLexer m d = intParallelLexer m d . dfaParallelLexer
+intDfaParallelLexer e = intParallelLexer e . dfaParallelLexer
