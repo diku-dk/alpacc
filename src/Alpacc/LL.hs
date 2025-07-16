@@ -393,6 +393,65 @@ first k grammar = first' k first_map
   where
     first_map = firstMap k grammar
 
+-- | Extends the terminals by one terminal which can be used when constructing
+-- the follow sets.
+data ExtendedTerminal t
+  = ExtendedTerminal t
+  | End
+  deriving (Ord, Eq)
+
+-- | Shows whats inside the terminals or the End terminal.
+instance (Show t) => Show (ExtendedTerminal t) where
+  show End = "End"
+  show (ExtendedTerminal t) = show t
+
+-- | Extends the nonterminals by one nonterminal which can be used when constructing
+-- the follow sets.
+data ExtendedNonterminal nt
+  = ExtendedNonterminal nt
+  | ExtendedStart
+  deriving (Ord, Eq)
+
+-- | Shows whats inside the nonterminals or the Start nonterminal.
+instance (Show nt) => Show (ExtendedNonterminal nt) where
+  show ExtendedStart = "Start"
+  show (ExtendedNonterminal t) = show t
+
+-- | Given ExtendedNonterminal return the value inside the Nonterminal.
+unextendNT :: ExtendedNonterminal nt -> nt
+unextendNT (ExtendedNonterminal nt) = nt
+unextendNT ExtendedStart = error "Cannot unextend Start."
+
+-- | Given ExtendedNonterminal return the value inside the ExtendedNonterminal.
+unextendT :: ExtendedTerminal t -> t
+unextendT (ExtendedTerminal t) = t
+unextendT End = error "Cannot unextend End."
+
+-- | Extends a grammar with a new starting production where the old starting
+-- production is in the beginning of the left handside and k End terminals are
+-- at the back of the left hand side.
+extendGrammar ::
+  Int ->
+  Grammar nt t ->
+  Grammar (ExtendedNonterminal nt) (ExtendedTerminal t)
+extendGrammar k grammar =
+  Grammar
+    { start = ExtendedStart,
+      terminals = terminals',
+      nonterminals = nonterminals',
+      productions = productions'
+    }
+  where
+    extended_productions = augmentProduction <$> productions grammar
+    productions' = Production ExtendedStart symbols' : extended_productions
+    nonterminals' = ExtendedStart : (ExtendedNonterminal <$> nonterminals grammar)
+    extended_terminals = ExtendedTerminal <$> terminals grammar
+    terminals' = End : extended_terminals
+    start' = Nonterminal . ExtendedNonterminal $ start grammar
+    symbols' = start' : (Terminal <$> padding)
+    padding = replicate k End
+    augmentProduction = Bifunctor.bimap ExtendedNonterminal ExtendedTerminal
+
 unextendMap ::
   (Ord nt, Ord t) =>
   Map (ExtendedNonterminal nt) (Set [ExtendedTerminal t]) ->

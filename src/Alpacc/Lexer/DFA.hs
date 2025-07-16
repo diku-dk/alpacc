@@ -6,6 +6,8 @@ module Alpacc.Lexer.DFA
     DFALexer,
     fromRegExToDFA,
     transitions',
+    dfaLexerSpec,
+    DFALexerSpec,
   )
 where
 
@@ -287,13 +289,26 @@ addProducingTransitions dfa =
     new_trans = Map.union _transitions token_producing_trans
     new_dfa = dfa {transitions = addIdentity new_trans}
 
+data DFALexerSpec k o t
+  = DFALexerSpec
+  { orderMap :: Map k o,
+    regexMap :: Map k (RegEx (NonEmpty t))
+  }
+  deriving (Show, Ord, Eq)
+
+dfaLexerSpec :: (Ord o, Ord k, Enum o) => o -> [(k, RegEx (NonEmpty t))] -> DFALexerSpec k o t
+dfaLexerSpec start t_rules =
+  DFALexerSpec order_map terminal_map
+  where
+    order_map = Map.fromList $ flip zip [start ..] $ fst <$> t_rules
+    terminal_map = Map.fromList t_rules
+
 lexerDFA ::
   (Ord t, Ord s, Enum s, Ord k, Ord o) =>
-  Map k o ->
   s ->
-  Map k (RegEx (NonEmpty t)) ->
+  DFALexerSpec k o t ->
   DFALexer t s k
-lexerDFA terminal_to_order start_state regex_map =
+lexerDFA start_state spec =
   enumerateLexer start_state $
     Lexer
       { fsa = dfa,
@@ -301,6 +316,9 @@ lexerDFA terminal_to_order start_state regex_map =
         producesToken = produces_token
       }
   where
+    terminal_to_order = orderMap spec
+    regex_map = regexMap spec
+
     auxiliary =
       dfaToNFA
         . enumerateFSA start_state

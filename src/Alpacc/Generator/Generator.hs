@@ -106,13 +106,13 @@ mkTerminalType ts_map =
 
 mkProductionToTerminal ::
   (Ord nt, Ord t) =>
-  Map (Symbol (AugmentedNonterminal (Either nt t)) (AugmentedTerminal t)) Integer ->
-  [Production (AugmentedNonterminal (Either nt t)) (AugmentedTerminal t)] ->
+  Map (Symbol (AugmentedNonterminal (Symbol nt t)) (AugmentedTerminal t)) Integer ->
+  [Production (AugmentedNonterminal (Symbol nt t)) (AugmentedTerminal t)] ->
   [Maybe Integer]
 mkProductionToTerminal symbol_to_index prods =
   p . nonterminal <$> prods
   where
-    p (AugmentedNonterminal (Right t)) = Just x
+    p (AugmentedNonterminal (Terminal t)) = Just x
       where
         x = symbol_to_index Map.! Terminal (AugmentedTerminal t)
     p _ = Nothing
@@ -122,8 +122,8 @@ mkLexer cfg = do
   t_rules <- everyTRule cfg
   let terminal_map = toTerminalIndexMap (ruleT <$> t_rules)
   (dead_token, terminal_type) <- mkTerminalType terminal_map
-  lexer <- cfgToDFALexer cfg
-  parallel_lexer <- intDfaParallelLexer terminal_map dead_token lexer
+  spec <- cfgToDFALexerSpec cfg
+  parallel_lexer <- intDfaParallelLexer terminal_map dead_token undefined
   state_type <- extEndoType $ parLexer parallel_lexer
   transition_to_state <- transitionToStateArray parallel_lexer
   pure $
@@ -149,7 +149,7 @@ mkArities = fmap arity . productions
 
 mkParser :: Int -> Int -> CFG -> Either Text Analyzer
 mkParser q k cfg = do
-  grammar <- augmentGrammar . extendByTerminals <$> cfgToGrammar cfg
+  grammar <- cfgToGrammar cfg
   let terminal_map = toTerminalIndexMap $ terminals grammar
       symbol_index_map = toSymbolIndexMap terminal_map (nonterminals grammar)
       production_to_terminal = mkProductionToTerminal symbol_index_map $ productions grammar
@@ -191,10 +191,7 @@ unaugmentTerminalMap =
 
 mkLexerParser :: Int -> Int -> CFG -> Either Text Analyzer
 mkLexerParser q k cfg = do
-  grammar <-
-    augmentGrammar
-      . extendByTerminals
-      <$> cfgToGrammar cfg
+  grammar <- cfgToGrammar cfg
   let terminal_map = toTerminalIndexMap (terminals grammar)
   (dead_token, terminal_type) <- mkTerminalType terminal_map
   let symbol_index_map = toSymbolIndexMap terminal_map (nonterminals grammar)
@@ -204,8 +201,8 @@ mkLexerParser q k cfg = do
   bracket_type <- findBracketIntType symbol_index_map
   production_type <- findProductionIntType grammar
   hash_table <- llpHashTable q k I64 empty_terminal grammar symbol_index_map
-  lexer <- cfgToDFALexer cfg
-  parallel_lexer <- intDfaParallelLexer (unaugmentTerminalMap terminal_map) dead_token lexer
+  lexer <- cfgToDFALexerSpec cfg
+  parallel_lexer <- intDfaParallelLexer (unaugmentTerminalMap terminal_map) dead_token undefined
   state_type <- extEndoType $ parLexer parallel_lexer
   transition_to_state <- transitionToStateArray parallel_lexer
   pure $

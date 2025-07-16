@@ -4,29 +4,30 @@ module Alpacc.Grammar
     Production (..),
     AugmentedNonterminal (..),
     AugmentedTerminal (..),
-    ExtendedNonterminal (..),
-    ExtendedTerminal (..),
     T (..),
     NT (..),
+    Unused (..),
+    ParsingGrammar,
+    ParsingTerminals,
+    getTerminals,
+    parsingTerminals,
+    augmentGrammar,
     symbols,
     nonterminal,
     reverseGrammar,
-    augmentGrammar,
     findProductions,
     isTerminal,
     isNonterminal,
     toProductionsMap,
     unpackNTTGrammar,
-    unextendNT,
-    unextendT,
-    extendGrammar,
     unpackNonterminal,
     unpackTerminal,
     substringGrammar,
     rightSymbols,
     grammarDuplicates,
     grammarError,
-    extendByTerminals,
+    parsingGrammar,
+    getGrammar,
   )
 where
 
@@ -177,65 +178,6 @@ reverseGrammar grammar =
   where
     reverseProduction (Production nt s) = Production nt (reverse s)
 
--- | Extends the terminals by one terminal which can be used when constructing
--- the follow sets.
-data ExtendedTerminal t
-  = ExtendedTerminal t
-  | End
-  deriving (Ord, Eq)
-
--- | Shows whats inside the terminals or the End terminal.
-instance (Show t) => Show (ExtendedTerminal t) where
-  show End = "End"
-  show (ExtendedTerminal t) = show t
-
--- | Extends the nonterminals by one nonterminal which can be used when constructing
--- the follow sets.
-data ExtendedNonterminal nt
-  = ExtendedNonterminal nt
-  | ExtendedStart
-  deriving (Ord, Eq)
-
--- | Shows whats inside the nonterminals or the Start nonterminal.
-instance (Show nt) => Show (ExtendedNonterminal nt) where
-  show ExtendedStart = "Start"
-  show (ExtendedNonterminal t) = show t
-
--- | Given ExtendedNonterminal return the value inside the Nonterminal.
-unextendNT :: ExtendedNonterminal nt -> nt
-unextendNT (ExtendedNonterminal nt) = nt
-unextendNT ExtendedStart = error "Cannot unextend Start."
-
--- | Given ExtendedNonterminal return the value inside the ExtendedNonterminal.
-unextendT :: ExtendedTerminal t -> t
-unextendT (ExtendedTerminal t) = t
-unextendT End = error "Cannot unextend End."
-
--- | Extends a grammar with a new starting production where the old starting
--- production is in the beginning of the left handside and k End terminals are
--- at the back of the left hand side.
-extendGrammar ::
-  Int ->
-  Grammar nt t ->
-  Grammar (ExtendedNonterminal nt) (ExtendedTerminal t)
-extendGrammar k grammar =
-  Grammar
-    { start = ExtendedStart,
-      terminals = terminals',
-      nonterminals = nonterminals',
-      productions = productions'
-    }
-  where
-    extended_productions = augmentProduction <$> productions grammar
-    productions' = Production ExtendedStart symbols' : extended_productions
-    nonterminals' = ExtendedStart : (ExtendedNonterminal <$> nonterminals grammar)
-    extended_terminals = ExtendedTerminal <$> terminals grammar
-    terminals' = End : extended_terminals
-    start' = Nonterminal . ExtendedNonterminal $ start grammar
-    symbols' = start' : (Terminal <$> padding)
-    padding = replicate k End
-    augmentProduction = bimap ExtendedNonterminal ExtendedTerminal
-
 -- | Augmenting the grammar corresponds to the augmentation in algorithm 8 of
 -- the LLP paper.
 augmentGrammar ::
@@ -250,10 +192,10 @@ augmentGrammar grammar =
     }
   where
     augmented_productions = augmentProduction <$> productions grammar
-    productions' = Production Start symbols' : augmented_productions
-    nonterminals' = Start : (AugmentedNonterminal <$> nonterminals grammar)
+    productions' = augmented_productions ++ [Production Start symbols']
+    nonterminals' = (AugmentedNonterminal <$> nonterminals grammar) ++ [Start]
     augmented_terminals = AugmentedTerminal <$> terminals grammar
-    terminals' = RightTurnstile : LeftTurnstile : augmented_terminals
+    terminals' = augmented_terminals ++ [RightTurnstile, LeftTurnstile]
     start' = Nonterminal . AugmentedNonterminal $ start grammar
     leftPad = [Terminal RightTurnstile]
     rightPad = [Terminal LeftTurnstile]
@@ -384,31 +326,70 @@ closureAlgorithm grammar = fixedPointIterate (/=) (`newProductives` prods) Set.e
     isProductive set = all (isProductive1 set) . symbols
     newProductives set = Set.fromList . fmap nonterminal . List.filter (isProductive set)
 
-extendByTerminals ::
-  (Ord nt, Ord t, Show nt, Show t) =>
+data Unused t
+  = Unused
+  | Used t
+  deriving (Show, Eq, Ord)
+
+newtype ParsingTerminals t
+  = ParsingTerminals
+  {pTerminals :: [Unused t]}
+  deriving (Show, Eq, Ord)
+
+parsingTerminals :: [t] -> ParsingTerminals t
+parsingTerminals =
+  ParsingTerminals
+    . (++ [Unused])
+    . fmap Used
+
+getTerminals :: ParsingTerminals t -> [Unused t]
+getTerminals = pTerminals
+
+addUnusedTerminal ::
   Grammar nt t ->
-  Grammar (Either nt t) t
+  Grammar nt (Unused t)
+addUnusedTerminal grammar =
+  grammar
+    { terminals = pTerminals $ parsingTerminals $ terminals grammar,
+      productions = second Used <$> productions grammar
+    }
+
+extendByTerminals ::
+  Grammar nt t ->
+  Grammar (Symbol nt t) t
 extendByTerminals grammar = new_grammar
   where
     ts = terminals grammar
     nts = nonterminals grammar
-    right_nts = map Left nts
-    left_nts = map Right ts
-    new_nts = left_nts ++ right_nts
+    left_nts = map Nonterminal nts
+    right_nts = map Terminal ts
+    new_nts = right_nts ++ left_nts
     ts_prods =
-      zipWith Production left_nts $
+      zipWith Production right_nts $
         map (List.singleton . Terminal) ts
-    toNonterminal (Terminal a) = Nonterminal $ Right a
-    toNonterminal (Nonterminal a) = Nonterminal $ Left a
-    toEither (Production nt syms) =
-      Production (Left nt) $
-        toNonterminal
-          <$> syms
-    nts_prods = toEither <$> productions grammar
+    toSymbol (Production nt syms) =
+      Production (Nonterminal nt) $ Nonterminal <$> syms
+    nts_prods = toSymbol <$> productions grammar
     new_grammar =
       Grammar
-        { start = Left $ start grammar,
+        { start = Nonterminal $ start grammar,
           terminals = ts,
           nonterminals = new_nts,
           productions = nts_prods ++ ts_prods
         }
+
+newtype ParsingGrammar nt t
+  = ParsingGrammar
+  { pGrammar :: Grammar (AugmentedNonterminal (Symbol nt t)) (AugmentedTerminal (Unused t))
+  }
+  deriving (Show, Eq, Ord)
+
+getGrammar :: ParsingGrammar nt t -> Grammar (AugmentedNonterminal (Symbol nt t)) (AugmentedTerminal (Unused t))
+getGrammar = pGrammar
+
+parsingGrammar :: Grammar nt t -> ParsingGrammar nt t
+parsingGrammar =
+  ParsingGrammar
+    . augmentGrammar
+    . addUnusedTerminal
+    . extendByTerminals
