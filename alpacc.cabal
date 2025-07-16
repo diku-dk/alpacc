@@ -57,6 +57,7 @@ library
   exposed-modules:
     Alpacc.CFG
     Alpacc.Grammar
+    Alpacc.Encode
     Alpacc.LL
     Alpacc.LLP
     Alpacc.Util

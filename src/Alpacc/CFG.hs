@@ -1,7 +1,7 @@
 module Alpacc.CFG
   ( cfgFromText,
     cfgToGrammar,
-    cfgToDFALexer,
+    cfgToDFALexerSpec,
     CFG (..),
     TRule (..),
     NTRule (..),
@@ -56,7 +56,9 @@ symbolTerminal (Nonterminal _) = mempty
 ruleTerminals :: NTRule -> Set T
 ruleTerminals = foldMap (foldMap symbolTerminal) . ruleProductions
 
-cfgToGrammar :: CFG -> Either Text (Grammar NT T)
+cfgToGrammar ::
+  CFG ->
+  Either Text (ParsingGrammar NT T)
 cfgToGrammar (CFG {ntRules = []}) = Left "CFG has no production rules."
 cfgToGrammar (CFG {tRules, ntRules}) =
   let productions = concatMap ruleProds ntRules
@@ -68,7 +70,8 @@ cfgToGrammar (CFG {tRules, ntRules}) =
       grammar = Grammar {start, terminals, nonterminals, productions}
    in case grammarError grammar of
         Just err -> Left err
-        Nothing -> Right grammar
+        Nothing ->
+          Right $ parsingGrammar grammar
   where
     pred' (T "ignore") = True
     pred' _ = False
@@ -93,18 +96,16 @@ implicitTRules (CFG {tRules, ntRules}) = mapM implicitLitToRegEx implicit
 tRuleToTuple :: TRule -> (T, RegEx (NonEmpty Word8))
 tRuleToTuple (TRule {ruleT = t, ruleRegex = regex}) = (t, NonEmpty.fromList <$> toWord8 regex)
 
-cfgToDFALexer :: CFG -> Either Text (DFALexer Word8 Int T)
-cfgToDFALexer (CFG {tRules = []}) = Left "CFG has no lexical rules."
-cfgToDFALexer cfg@(CFG {tRules}) = do
+cfgToDFALexerSpec :: CFG -> Either Text (DFALexerSpec T Int Word8)
+cfgToDFALexerSpec (CFG {tRules = []}) = Left "CFG has no lexical rules."
+cfgToDFALexerSpec cfg@(CFG {tRules}) = do
   implicit_t_rules <- implicitTRules cfg
   let all_t_rules = implicit_t_rules ++ tRules
   let t_rule_tuples = tRuleToTuple <$> all_t_rules
-  let order_map = Map.fromList $ flip zip [(0 :: Int) ..] $ fst <$> t_rule_tuples
-  let terminal_map = Map.fromList t_rule_tuples
   let x = find (producesEpsilon . snd) t_rule_tuples
   case x of
     Just (t, _) -> Left $ Text.pack [i|Error: #{t} may not produce empty strings.|]
-    Nothing -> Right $ lexerDFA order_map (0 :: Int) terminal_map
+    Nothing -> Right $ dfaLexerSpec 0 t_rule_tuples
 
 type Parser = Parsec Void Text
 

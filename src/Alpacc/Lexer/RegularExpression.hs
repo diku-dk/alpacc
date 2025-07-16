@@ -27,7 +27,7 @@ data RegEx c
   | Star (RegEx c)
   | Alter (RegEx c) (RegEx c)
   | Concat (RegEx c) (RegEx c)
-  deriving (Eq, Show)
+  deriving (Eq, Ord, Show)
 
 instance Functor RegEx where
   fmap _ Epsilon = Epsilon
