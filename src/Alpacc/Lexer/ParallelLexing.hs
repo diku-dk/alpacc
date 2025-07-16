@@ -88,7 +88,6 @@ data ParallelLexer t e = ParallelLexer
     identity :: !e,
     endomorphismsSize :: !Int,
     dead :: !e,
-    tokenSize :: !Int,
     acceptArray :: !(UArray E Bool)
   }
   deriving (Show, Eq, Ord)
@@ -401,7 +400,6 @@ parallelLexer lexer endo_table =
       identity = identityEndo,
       endomorphismsSize = IntMap.size endo_data,
       dead = deadEndo,
-      tokenSize = Map.size $ tokenMap lexer,
       acceptArray = accept_array
     }
   where

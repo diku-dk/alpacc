@@ -2,10 +2,12 @@ module Alpacc.Lexer.Encode
   ( intParallelLexer,
     IntParallelLexer (..),
     ParallelLexerMasks (..),
-    extEndoType,
+    stateIntType,
   )
 where
 
+import Alpacc.Encode
+import Alpacc.Grammar
 import Alpacc.Lexer.ParallelLexing
 import Alpacc.Types
 import Control.Monad
@@ -14,8 +16,7 @@ import Data.Either.Extra
 import Data.List qualified as List
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NonEmpty hiding (NonEmpty)
-import Data.Map.Strict (Map)
-import Data.Map.Strict qualified as Map hiding (Map)
+import Data.Maybe
 import Data.Text (Text)
 
 errorMessage :: Text
@@ -55,13 +56,17 @@ data ParallelLexerMasks = ParallelLexerMasks
   }
   deriving (Eq, Ord, Show)
 
-extEndoType :: ParallelLexer t k -> Either Text UInt
-extEndoType (ParallelLexer {endomorphismsSize = e, tokenSize = t}) =
-  maybeToEither errorMessage . toIntType . (2 ^) . sum $ findBitSize <$> [e, t, 1]
+stateIntType :: ParallelLexer t k -> TerminalEncoder t -> Either Text UInt
+stateIntType (ParallelLexer {endomorphismsSize = e}) encoder =
+  maybeToEither errorMessage
+    . toIntType
+    . (2 ^)
+    . sum
+    $ findBitSize <$> [e, numTerminals encoder, 1]
 
-parallelLexerToMasks64 :: ParallelLexer t k -> Either Text Masks64
-parallelLexerToMasks64 (ParallelLexer {endomorphismsSize = e, tokenSize = t}) =
-  masks [e, t, 1]
+parallelLexerToMasks64 :: ParallelLexer t k -> TerminalEncoder t' -> Either Text Masks64
+parallelLexerToMasks64 (ParallelLexer {endomorphismsSize = e}) encoder =
+  masks [e, numTerminals encoder, 1]
 
 unsafeEncodeMasks64 :: (Bits i, Integral i) => Masks64 -> NonEmpty i -> i
 unsafeEncodeMasks64 (Masks64 ms) elems =
@@ -104,19 +109,18 @@ parallelLexerMasksToMasks64 lexer_masks =
         Mask64 {mask = mask_produce, offset = offset_produce}
       ]
 
-lexerMasks :: ParallelLexer t k -> Either Text ParallelLexerMasks
-lexerMasks lexer = do
-  ms <- parallelLexerToMasks64 lexer
+lexerMasks :: ParallelLexer t k -> TerminalEncoder t' -> Either Text ParallelLexerMasks
+lexerMasks lexer encoder = do
+  ms <- parallelLexerToMasks64 lexer encoder
   masks64ToParallelLexerMasks ms
 
 encodeEndoData ::
   (Ord k, Bits i, Integral i) =>
   ParallelLexerMasks ->
-  i ->
-  Map k i ->
+  TerminalEncoder k ->
   EndoData k ->
   i
-encodeEndoData lexer_masks dead_token to_int endo_data =
+encodeEndoData lexer_masks encoder endo_data =
   do
     unsafeEncodeMasks64 ms
     $ NonEmpty.fromList [fromIntegral e, t, p]
@@ -128,10 +132,11 @@ encodeEndoData lexer_masks dead_token to_int endo_data =
         isProducing = produce
       } = endo_data
     p = fromIntegral $ fromEnum produce
+    toInt = fromInteger . fromJust
     t =
       case maybe_token of
-        Just t' -> to_int Map.! t'
-        Nothing -> dead_token
+        Just t' -> toInt $ terminalLookup (Used t') encoder
+        Nothing -> toInt $ terminalLookup Unused encoder
 
 data IntParallelLexer t i = IntParallelLexer
   { parLexer :: !(ParallelLexer t i),
@@ -141,13 +146,12 @@ data IntParallelLexer t i = IntParallelLexer
 
 intParallelLexer ::
   (Ord t, Ord k, Bits i, Integral i) =>
-  Map k i ->
-  i ->
+  TerminalEncoder k ->
   ParallelLexer t (EndoData k) ->
   Either Text (IntParallelLexer t i)
-intParallelLexer to_int dead_token parallel_lexer = do
-  ms <- lexerMasks parallel_lexer
-  let encode = encodeEndoData ms dead_token to_int
+intParallelLexer encoder parallel_lexer = do
+  ms <- lexerMasks parallel_lexer encoder
+  let encode = encodeEndoData ms encoder
   let new_compositions = fmap encode <$> compositions parallel_lexer
   let new_endomorphims = encode <$> endomorphisms parallel_lexer
   let new_identity = encode $ identity parallel_lexer

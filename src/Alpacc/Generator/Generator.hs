@@ -79,31 +79,6 @@ data Analyzer
   }
   deriving (Show)
 
-toTerminalIndexMap :: (Ord t) => [t] -> Map t Integer
-toTerminalIndexMap = Map.fromList . flip zip [0 ..]
-
-toSymbolIndexMap ::
-  (Ord t, Ord nt) =>
-  Map t Integer ->
-  [nt] ->
-  Map (Symbol nt t) Integer
-toSymbolIndexMap ts_map nts =
-  Map.union (Map.mapKeys Terminal ts_map) nts_map
-  where
-    max_index = maximum ts_map
-    nts_map = Map.fromList $ zip (map Nonterminal nts) [max_index ..]
-
-mkTerminalType ::
-  Map t Integer ->
-  Either Text (Integer, UInt)
-mkTerminalType ts_map =
-  fmap (dead_token,) $
-    maybeToEither err $
-      toIntType dead_token
-  where
-    dead_token = succ $ maximum ts_map
-    err = "Error: There are too many terminals to find a integral type."
-
 mkProductionToTerminal ::
   (Ord nt, Ord t) =>
   Map (Symbol (AugmentedNonterminal (Symbol nt t)) (AugmentedTerminal t)) Integer ->
@@ -119,12 +94,11 @@ mkProductionToTerminal symbol_to_index prods =
 
 mkLexer :: CFG -> Either Text Analyzer
 mkLexer cfg = do
-  t_rules <- everyTRule cfg
-  let terminal_map = toTerminalIndexMap (ruleT <$> t_rules)
-  (dead_token, terminal_type) <- mkTerminalType terminal_map
   spec <- cfgToDFALexerSpec cfg
+
+  (dead_token, terminal_type) <- mkTerminalType terminal_map
   parallel_lexer <- intDfaParallelLexer terminal_map dead_token undefined
-  state_type <- extEndoType $ parLexer parallel_lexer
+  state_type <- stateIntType $ parLexer parallel_lexer
   transition_to_state <- transitionToStateArray parallel_lexer
   pure $
     Analyzer
@@ -178,16 +152,6 @@ mkParser q k cfg = do
               },
         terminalType = terminal_type
       }
-
-unaugmentTerminalMap :: (Ord t) => Map (AugmentedTerminal t) a -> Map t a
-unaugmentTerminalMap =
-  Map.mapKeys unaug
-    . Map.filterWithKey isTer
-  where
-    unaug (AugmentedTerminal a) = a
-    unaug _ = error "This should not happened."
-    isTer (AugmentedTerminal _) _ = True
-    isTer _ _ = False
 
 mkLexerParser :: Int -> Int -> CFG -> Either Text Analyzer
 mkLexerParser q k cfg = do
