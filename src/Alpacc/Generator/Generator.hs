@@ -97,8 +97,8 @@ mkLexer :: CFG -> Either Text Analyzer
 mkLexer cfg = do
   spec <- cfgToDFALexerSpec cfg
   let ignore = T "ignore"
-  let encoder = encodeTerminals ignore $ parsingTerminals $ dfaTerminals spec
-  let dfa = lexerDFA (0 :: Integer) spec
+      encoder = encodeTerminals ignore $ parsingTerminals $ dfaTerminals spec
+      dfa = lexerDFA (0 :: Integer) spec
   terminal_type <- terminalIntType encoder
   parallel_lexer <- intDfaParallelLexer encoder dfa
   state_type <- stateIntType (parLexer parallel_lexer) encoder
@@ -117,8 +117,8 @@ mkLexer cfg = do
         terminalType = terminal_type
       }
 
-mkArities :: Grammar nt t -> [Integer]
-mkArities = fmap arity . productions
+mkArities :: ParsingGrammar nt t -> [Integer]
+mkArities = fmap arity . productions . getGrammar
   where
     arity = sum . fmap isNt . symbols
     isNt (Nonterminal _) = 1 :: Integer
@@ -128,7 +128,7 @@ mkParser :: Int -> Int -> CFG -> Either Text Analyzer
 mkParser q k cfg = do
   grammar <- cfgToGrammar cfg
   let ignore = T "ignore"
-  let s_encoder = encodeSymbols ignore grammar
+      s_encoder = encodeSymbols ignore grammar
       t_encoder = fromSymbolToTerminalEncoder s_encoder
       production_to_terminal = mkProductionToTerminal t_encoder grammar
       start_terminal = symbolStartTerminal s_encoder
@@ -137,7 +137,7 @@ mkParser q k cfg = do
   terminal_type <- symbolTerminalIntType s_encoder
   bracket_type <- bracketIntType s_encoder
   production_type <- productionIntType grammar
-  hash_table <- llpHashTable q k I64 empty_terminal grammar symbol_index_map
+  hash_table <- llpHashTable q k I64 empty_terminal grammar s_encoder
   pure $
     Analyzer
       { analyzerKind =
@@ -153,7 +153,7 @@ mkParser q k cfg = do
                 productionToTerminal = production_to_terminal,
                 llpTable = hash_table,
                 arities = mkArities grammar,
-                numberOfProductions = length $ productions grammar
+                numberOfProductions = length $ productions $ getGrammar grammar
               },
         terminalType = terminal_type
       }
@@ -161,18 +161,22 @@ mkParser q k cfg = do
 mkLexerParser :: Int -> Int -> CFG -> Either Text Analyzer
 mkLexerParser q k cfg = do
   grammar <- cfgToGrammar cfg
-  let terminal_map = toTerminalIndexMap (terminals grammar)
-  (dead_token, terminal_type) <- mkTerminalType terminal_map
-  let symbol_index_map = toSymbolIndexMap terminal_map (nonterminals grammar)
-      production_to_terminal = mkProductionToTerminal symbol_index_map $ productions grammar
-      empty_terminal = dead_token
-  (start_terminal, end_terminal) <- startEndIndex symbol_index_map
-  bracket_type <- findBracketIntType symbol_index_map
-  production_type <- findProductionIntType grammar
-  hash_table <- llpHashTable q k I64 empty_terminal grammar symbol_index_map
-  lexer <- cfgToDFALexerSpec cfg
-  parallel_lexer <- intDfaParallelLexer (unaugmentTerminalMap terminal_map) dead_token undefined
-  state_type <- extEndoType $ parLexer parallel_lexer
+  spec <- cfgToDFALexerSpec cfg
+  let ignore = T "ignore"
+      s_encoder = encodeSymbols ignore grammar
+      t_encoder = fromSymbolToTerminalEncoder s_encoder
+      production_to_terminal = mkProductionToTerminal t_encoder grammar
+      start_terminal = symbolStartTerminal s_encoder
+      end_terminal = symbolStartTerminal s_encoder
+      empty_terminal = symbolDead s_encoder
+      dead_token = empty_terminal
+      dfa = lexerDFA (0 :: Integer) spec
+  terminal_type <- symbolTerminalIntType s_encoder
+  bracket_type <- bracketIntType s_encoder
+  production_type <- productionIntType grammar
+  hash_table <- llpHashTable q k I64 empty_terminal grammar s_encoder
+  parallel_lexer <- intDfaParallelLexer t_encoder dfa
+  state_type <- stateIntType (parLexer parallel_lexer) t_encoder
   transition_to_state <- transitionToStateArray parallel_lexer
   pure $
     Analyzer
@@ -183,7 +187,7 @@ mkLexerParser q k cfg = do
                   lexer = parallel_lexer,
                   deadToken = dead_token,
                   transitionToState = transition_to_state,
-                  ignoreToken = Map.lookup (AugmentedTerminal (T "ignore")) terminal_map
+                  ignoreToken = terminalLookup ignore t_encoder
                 }
             )
             ( Parser
@@ -194,7 +198,7 @@ mkLexerParser q k cfg = do
                   emptyTerminal = empty_terminal,
                   bracketType = bracket_type,
                   productionType = production_type,
-                  numberOfProductions = length $ productions grammar,
+                  numberOfProductions = length $ productions $ getGrammar grammar,
                   productionToTerminal = production_to_terminal,
                   llpTable = hash_table,
                   arities = mkArities grammar

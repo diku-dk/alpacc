@@ -19,7 +19,6 @@ module type parser_context = {
   val productions_size : i64
   val hash_table_level_one_size : i64
   val hash_table_level_two_size : i64
-  val number_of_terminals : i64
   val number_of_productions : i64
   val production_to_terminal : [number_of_productions](opt terminal_module.t)
   val production_to_arity : [number_of_productions]i64
