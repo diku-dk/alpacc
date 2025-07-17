@@ -8,10 +8,16 @@ module Alpacc.Encode
     symbolLookup,
     terminalMax,
     symbolMax,
-    bracketType,
-    productionType,
+    bracketIntType,
+    productionIntType,
     numTerminals,
     numSymbols,
+    symbolTerminalIntType,
+    terminalIntType,
+    terminalDead,
+    symbolDead,
+    symbolStartTerminal,
+    symbolEndTerminal,
   )
 where
 
@@ -65,7 +71,7 @@ encodeSymbols t_ignore grammar =
 
     (tts, fts) = List.partition p ts'
 
-    ts = fts ++ ignore ++ unused ++ left ++ right
+    ts = fts ++ ignore ++ unused ++ right ++ left
 
     s = (Terminal <$> ts) ++ (Nonterminal <$> nts)
 
@@ -96,16 +102,41 @@ encodeTerminals t_ignore ters =
       Unused == t
         || Used t_ignore == t
 
-terminalLookup :: (Ord t) => Unused t -> TerminalEncoder t -> Maybe Integer
+terminalLookup :: (Ord t) => t -> TerminalEncoder t -> Maybe Integer
 terminalLookup t encoder =
-  Map.lookup t (terminalEncoder encoder)
+  Map.lookup (Used t) (terminalEncoder encoder)
+
+terminalDead :: (Ord t) => TerminalEncoder t -> Integer
+terminalDead encoder =
+  fromMaybe (error "This will not happen.") $
+    Map.lookup Unused (terminalEncoder encoder)
+
+symbolDead :: (Ord nt, Ord t) => SymbolEncoder nt t -> Integer
+symbolDead encoder =
+  fromMaybe (error "This will not happen.") $
+    Map.lookup dead (symbolEncoder encoder)
+  where
+    dead = Terminal $ AugmentedTerminal Unused
+
+symbolEndTerminal :: (Ord nt, Ord t) => SymbolEncoder nt t -> Integer
+symbolEndTerminal encoder =
+  fromMaybe (error "This will not happen.") $
+    Map.lookup dead (symbolEncoder encoder)
+  where
+    dead = Terminal $ LeftTurnstile
+
+symbolStartTerminal :: (Ord nt, Ord t) => SymbolEncoder nt t -> Integer
+symbolStartTerminal encoder =
+  fromMaybe (error "This will not happen.") $
+    Map.lookup dead (symbolEncoder encoder)
+  where
+    dead = Terminal $ LeftTurnstile
 
 symbolLookup ::
   (Ord t, Ord nt) =>
-  ( Symbol
-      (AugmentedNonterminal (Symbol nt t))
-      (AugmentedTerminal (Unused t))
-  ) ->
+  Symbol
+    (AugmentedNonterminal (Symbol nt t))
+    (AugmentedTerminal (Unused t)) ->
   SymbolEncoder nt t ->
   Maybe Integer
 symbolLookup s encoder =
@@ -120,28 +151,54 @@ terminalMax = maximum . terminalEncoder
 numTerminals :: TerminalEncoder t -> Int
 numTerminals = Map.size . terminalEncoder
 
+numTerminalSymbols :: SymbolEncoder nt t -> Int
+numTerminalSymbols =
+  Map.size
+    . Map.filterWithKey (\k _ -> isTerminal k)
+    . symbolEncoder
+
 numSymbols :: TerminalEncoder t -> Int
 numSymbols = Map.size . terminalEncoder
 
-bracketType ::
+bracketIntType ::
   SymbolEncoder nt t ->
   Either Text UInt
-bracketType =
+bracketIntType =
   maybeToEither err
     . toIntType
     . (2 *)
     . symbolMax
   where
-    err = "Error: There are too many productions to find a integral type."
+    err = "Error: There are too many terminals and none terminals to find a integral type for the bracket."
 
-productionType ::
-  Grammar nt t ->
+productionIntType ::
+  ParsingGrammar nt t ->
   Either Text UInt
-productionType =
+productionIntType =
   maybeToEither err
     . toIntType
     . fromIntegral
     . length
     . productions
+    . getGrammar
   where
     err = "Error: There are too many productions to find a integral type."
+
+symbolTerminalIntType :: SymbolEncoder nt t -> Either Text UInt
+symbolTerminalIntType =
+  maybeToEither err
+    . toIntType
+    . maximum
+    . Map.filterWithKey (\k _ -> isTerminal k)
+    . symbolEncoder
+  where
+    err = "Error: There are too many symbols to find a integral type."
+
+terminalIntType :: TerminalEncoder t -> Either Text UInt
+terminalIntType =
+  maybeToEither err
+    . toIntType
+    . maximum
+    . terminalEncoder
+  where
+    err = "Error: There are too many terminals to find a integral type."

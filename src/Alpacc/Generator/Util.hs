@@ -9,6 +9,7 @@ module Alpacc.Generator.Util
   )
 where
 
+import Alpacc.Encode
 import Alpacc.Grammar
 import Alpacc.HashTable
 import Alpacc.LLP
@@ -51,7 +52,7 @@ padLLPTableKeys t q k =
 
 toIntLLPTable ::
   (Ord nt, Ord t) =>
-  Map (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)) Integer ->
+  SymbolEncoder nt t ->
   Map
     ( [AugmentedTerminal t],
       [AugmentedTerminal t]
@@ -60,11 +61,11 @@ toIntLLPTable ::
       [Int]
     ) ->
   Map ([Integer], [Integer]) ([Bracket Integer], [Int])
-toIntLLPTable symbol_index_map table = table'
+toIntLLPTable encoder table = table'
   where
     table_index_keys = Map.mapKeys (both (fmap (toIndex . Terminal))) table
     table' = first (fmap (fmap toIndex)) <$> table_index_keys
-    toIndex = (symbol_index_map Map.!)
+    toIndex = flip symbolLookup encoder
 
 startEndIndex :: (Ord nt, Ord t) => Map (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)) Integer -> Either Text (Integer, Integer)
 startEndIndex symbol_index_map = do
@@ -93,12 +94,12 @@ llpHashTable ::
   i ->
   Integer ->
   Grammar (AugmentedNonterminal nt) (AugmentedTerminal t) ->
-  Map (Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)) Integer ->
+  SymbolEncoder nt t ->
   Either Text (HashTableMem Integer (Bracket Integer) Int)
-llpHashTable q k t empty_terminal grammar symbol_to_index = do
+llpHashTable q k t empty_terminal grammar encoder = do
   table <- llpParserTableWithStartsHomomorphisms q k grammar
   let int_table =
         Map.mapKeys (uncurry (<>)) $
           padLLPTableKeys empty_terminal q k $
-            toIntLLPTable symbol_to_index table
+            toIntLLPTable encoder table
   hashTable t 1 int_table

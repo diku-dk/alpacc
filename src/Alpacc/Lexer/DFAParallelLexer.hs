@@ -99,8 +99,8 @@ dfaParallelLexer lexer' = parallelLexer lexer endo_table
     endo_table = endomorphismTable lexer
 
 intDfaParallelLexer ::
-  (Ord t, Ord s, Enum t, Bounded t, Ord k, Integral i, Bits i) =>
+  (Ord t, Ord s, Enum t, Bounded t, Ord k) =>
   TerminalEncoder k ->
   DFALexer t s k ->
-  Either Text (IntParallelLexer t i)
+  Either Text (IntParallelLexer t)
 intDfaParallelLexer e = intParallelLexer e . dfaParallelLexer
