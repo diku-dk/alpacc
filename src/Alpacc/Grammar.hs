@@ -329,7 +329,9 @@ closureAlgorithm grammar = fixedPointIterate (/=) (`newProductives` prods) Set.e
 data Unused t
   = Unused
   | Used t
-  deriving (Show, Eq, Ord)
+  deriving (Show, Eq, Ord, Generic)
+
+instance (NFData t) => NFData (Unused t)
 
 newtype ParsingTerminals t
   = ParsingTerminals

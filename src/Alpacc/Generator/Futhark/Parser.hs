@@ -44,7 +44,6 @@ def left (s : bracket) : bracket =
 def right (s : bracket) : bracket =
   bracket_module.set_bit (bracket_module.num_bits - 1) s 0
 
-def number_of_terminals: i64 = #{number_of_terminals}
 def number_of_productions: i64 = #{number_of_productions} 
 def hash_table_level_one_size: i64 = #{hashTableLevelOneSize hash_table}
 def hash_table_level_two_size: i64 = #{hashTableLevelTwoSize hash_table}
@@ -111,7 +110,6 @@ def level_two_consts: [q + k]i64 =
     empty_terminal = emptyTerminal parser
     hash_table = llpTable parser
     number_of_productions = numberOfProductions parser
-    number_of_terminals = numberOfTerminals parser
     brackets = futharkifyBracket <$> stacksArray hash_table
     production_to_terminal = futharkify $ productionToTerminal parser
     ari = futharkify $ arities parser
