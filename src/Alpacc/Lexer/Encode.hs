@@ -56,7 +56,7 @@ data ParallelLexerMasks = ParallelLexerMasks
   }
   deriving (Eq, Ord, Show)
 
-stateIntType :: ParallelLexer t k -> TerminalEncoder t -> Either Text UInt
+stateIntType :: ParallelLexer t k -> TerminalEncoder t' -> Either Text UInt
 stateIntType (ParallelLexer {endomorphismsSize = e}) encoder =
   maybeToEither errorMessage
     . toIntType
@@ -123,7 +123,7 @@ encodeEndoData ::
 encodeEndoData lexer_masks encoder endo_data =
   do
     unsafeEncodeMasks64 ms
-    $ NonEmpty.fromList [fromIntegral e, t, p]
+    $ NonEmpty.fromList [fromIntegral e, fromIntegral t, p]
   where
     ms = parallelLexerMasksToMasks64 lexer_masks
     EndoData
@@ -135,20 +135,20 @@ encodeEndoData lexer_masks encoder endo_data =
     toInt = fromInteger . fromJust
     t =
       case maybe_token of
-        Just t' -> toInt $ terminalLookup (Used t') encoder
-        Nothing -> toInt $ terminalLookup Unused encoder
+        Just t' -> toInt $ terminalLookup t' encoder
+        Nothing -> terminalDead encoder
 
-data IntParallelLexer t i = IntParallelLexer
-  { parLexer :: !(ParallelLexer t i),
+data IntParallelLexer t = IntParallelLexer
+  { parLexer :: !(ParallelLexer t Integer),
     parMasks :: !ParallelLexerMasks
   }
   deriving (Show, Eq, Ord)
 
 intParallelLexer ::
-  (Ord t, Ord k, Bits i, Integral i) =>
+  (Ord t, Ord k) =>
   TerminalEncoder k ->
   ParallelLexer t (EndoData k) ->
-  Either Text (IntParallelLexer t i)
+  Either Text (IntParallelLexer t)
 intParallelLexer encoder parallel_lexer = do
   ms <- lexerMasks parallel_lexer encoder
   let encode = encodeEndoData ms encoder
