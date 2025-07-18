@@ -1,14 +1,14 @@
 module Main where
 
 import Alpacc.CFG
-import Alpacc.Generator.Cuda.Generator qualified as Cuda
-import Alpacc.Generator.Futhark.Generator qualified as Futhark
-import Alpacc.Generator.Generator
+import Alpacc.Generator.Analyzer
   ( Generator (..),
     mkLexer,
     mkLexerParser,
     mkParser,
   )
+import Alpacc.Generator.Cuda.Generator qualified as Cuda
+import Alpacc.Generator.Futhark.Generator qualified as Futhark
 import Data.Maybe
 import Data.Text (Text)
 import Data.Text qualified as Text

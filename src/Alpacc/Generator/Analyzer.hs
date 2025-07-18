@@ -1,4 +1,4 @@
-module Alpacc.Generator.Generator
+module Alpacc.Generator.Analyzer
   ( Analyzer (..),
     Lexer (..),
     Parser (..),
@@ -12,7 +12,6 @@ where
 
 import Alpacc.CFG
 import Alpacc.Encode
-import Alpacc.Generator.Util
 import Alpacc.Grammar
 import Alpacc.Lexer.DFA
 import Alpacc.Lexer.DFAParallelLexer

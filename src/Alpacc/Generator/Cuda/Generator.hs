@@ -3,9 +3,9 @@ module Alpacc.Generator.Cuda.Generator
   )
 where
 
+import Alpacc.Generator.Analyzer
 import Alpacc.Generator.Cuda.Lexer qualified as Lexer
 import Alpacc.Generator.Cuda.Parser qualified as Parser
-import Alpacc.Generator.Generator
 import Data.FileEmbed
 import Data.String.Interpolate (i)
 import Data.Text (Text)
