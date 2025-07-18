@@ -3,9 +3,9 @@ module Alpacc.Generator.Futhark.Generator
   )
 where
 
+import Alpacc.Generator.Analyzer
 import Alpacc.Generator.Futhark.Lexer qualified as Lexer
 import Alpacc.Generator.Futhark.Parser qualified as Parser
-import Alpacc.Generator.Generator
 import Data.String.Interpolate (i)
 import Data.Text (Text)
 import Data.Text qualified as Text

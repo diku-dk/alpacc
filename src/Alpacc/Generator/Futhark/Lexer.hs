@@ -1,12 +1,11 @@
 module Alpacc.Generator.Futhark.Lexer (generateLexer) where
 
+import Alpacc.Generator.Analyzer
 import Alpacc.Generator.Futhark.Futharkify
-import Alpacc.Generator.Generator
 import Alpacc.Lexer.Encode
 import Alpacc.Lexer.ParallelLexing
 import Alpacc.Types
 import Data.FileEmbed
-import Data.Maybe
 import Data.String.Interpolate (i)
 import Data.Text (Text)
 import Data.Text qualified as Text

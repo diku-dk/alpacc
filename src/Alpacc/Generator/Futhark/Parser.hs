@@ -3,9 +3,9 @@ module Alpacc.Generator.Futhark.Parser
   )
 where
 
+import Alpacc.Encode
+import Alpacc.Generator.Analyzer
 import Alpacc.Generator.Futhark.Futharkify
-import Alpacc.Generator.Generator
-import Alpacc.Generator.Util
 import Alpacc.HashTable
 import Alpacc.LLP
   ( Bracket (..),

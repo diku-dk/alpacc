@@ -3,9 +3,8 @@ module Alpacc.Generator.Cuda.Parser
   )
 where
 
+import Alpacc.Generator.Analyzer
 import Alpacc.Generator.Cuda.Cudafy
-import Alpacc.Generator.Generator
-import Alpacc.HashTable
 import Alpacc.Types
 import Data.FileEmbed
 import Data.String.Interpolate (i)

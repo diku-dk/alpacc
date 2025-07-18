@@ -1,7 +1,7 @@
 module Alpacc.Generator.Cuda.Lexer (generateLexer) where
 
+import Alpacc.Generator.Analyzer
 import Alpacc.Generator.Cuda.Cudafy
-import Alpacc.Generator.Generator
 import Alpacc.Lexer.Encode
 import Alpacc.Lexer.ParallelLexing
 import Alpacc.Types

@@ -72,8 +72,7 @@ library
     Alpacc.Generator.Cuda.Generator
     Alpacc.Generator.Cuda.Lexer
     Alpacc.Generator.Cuda.Parser
-    Alpacc.Generator.Generator
-    Alpacc.Generator.Util
+    Alpacc.Generator.Analyzer
     Alpacc.Lexer.RegularExpression
     Alpacc.Lexer.NFA
     Alpacc.Lexer.DFA
