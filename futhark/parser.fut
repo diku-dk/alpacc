@@ -64,17 +64,25 @@ module mk_parser (P: parser_context) = {
     map2 eq as bs
     |> and
 
-  def lookup [n]
-                
+  def lookup (k: [P.q + P.k]terminal) : ((i64, i64), (i64, i64)) =
+    let h = (hash k) %% u64.i64 P.hash_table_size
+    let (_, _, _, v) =
+      loop (is_found, i, h, v) = (false, 0, h, ((-1, -1), (-1, -1)))
+      while is_found || i < P.max_iters do
+        let (t, k', v') = P.hash_table[i64.u64 h]
+        let is_valid = t && (array_equal (terminal_module.==) k' k)
+        in ( is_valid
+           , i + 1
+           , (h + 1) %% u64.i64 P.hash_table_size
+           , if is_valid then v' else v
+           )
+    in v
+
   def keys [n] (arr: [n]terminal) : [n]((i64, i64), (i64, i64)) =
     tabulate n
              (\i ->
                 let key = get_key arr i
-                let idx = hash key
-                let (is_valid, key', spans) = P.hash_table[idx]
-                in if is_valid && array_equal (terminal_module.==) key' key
-                   then spans
-                   else ((-1, -1), (-1, -1)))
+                in lookup key)
 
   def valid_keys [n] : [n]((i64, i64), (i64, i64)) -> bool =
     all (\((a, b), (c, d)) -> a != -1 && b != -1 && c != -1 && d != -1)
@@ -147,26 +155,24 @@ module mk_parser (P: parser_context) = {
            offsets
     in scatter (replicate m default) idxs flags
 
-  def segmented_copy [n] [m] [k] 'a
+  def segmented_copy [n] [m] 'a
                      (arr: [m]a)
-                     (sizes: [k]i64)
-                     (offsets: [k]i64)
-                     (keys: [n]i64) : []a =
-    let shape = gather sizes keys
+                     (spans: [n](i64, i64)) : []a =
+    let (starts, ends) = unzip spans
+    let shape = map2 (-) ends starts
     let (seg_idxs, idxs) = repl_segm_iota shape
     let dest = replicate (length idxs) arr[0]
-    let seg_offset = gather offsets keys
-    let stack_offsets =
-      gather seg_offset seg_idxs
+    let offsets =
+      gather starts seg_idxs
       |> map2 (+) idxs
       |> flip zip (indices idxs)
-    in gather_scatter dest stack_offsets arr
+    in gather_scatter dest offsets arr
 
   def construct_stacks =
-    segmented_copy P.stacks_array P.stacks_shape P.level_one_stacks_offsets
+    segmented_copy P.stacks
 
   def construct_productions =
-    segmented_copy P.productions_array P.productions_shape P.level_one_productions_offsets
+    segmented_copy P.productions
 
   def to_keys arr =
     let arr' = [P.start_terminal] ++ arr ++ [P.end_terminal]
@@ -176,9 +182,10 @@ module mk_parser (P: parser_context) = {
        else idxs
 
   def to_productions ks =
-    let stacks = construct_stacks ks
+    let (stack_spans, productions_spans) = unzip ks
+    let stacks = construct_stacks stack_spans
     in if brackets_matches stacks
-       then construct_productions ks
+       then construct_productions productions_spans
        else []
 
   def pre_productions [n] (arr: [n]terminal) : []production =
@@ -199,7 +206,6 @@ module mk_parser (P: parser_context) = {
     in if length r == 0
        then []
        else tail r
-            |> map (\a -> a production_module.- (production_module.i64 1))
 
   def size (h: i64) : i64 =
     (1 << h) - 1
@@ -299,7 +305,7 @@ module mk_parser (P: parser_context) = {
     let ts = map production_to_terminal prods
     let (offsets, ts') = terminal_offsets spans ts |> unzip
     let prods' =
-      map (\p -> #production (p production_module.- (production_module.i64 1)))
+      map (\p -> #production p)
           prods
       :> [](node terminal production)
     in scatter prods' offsets ts'

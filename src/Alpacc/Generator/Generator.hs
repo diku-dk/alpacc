@@ -129,7 +129,7 @@ mkParser q k cfg = do
       t_encoder = fromSymbolToTerminalEncoder s_encoder
       production_to_terminal = mkProductionToTerminal t_encoder grammar
       start_terminal = symbolStartTerminal s_encoder
-      end_terminal = symbolStartTerminal s_encoder
+      end_terminal = symbolEndTerminal s_encoder
       empty_terminal = symbolDead s_encoder
   terminal_type <- symbolTerminalIntType s_encoder
   bracket_type <- bracketIntType s_encoder
@@ -164,7 +164,7 @@ mkLexerParser q k cfg = do
       t_encoder = fromSymbolToTerminalEncoder s_encoder
       production_to_terminal = mkProductionToTerminal t_encoder grammar
       start_terminal = symbolStartTerminal s_encoder
-      end_terminal = symbolStartTerminal s_encoder
+      end_terminal = symbolEndTerminal s_encoder
       empty_terminal = symbolDead s_encoder
       dead_token = empty_terminal
       dfa = lexerDFA (0 :: Integer) spec
