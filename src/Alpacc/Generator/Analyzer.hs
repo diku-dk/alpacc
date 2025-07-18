@@ -23,9 +23,9 @@ import Data.Map qualified as Map
 import Data.Text (Text)
 import Data.Word
 
-data Generator
+data Generator a
   = Generator
-  { generate :: Analyzer -> Text
+  { generate :: Analyzer a -> Text
   }
 
 data Lexer
@@ -69,10 +69,11 @@ data AnalyzerKind
   | Both Lexer Parser
   deriving (Show)
 
-data Analyzer
+data Analyzer a
   = Analyzer
   { terminalType :: UInt,
-    analyzerKind :: AnalyzerKind
+    analyzerKind :: AnalyzerKind,
+    meta :: a
   }
   deriving (Show)
 
@@ -89,7 +90,7 @@ mkProductionToTerminal encoder grammar =
         x = terminalLookup t encoder
     p _ = Nothing
 
-mkLexer :: CFG -> Either Text Analyzer
+mkLexer :: CFG -> Either Text (Analyzer [Text])
 mkLexer cfg = do
   spec <- cfgToDFALexerSpec cfg
   let ignore = T "ignore"
@@ -110,7 +111,8 @@ mkLexer cfg = do
                 transitionToState = transition_to_state,
                 ignoreToken = terminalLookup ignore encoder
               },
-        terminalType = terminal_type
+        terminalType = terminal_type,
+        meta = printTerminals encoder
       }
 
 mkArities :: ParsingGrammar nt t -> [Integer]
@@ -120,7 +122,7 @@ mkArities = fmap arity . productions . getGrammar
     isNt (Nonterminal _) = 1 :: Integer
     isNt _ = 0
 
-mkParser :: Int -> Int -> CFG -> Either Text Analyzer
+mkParser :: Int -> Int -> CFG -> Either Text (Analyzer [Text])
 mkParser q k cfg = do
   grammar <- cfgToGrammar cfg
   let ignore = T "ignore"
@@ -151,10 +153,11 @@ mkParser q k cfg = do
                 arities = mkArities grammar,
                 numberOfProductions = length $ productions $ getGrammar grammar
               },
-        terminalType = terminal_type
+        terminalType = terminal_type,
+        meta = printTerminals t_encoder
       }
 
-mkLexerParser :: Int -> Int -> CFG -> Either Text Analyzer
+mkLexerParser :: Int -> Int -> CFG -> Either Text (Analyzer [Text])
 mkLexerParser q k cfg = do
   grammar <- cfgToGrammar cfg
   spec <- cfgToDFALexerSpec cfg
@@ -200,5 +203,6 @@ mkLexerParser q k cfg = do
                   arities = mkArities grammar
                 }
             ),
-        terminalType = terminal_type
+        terminalType = terminal_type,
+        meta = printTerminals t_encoder
       }

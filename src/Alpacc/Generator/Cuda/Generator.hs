@@ -14,12 +14,13 @@ import Data.Text qualified as Text
 common :: Text
 common = $(embedStringFile "cuda/common.cu")
 
-auxiliary :: Analyzer -> Text
+auxiliary :: Analyzer [Text] -> Text
 auxiliary analyzer =
   case analyzerKind analyzer of
     Lex lexer ->
       Text.unlines
-        [ common,
+        [ Text.unlines (("// " <>) <$> meta analyzer),
+          common,
           Lexer.generateLexer terminal_type lexer,
           Text.pack
             [i|
@@ -29,7 +30,8 @@ int main(int32_t argc, char *argv[]) {
         ]
     Parse parser ->
       Text.unlines
-        [ common,
+        [ Text.unlines (("// " <>) <$> meta analyzer),
+          common,
           Parser.generateParser terminal_type parser,
           Text.pack
             [i|
@@ -39,7 +41,8 @@ int main(int32_t argc, char *argv[]) {
         ]
     Both lexer parser ->
       Text.unlines
-        [ common,
+        [ Text.unlines (("// " <>) <$> meta analyzer),
+          common,
           Lexer.generateLexer terminal_type lexer,
           Parser.generateParser terminal_type parser,
           Text.pack
@@ -51,7 +54,7 @@ int main(int32_t argc, char *argv[]) {
   where
     terminal_type = terminalType analyzer
 
-generator :: Generator
+generator :: Generator [Text]
 generator =
   Generator
     { generate = auxiliary
