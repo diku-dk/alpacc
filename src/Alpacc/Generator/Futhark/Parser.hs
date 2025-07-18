@@ -5,10 +5,12 @@ where
 
 import Alpacc.Generator.Futhark.Futharkify
 import Alpacc.Generator.Generator
+import Alpacc.Generator.Util
 import Alpacc.HashTable
 import Alpacc.LLP
   ( Bracket (..),
   )
+import Alpacc.Types
 import Data.FileEmbed
 import Data.String.Interpolate (i)
 import Data.Text (Text)
@@ -45,8 +47,6 @@ def right (s : bracket) : bracket =
   bracket_module.set_bit (bracket_module.num_bits - 1) s 0
 
 def number_of_productions: i64 = #{number_of_productions} 
-def hash_table_level_one_size: i64 = #{hashTableLevelOneSize hash_table}
-def hash_table_level_two_size: i64 = #{hashTableLevelTwoSize hash_table}
 def q: i64 = #{q}
 def k: i64 = #{k}
 def empty_terminal: terminal = #{empty_terminal}
@@ -56,48 +56,19 @@ def production_to_terminal: [number_of_productions](opt terminal) =
   #{production_to_terminal} :> [number_of_productions](opt terminal)
 def production_to_arity: [number_of_productions]i64 =
   #{ari} :> [number_of_productions]i64
+def hash_table_size: i64 = #{length $ oaArray oa}
+def max_iters: i64 = #{oaMaxIters oa}
+def productions_size: i64 = #{productions_size}
+def stacks_size: i64 = #{stacks_size}
 
-def level_two_offsets: [hash_table_level_two_size]i64 =
-  #{futharkify $ levelTwoOffsets hash_table} :> [hash_table_level_two_size]i64
+def hash_table: [hash_table_size](bool, [q+k]terminal, ((i64, i64), (i64, i64))) =
+  #{futharkify $ oaArray oa} :> [hash_table_size](bool, [q+k]terminal, ((i64, i64), (i64, i64)))
 
-def level_two_shape: [hash_table_level_two_size]i64 =
-  #{futharkify $ sizeArray hash_table} :> [hash_table_level_two_size]i64
+def stacks: [stacks_size]bracket =
+  #{futharkify stacks} :> [stacks_size]bracket
 
-def level_one_keys_offsets: [hash_table_level_one_size]i64 =
-  #{futharkify $ levelOneKeysOffsets hash_table} :> [hash_table_level_one_size]i64
-
-def level_one_stacks_offsets: [hash_table_level_two_size]i64 =
-  #{futharkify $ levelOneStacksOffsets hash_table} :> [hash_table_level_two_size]i64
-
-def level_one_productions_offsets: [hash_table_level_two_size]i64 =
-  #{futharkify $ levelOneProductionsOffsets hash_table} :> [hash_table_level_two_size]i64
-
-def keys_array: [hash_table_level_two_size][q + k]terminal =
-  #{futharkify $ keysArray hash_table} :> [hash_table_level_two_size][q + k]terminal
-
-def stacks_size: i64 =
-  #{futharkify $ stacksSize hash_table}
-
-def productions_size: i64 =
-  #{futharkify $ productionsSize hash_table}
-
-def stacks_array: [stacks_size]bracket  =
-  #{futharkify brackets} :> [stacks_size]bracket
-
-def productions_array: [productions_size]production =
-  #{futharkify $ productionsArray hash_table} :> [productions_size]production
-
-def stacks_shape: [hash_table_level_two_size]i64 =
-  #{futharkify $ levelOneStacksShape hash_table} :> [hash_table_level_two_size]i64
-
-def productions_shape: [hash_table_level_two_size]i64 =
-  #{futharkify $ levelOneProductionsShape hash_table} :> [hash_table_level_two_size]i64
-
-def level_one_consts: [hash_table_level_two_size][q + k]i64 =
-  #{futharkify $ constsArray hash_table} :> [hash_table_level_two_size][q + k]i64
-
-def level_two_consts: [q + k]i64 =
-  #{futharkify $ initHashConsts hash_table} :> [q + k]i64
+def productions: [productions_size]production =
+  #{futharkify productions} :> [productions_size]production
 }
 |]
   where
@@ -110,6 +81,10 @@ def level_two_consts: [q + k]i64 =
     empty_terminal = emptyTerminal parser
     hash_table = llpTable parser
     number_of_productions = numberOfProductions parser
-    brackets = futharkifyBracket <$> stacksArray hash_table
+    stacks = futharkifyBracket <$> llpStacks hash_table
+    productions = llpProductions hash_table
+    stacks_size = length $ llpStacks hash_table
+    productions_size = length $ llpProductions hash_table
+    oa = llpOATable hash_table
     production_to_terminal = futharkify $ productionToTerminal parser
     ari = futharkify $ arities parser

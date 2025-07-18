@@ -5,6 +5,7 @@ module Alpacc.Generator.Util
     toIntLLPTable,
     llpHashTable,
     padLLPTableValues,
+    LLPTable (..),
   )
 where
 
@@ -15,7 +16,6 @@ import Alpacc.LLP
   ( Bracket (..),
     llpParserTableWithStartsHomomorphisms,
   )
-import Alpacc.Types
 import Control.DeepSeq
 import Data.Bifunctor qualified as BI
 import Data.List (foldl')
@@ -111,19 +111,22 @@ hash =
     14695981039346656037
     . map fromIntegral
 
+data LLPTable
+  = LLPTable
+  { llpStacks :: [Bracket Integer],
+    llpProductions :: [Int],
+    llpOATable :: OpenAddressing [Integer] ((Int, Int), (Int, Int))
+  }
+  deriving (Show, Ord, Eq)
+
 llpHashTable ::
-  (Show nt, Show t, Ord nt, Ord t, NFData nt, NFData t, IntType i, Show i, Ord i) =>
+  (Show nt, Show t, Ord nt, Ord t, NFData nt, NFData t) =>
   Int ->
   Int ->
   Integer ->
   ParsingGrammar nt t ->
   SymbolEncoder nt t ->
-  Either
-    Text
-    ( [Bracket Integer],
-      [Int],
-      OpenAddressing [Integer] ((Int, Int), (Int, Int))
-    )
+  Either Text LLPTable
 llpHashTable q k empty_terminal grammar encoder = do
   table <- llpParserTableWithStartsHomomorphisms q k $ getGrammar grammar
 
@@ -133,4 +136,4 @@ llpHashTable q k empty_terminal grammar encoder = do
             toIntLLPTable encoder table
       (stacks, prods, flat_int_table) = flattenTuple int_table
       oa = openAdressing hash flat_int_table
-  pure $ (stacks, prods, oa)
+  pure $ LLPTable stacks prods oa
