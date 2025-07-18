@@ -121,16 +121,16 @@ symbolDead encoder =
 symbolEndTerminal :: (Ord nt, Ord t) => SymbolEncoder nt t -> Integer
 symbolEndTerminal encoder =
   fromMaybe (error "This will not happen.") $
-    Map.lookup dead (symbolEncoder encoder)
+    Map.lookup end (symbolEncoder encoder)
   where
-    dead = Terminal $ LeftTurnstile
+    end = Terminal LeftTurnstile
 
 symbolStartTerminal :: (Ord nt, Ord t) => SymbolEncoder nt t -> Integer
 symbolStartTerminal encoder =
   fromMaybe (error "This will not happen.") $
-    Map.lookup dead (symbolEncoder encoder)
+    Map.lookup start (symbolEncoder encoder)
   where
-    dead = Terminal $ LeftTurnstile
+    start = Terminal RightTurnstile
 
 symbolLookup ::
   (Ord t, Ord nt) =>

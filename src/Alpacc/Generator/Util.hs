@@ -18,6 +18,7 @@ import Alpacc.LLP
   )
 import Control.DeepSeq
 import Data.Bifunctor qualified as BI
+import Data.Bits
 import Data.List (foldl')
 import Data.Map (Map)
 import Data.Map qualified as Map
@@ -105,7 +106,7 @@ hash :: [Integer] -> Word64
 hash =
   foldl'
     ( \h a ->
-        let h' = h ^ a
+        let h' = h `xor` a
          in h' * 1099511628211
     )
     14695981039346656037

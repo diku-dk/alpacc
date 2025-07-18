@@ -27,7 +27,7 @@ insertOpenAdressing p (i, k, v) oa =
     (False, _, _) ->
       oa
         { oaArray = arr Array.// [(idx, (True, k, v))],
-          oaMaxIters = max (oaMaxIters oa) $ fromIntegral p
+          oaMaxIters = max (oaMaxIters oa) $ succ $ fromIntegral p
         }
     _any -> insertOpenAdressing (succ p) (i, k, v) oa
   where
