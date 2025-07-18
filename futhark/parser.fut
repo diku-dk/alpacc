@@ -15,27 +15,18 @@ module type parser_context = {
   val empty_terminal : terminal_module.t
   val q : i64
   val k : i64
-  val stacks_size : i64
-  val productions_size : i64
-  val hash_table_level_one_size : i64
-  val hash_table_level_two_size : i64
   val number_of_productions : i64
   val production_to_terminal : [number_of_productions](opt terminal_module.t)
   val production_to_arity : [number_of_productions]i64
   val start_terminal : terminal_module.t
   val end_terminal : terminal_module.t
-  val level_two_offsets : [hash_table_level_two_size]i64
-  val level_one_keys_offsets : [hash_table_level_one_size]i64
-  val level_one_stacks_offsets : [hash_table_level_two_size]i64
-  val level_one_productions_offsets : [hash_table_level_two_size]i64
-  val keys_array : [hash_table_level_two_size][q + k]terminal_module.t
-  val stacks_array : [stacks_size]bracket_module.t
-  val productions_array : [productions_size]production_module.t
-  val stacks_shape : [hash_table_level_two_size]i64
-  val productions_shape : [hash_table_level_two_size]i64
-  val level_two_consts : [q + k]i64
-  val level_one_consts : [hash_table_level_two_size][q + k]i64
-  val level_two_shape : [hash_table_level_two_size]i64
+  val hash_table_size : i64
+  val max_iters : i64
+  val productions_size : i64
+  val stacks_size : i64
+  val hash_table : [hash_table_size](bool, [q + k]terminal_module.t, ((i64, i64), (i64, i64)))
+  val stacks : [stacks_size]bracket_module.t
+  val productions : [productions_size]production_module.t
 }
 
 module mk_parser (P: parser_context) = {
@@ -53,13 +44,12 @@ module mk_parser (P: parser_context) = {
     bracket_module.get_bit (bracket_module.num_bits - 1) s
     |> bool.i32
 
-  def hash [n] (arr: [n]terminal) (consts: [n]i64) (size: i64) : i64 =
-    #[inline]
-    #[sequential]
-    map (terminal_module.to_i64) arr
-    |> map2 (*) consts
-    |> i64.sum
-    |> (% (i64.max 1 size))
+  def hash [n] (arr: [n]terminal) : u64 =
+    foldl (\h a ->
+             let h' = h ^ u64.i64 (terminal_module.to_i64 a)
+             in h' * 1099511628211)
+          14695981039346656037
+          arr
 
   def get_key [n] (arr: [n]terminal) (i: i64) : [P.q + P.k]terminal =
     #[inline]
@@ -69,26 +59,25 @@ module mk_parser (P: parser_context) = {
                 if i + j < P.q then empty_terminal else arr[i + j - P.q])
 
   def array_equal [n] 'a (eq: a -> a -> bool) (as: [n]a) (bs: [n]a) : bool =
+    #[inline]
     #[sequential]
     map2 eq as bs
     |> and
 
-  def keys [n] (arr: [n]terminal) : [n]i64 =
+  def lookup [n]
+                
+  def keys [n] (arr: [n]terminal) : [n]((i64, i64), (i64, i64)) =
     tabulate n
              (\i ->
-                let consts1 = P.level_two_consts
                 let key = get_key arr i
-                let seg_offset = hash key consts1 P.hash_table_level_two_size
-                let consts2 = P.level_one_consts[seg_offset]
-                let j = hash key consts2 P.level_two_shape[seg_offset]
-                let idx = P.level_two_offsets[seg_offset] + j
-                let key_offset = P.level_one_keys_offsets[idx]
-                in if array_equal (terminal_module.==) P.keys_array[key_offset] key
-                   then key_offset
-                   else -1)
+                let idx = hash key
+                let (is_valid, key', spans) = P.hash_table[idx]
+                in if is_valid && array_equal (terminal_module.==) key' key
+                   then spans
+                   else ((-1, -1), (-1, -1)))
 
-  def valid_keys [n] : [n]i64 -> bool =
-    all (\i -> 0 <= i && i < P.hash_table_level_one_size)
+  def valid_keys [n] : [n]((i64, i64), (i64, i64)) -> bool =
+    all (\((a, b), (c, d)) -> a != -1 && b != -1 && c != -1 && d != -1)
 
   def depths [n] (input: [n]bracket) : opt ([n]i64) =
     let left_brackets =

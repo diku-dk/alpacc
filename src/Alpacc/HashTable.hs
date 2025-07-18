@@ -15,6 +15,7 @@ data OpenAddressing k v
   { oaArray :: Array Int (Bool, k, v),
     oaMaxIters :: Int
   }
+  deriving (Show, Ord, Eq)
 
 instance Functor (OpenAddressing k) where
   fmap f oa@(OpenAddressing {oaArray = a}) =

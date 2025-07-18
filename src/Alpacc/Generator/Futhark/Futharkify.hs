@@ -56,6 +56,9 @@ instance Futharkify Integer where
 instance (Futharkify a, Futharkify b) => Futharkify (a, b) where
   futharkify (a, b) = Text.pack [i|(#{futharkify a}, #{futharkify b})|]
 
+instance (Futharkify a, Futharkify b, Futharkify c) => Futharkify (a, b, c) where
+  futharkify (a, b, c) = Text.pack [i|(#{futharkify a}, #{futharkify b}, #{futharkify c})|]
+
 instance (Futharkify a) => Futharkify [a] where
   futharkify = ("[" <>) . (<> "]") . Text.intercalate ", " . fmap futharkify
 

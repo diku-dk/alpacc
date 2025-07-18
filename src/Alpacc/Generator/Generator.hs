@@ -14,15 +14,12 @@ import Alpacc.CFG
 import Alpacc.Encode
 import Alpacc.Generator.Util
 import Alpacc.Grammar
-import Alpacc.HashTable
-import Alpacc.LLP (Bracket)
 import Alpacc.Lexer.DFA
 import Alpacc.Lexer.DFAParallelLexer
 import Alpacc.Lexer.Encode
 import Alpacc.Lexer.ParallelLexing
 import Alpacc.Types
 import Data.Either.Extra
-import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Text (Text)
 import Data.Word
@@ -60,7 +57,7 @@ data Parser
     lookahead :: Int,
     bracketType :: UInt,
     productionType :: UInt,
-    llpTable :: HashTableMem Integer (Bracket Integer) Int,
+    llpTable :: LLPTable,
     arities :: [Integer],
     productionToTerminal :: [Maybe Integer],
     numberOfProductions :: Int
@@ -137,7 +134,7 @@ mkParser q k cfg = do
   terminal_type <- symbolTerminalIntType s_encoder
   bracket_type <- bracketIntType s_encoder
   production_type <- productionIntType grammar
-  hash_table <- llpHashTable q k I64 empty_terminal grammar s_encoder
+  hash_table <- llpHashTable q k empty_terminal grammar s_encoder
   pure $
     Analyzer
       { analyzerKind =
@@ -174,7 +171,7 @@ mkLexerParser q k cfg = do
   terminal_type <- symbolTerminalIntType s_encoder
   bracket_type <- bracketIntType s_encoder
   production_type <- productionIntType grammar
-  hash_table <- llpHashTable q k I64 empty_terminal grammar s_encoder
+  hash_table <- llpHashTable q k empty_terminal grammar s_encoder
   parallel_lexer <- intDfaParallelLexer t_encoder dfa
   state_type <- stateIntType (parLexer parallel_lexer) t_encoder
   transition_to_state <- transitionToStateArray parallel_lexer
