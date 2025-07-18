@@ -20,6 +20,7 @@ module Alpacc.Encode
     symbolEndTerminal,
     llpHashTable,
     LLPTable (..),
+    printTerminals,
   )
 where
 
@@ -34,12 +35,13 @@ import Control.DeepSeq
 import Data.Bifunctor qualified as BI
 import Data.Bits
 import Data.Either.Extra
-import Data.List (foldl')
+import Data.List (foldl', sortOn)
 import Data.List qualified as List
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Maybe
 import Data.Text (Text)
+import Data.Text qualified as Text
 import Data.Tuple.Extra
 import Data.Word
 
@@ -58,6 +60,18 @@ newtype TerminalEncoder t
   = TerminalEncoder
   { terminalEncoder :: Map (Unused t) Integer
   }
+
+printTerminals :: (Show t) => TerminalEncoder t -> [Text]
+printTerminals =
+  ("Terminal Encoding: " :)
+    . map snd
+    . sortOn fst
+    . mapMaybe auxiliary
+    . Map.toList
+    . terminalEncoder
+  where
+    auxiliary (Used t, i) = Just (i, Text.pack (show t) <> ": " <> Text.pack (show i))
+    auxiliary (Unused, _) = Nothing
 
 fromSymbolToTerminalEncoder :: (Ord t) => SymbolEncoder nt t -> TerminalEncoder t
 fromSymbolToTerminalEncoder =

@@ -67,29 +67,32 @@ entry parse = parser.parse
 |]
       <> parentVectorTest
 
-auxiliary :: Analyzer -> Text
+auxiliary :: Analyzer [Text] -> Text
 auxiliary analyzer =
   case analyzerKind analyzer of
     Lex lexer ->
       Text.unlines
-        [ Lexer.generateLexer terminal_type lexer,
+        [ Text.unlines (("-- " <>) <$> meta analyzer),
+          Lexer.generateLexer terminal_type lexer,
           lexerFunction
         ]
     Parse parser ->
       Text.unlines
-        [ Parser.generateParser terminal_type parser,
+        [ Text.unlines (("-- " <>) <$> meta analyzer),
+          Parser.generateParser terminal_type parser,
           parserFunction
         ]
     Both lexer parser ->
       Text.unlines
-        [ Lexer.generateLexer terminal_type lexer,
+        [ Text.unlines (("-- " <>) <$> meta analyzer),
+          Lexer.generateLexer terminal_type lexer,
           Parser.generateParser terminal_type parser,
           bothFunction
         ]
   where
     terminal_type = terminalType analyzer
 
-generator :: Generator
+generator :: Generator [Text]
 generator =
   Generator
     { generate = auxiliary
