@@ -6,6 +6,7 @@ module Alpacc.CFG
     TRule (..),
     NTRule (..),
     everyTRule,
+    dfaFromCfgFile,
   )
 where
 
@@ -25,6 +26,8 @@ import Data.Text (Text)
 import Data.Text qualified as Text hiding (Text)
 import Data.Void
 import Data.Word (Word8)
+import System.Exit (exitFailure)
+import System.IO (hPutStrLn, stderr)
 import Text.Megaparsec
 import Text.Megaparsec.Char (char, space1)
 import Text.Megaparsec.Char.Lexer qualified as Lexer
@@ -153,6 +156,19 @@ pNTRule =
 pCFG :: Parser CFG
 pCFG = CFG <$> many pTRule <*> many pNTRule
 
-cfgFromText :: FilePath -> Text -> Either String CFG
+cfgFromText :: FilePath -> Text -> Either Text CFG
 cfgFromText fname s =
-  either (Left . errorBundlePretty) Right $ parse (pCFG <* eof) fname s
+  either (Left . Text.pack . errorBundlePretty) Right $ parse (pCFG <* eof) fname s
+
+eitherToIO :: Either Text a -> IO a
+eitherToIO (Right x) = return x
+eitherToIO (Left err) = do
+  hPutStrLn stderr (Text.unpack $ "Error: " <> err)
+  exitFailure
+
+dfaFromCfgFile :: FilePath -> IO (DFALexer Word8 Integer T)
+dfaFromCfgFile path = do
+  content <- Text.pack <$> readFile path
+  cfg <- eitherToIO $ cfgFromText path content
+  spec <- eitherToIO $ cfgToDFALexerSpec cfg
+  pure $ lexerDFA (0 :: Integer) spec

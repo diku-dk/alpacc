@@ -203,7 +203,7 @@ readCfg opts program_path = do
   contents <- readContents opts
   case cfgFromText program_path contents of
     Left e -> do
-      hPutStrLn stderr e
+      hPutStrLn stderr $ Text.unpack e
       exitFailure
     Right g -> pure g
 
