@@ -9,12 +9,14 @@ module Alpacc.Lexer.DFA
     dfaLexerSpec,
     DFALexerSpec,
     dfaTerminals,
+    tokenize,
   )
 where
 
 import Alpacc.Lexer.FSA
 import Alpacc.Lexer.NFA
 import Alpacc.Util
+import Control.Monad
 import Control.Monad.State
 import Data.Bifunctor (Bifunctor (..))
 import Data.Foldable
@@ -381,3 +383,43 @@ lexerDFA start_state spec =
               accepting = new_accepting,
               initial = new_initial
             }
+
+data Token t
+  = Token
+  { token :: t,
+    span :: (Integer, Integer)
+  }
+  deriving (Show, Eq, Ord)
+
+tokenize :: (Eq k, Ord s, Ord t) => DFALexer t s k -> Maybe k -> [t] -> Maybe [Token k]
+tokenize dfa_lexer maybe_ignore = auxiliary 0 0 [] (initial dfa)
+  where
+    dfa = fsa dfa_lexer
+    trans = transitions' dfa
+    accept = accepting dfa
+    token_map = tokenMap dfa_lexer
+    produces_token = producesToken dfa_lexer
+
+    append t@(Token k _) ts =
+      case maybe_ignore of
+        Just ignore -> if k == ignore then ts else ts ++ [t]
+        Nothing -> ts ++ [t]
+
+    auxiliary _ _ _ s [] = do
+      guard $ s `Set.member` accept
+      pure []
+    auxiliary i j tokens s [t] = do
+      s' <- Map.lookup (s, t) trans
+      guard $ s' `Set.member` accept
+      k <- Map.lookup s' token_map
+      pure $ append (Token k (i, j + 1)) tokens
+    auxiliary i j tokens s (t : str'@(t' : _)) = do
+      s' <- Map.lookup (s, t) trans
+      let j' = j + 1
+      if (s', t') `Set.member` produces_token
+        then do
+          k <- Map.lookup s' token_map
+          let new_tokens = append (Token k (i, j')) tokens
+          auxiliary j' j' new_tokens s' str'
+        else
+          auxiliary i j' tokens s' str'

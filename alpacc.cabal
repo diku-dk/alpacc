@@ -80,6 +80,9 @@ library
     Alpacc.Lexer.ParallelLexing
     Alpacc.Lexer.DFAParallelLexer
     Alpacc.Lexer.Encode
+    Alpacc.Test.Test
+    Alpacc.Test.Parser
+    Alpacc.Test.Lexer
 
   hs-source-dirs:     src
 
