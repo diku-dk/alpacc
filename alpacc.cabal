@@ -53,6 +53,7 @@ library
     , utf8-string
     , array
     , random
+    , QuickCheck
 
   exposed-modules:
     Alpacc.CFG
