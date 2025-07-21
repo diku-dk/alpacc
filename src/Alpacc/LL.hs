@@ -52,17 +52,6 @@ import Data.Tuple.Extra (both)
 import GHC.Generics
 import Prelude hiding (last)
 
-listProducts :: Int -> [a] -> [[a]]
-listProducts = snd .: auxiliary
-  where
-    auxiliary 1 zs = (result, result)
-      where
-        result = map (: []) zs
-    auxiliary n zs = (next, result ++ next)
-      where
-        (prev, result) = auxiliary (n - 1) zs
-        next = [x : y | x <- zs, y <- prev]
-
 validLlSubstrings :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> Set [t]
 validLlSubstrings k = Set.unions . firstMap k . substringGrammar
 
@@ -201,7 +190,7 @@ naiveFollow k grammar = (follow_map Map.!)
 -- | Determines the nullablity of each nonterminal using the algorithm described
 -- in Introduction to Compiler Design.
 nullables :: (Show nt, Show t, Ord nt, Ord t) => Grammar nt t -> Map nt Bool
-nullables grammar = fixedPointIterate (/=) nullableNtProd init_nullable_map
+nullables grammar = fixedPointIterate (==) nullableNtProd init_nullable_map
   where
     nullableNtProd = nullableNt productions_map
     init_nullable_map = Map.fromList . map (,False) $ nonterminals grammar
@@ -379,7 +368,7 @@ first' k first_map wi = alphaBetaProducts k first_map wi
 -- | Computes the first map for a given grammar, which maps nonterminals to
 -- their first sets.
 firstMap :: (Show nt, Show t, Ord nt, Ord t) => Int -> Grammar nt t -> Map nt (Set [t])
-firstMap k grammar = fixedPointIterate (/=) f init_first_map
+firstMap k grammar = fixedPointIterate (==) f init_first_map
   where
     init_first_map = Map.fromList . map (,Set.empty) $ nonterminals grammar
     f first_map = Map.unionsWith Set.union $ map (auxiliary first_map) (productions grammar)

@@ -4,14 +4,19 @@ module Alpacc.Lexer.RegularExpression
     RegEx (..),
     toWord8,
     producesEpsilon,
+    printRegEx,
   )
 where
 
 import Codec.Binary.UTF8.String (encodeChar)
 import Control.Monad (liftM2)
-import Data.Char (chr, isDigit, isPrint)
+import Data.Char (chr, isDigit, isPrint, ord)
+import Data.List qualified as List
+import Data.List.NonEmpty (NonEmpty)
+import Data.List.NonEmpty qualified as NonEmpty
 import Data.Text (Text)
 import Data.Text qualified as Text
+import Data.Tuple
 import Data.Void
 import Data.Word (Word8)
 import Text.Megaparsec hiding (State)
@@ -165,5 +170,30 @@ regExFromText fname s =
   either (Left . errorBundlePretty) Right $
     parse (pRegEx <* eof) fname s
 
-toWord8 :: RegEx Char -> RegEx [Word8]
-toWord8 = fmap encodeChar
+toWord8 :: RegEx Char -> RegEx (NonEmpty Word8)
+toWord8 = fmap (NonEmpty.fromList . encodeChar)
+
+charToText :: Char -> Text
+charToText c =
+  case List.lookup c rev_escape of
+    Just x -> "\\" <> x
+    Nothing ->
+      if isPrint' c
+        then Text.pack [c]
+        else ("\\" <>) $ Text.pack $ show $ ord c
+  where
+    rev_escape = swap <$> escapeChars
+
+printRegEx :: RegEx Char -> Text
+printRegEx Epsilon = ""
+printRegEx (Literal c) = charToText c
+printRegEx (Range cs) =
+  ("[" <>) $
+    (<> "]") $
+      Text.intercalate " " $
+        charToText <$> cs
+printRegEx (Star r) = "(" <> printRegEx r <> ")*"
+printRegEx (Concat r1 r2) =
+  "(" <> printRegEx r1 <> " " <> printRegEx r2 <> ")"
+printRegEx (Alter r1 r2) =
+  "(" <> printRegEx r1 <> "|" <> printRegEx r2 <> ")"

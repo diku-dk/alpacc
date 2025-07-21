@@ -95,7 +95,7 @@ mkLexer cfg = do
   spec <- cfgToDFALexerSpec cfg
   let ignore = T "ignore"
       encoder = encodeTerminals ignore $ parsingTerminals $ dfaTerminals spec
-      dfa = lexerDFA (0 :: Integer) spec
+      dfa = lexerDFA (0 :: Integer) $ dfaCharToWord8 spec
   terminal_type <- terminalIntType encoder
   parallel_lexer <- intDfaParallelLexer encoder dfa
   state_type <- stateIntType (parLexer parallel_lexer) encoder
@@ -169,7 +169,7 @@ mkLexerParser q k cfg = do
       end_terminal = symbolEndTerminal s_encoder
       empty_terminal = symbolDead s_encoder
       dead_token = empty_terminal
-      dfa = lexerDFA (0 :: Integer) spec
+      dfa = lexerDFA (0 :: Integer) $ dfaCharToWord8 spec
   terminal_type <- symbolTerminalIntType s_encoder
   bracket_type <- bracketIntType s_encoder
   production_type <- productionIntType grammar

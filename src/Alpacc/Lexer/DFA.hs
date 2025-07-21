@@ -7,14 +7,16 @@ module Alpacc.Lexer.DFA
     fromRegExToDFA,
     transitions',
     dfaLexerSpec,
-    DFALexerSpec,
+    DFALexerSpec (..),
     dfaTerminals,
     tokenize,
+    dfaCharToWord8,
   )
 where
 
 import Alpacc.Lexer.FSA
 import Alpacc.Lexer.NFA
+import Alpacc.Lexer.RegularExpression
 import Alpacc.Util
 import Control.Monad
 import Control.Monad.State
@@ -30,6 +32,7 @@ import Data.Set (Set)
 import Data.Set qualified as Set hiding (Set)
 import Data.Text (Text)
 import Data.Text qualified as Text
+import Data.Word
 
 type DFA t s = FSA Identity t s
 
@@ -174,7 +177,7 @@ removeUselessStates dfa = dfaFilter (`Set.member` useful_states) dfa
             <$> Map.toList (transitions' dfa)
     newUsefulState s = Set.filter ((s `Set.member`) . (graph Map.!)) _states
     usefulStates s = Set.union s . Set.unions $ Set.map newUsefulState s
-    useful_states = fixedPointIterate (/=) usefulStates initial_useful
+    useful_states = fixedPointIterate (==) usefulStates initial_useful
 
 -- | http://www.cs.um.edu.mt/gordon.pace/Research/Software/Relic/Transformations/FSA/to-total.html
 dfaTotal :: (Ord s, Ord t, Enum s) => DFA t s -> (DFA t s, Maybe s)
@@ -240,7 +243,7 @@ minimize dfa' = removeUselessStates new_dfa
 
     state_map = Map.foldlWithKey joinStates current_state_map final_matrix
 
-    final_matrix = fixedPointIterate (/=) newMatrix initial_matrix
+    final_matrix = fixedPointIterate (==) newMatrix initial_matrix
     newMatrix matrix = Map.mapWithKey (\k _ -> newMatrixValue matrix k) matrix
     newMatrixValue matrix st@(s, s') = matrix Map.! st || isDistinguishable matrix s s'
 
@@ -295,14 +298,14 @@ addProducingTransitions dfa =
 data DFALexerSpec t o k
   = DFALexerSpec
   { orderMap :: Map k o,
-    regexMap :: Map k (RegEx (NonEmpty t))
+    regexMap :: Map k (RegEx t)
   }
   deriving (Show, Ord, Eq)
 
 dfaTerminals :: DFALexerSpec t o k -> [k]
 dfaTerminals = Map.keys . orderMap
 
-dfaLexerSpec :: (Ord o, Ord k, Enum o) => o -> [(k, RegEx (NonEmpty t))] -> DFALexerSpec t o k
+dfaLexerSpec :: (Ord o, Ord k, Enum o) => o -> [(k, RegEx t)] -> DFALexerSpec t o k
 dfaLexerSpec start t_rules =
   DFALexerSpec order_map terminal_map
   where
@@ -312,7 +315,7 @@ dfaLexerSpec start t_rules =
 lexerDFA ::
   (Ord t, Ord s, Enum s, Ord k, Ord o) =>
   s ->
-  DFALexerSpec t o k ->
+  DFALexerSpec (NonEmpty t) o k ->
   DFALexer t s k
 lexerDFA start_state spec =
   enumerateLexer start_state $
@@ -423,3 +426,7 @@ tokenize dfa_lexer maybe_ignore = auxiliary 0 0 [] (initial dfa)
           auxiliary j' j' new_tokens s' str'
         else
           auxiliary i j' tokens s' str'
+
+dfaCharToWord8 :: DFALexerSpec Char o t -> DFALexerSpec (NonEmpty Word8) o t
+dfaCharToWord8 spec@(DFALexerSpec {regexMap = regmap}) =
+  spec {regexMap = toWord8 <$> regmap}

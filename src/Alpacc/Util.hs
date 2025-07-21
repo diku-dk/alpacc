@@ -1,19 +1,28 @@
 module Alpacc.Util
   ( fixedPointIterate,
     toWord8s,
+    listProducts,
   )
 where
 
 import Codec.Binary.UTF8.String (encodeChar)
-import Data.Tuple.Extra (dupe)
 import Data.Word
 
 -- | Performs fixed point iteration until a predicate holds true.
 fixedPointIterate :: (Eq b) => (b -> b -> Bool) -> (b -> b) -> b -> b
-fixedPointIterate cmp f = fst . head . dropWhile (uncurry cmp) . iterateFunction
+fixedPointIterate cmp f = auxiliary
   where
-    iterateFunction = drop 1 . iterate swapApply . dupe
-    swapApply (n, _) = (f n, n)
+    auxiliary n =
+      if n' `cmp` n
+        then
+          n'
+        else
+          auxiliary n'
+      where
+        n' = f n
 
 toWord8s :: String -> [Word8]
 toWord8s = concatMap encodeChar
+
+listProducts :: Int -> [a] -> [[a]]
+listProducts i = foldr (liftA2 (:)) [[]] . replicate i

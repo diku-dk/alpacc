@@ -318,7 +318,7 @@ grammarError grammar
 
 -- https://zerobone.net/blog/cs/non-productive-cfg-rules/
 closureAlgorithm :: (Ord nt, Ord t, Show nt, Show t) => Grammar nt t -> Set nt
-closureAlgorithm grammar = fixedPointIterate (/=) (`newProductives` prods) Set.empty
+closureAlgorithm grammar = fixedPointIterate (==) (`newProductives` prods) Set.empty
   where
     prods = productions grammar
     isProductive1 set (Nonterminal nt) = nt `Set.member` set

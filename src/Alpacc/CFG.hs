@@ -96,10 +96,10 @@ implicitTRules (CFG {tRules, ntRules}) = mapM implicitLitToRegEx implicit
         regex = foldl1 Concat $ fmap Literal (Text.unpack s)
     implicitLitToRegEx (T s) = Left $ "Can not create literal from: " <> s
 
-tRuleToTuple :: TRule -> (T, RegEx (NonEmpty Word8))
-tRuleToTuple (TRule {ruleT = t, ruleRegex = regex}) = (t, NonEmpty.fromList <$> toWord8 regex)
+tRuleToTuple :: TRule -> (T, RegEx Char)
+tRuleToTuple (TRule {ruleT = t, ruleRegex = regex}) = (t, regex)
 
-cfgToDFALexerSpec :: CFG -> Either Text (DFALexerSpec Word8 Int T)
+cfgToDFALexerSpec :: CFG -> Either Text (DFALexerSpec Char Int T)
 cfgToDFALexerSpec (CFG {tRules = []}) = Left "CFG has no lexical rules."
 cfgToDFALexerSpec cfg@(CFG {tRules}) = do
   implicit_t_rules <- implicitTRules cfg
@@ -170,5 +170,5 @@ dfaFromCfgFile :: FilePath -> IO (DFALexer Word8 Integer T)
 dfaFromCfgFile path = do
   content <- Text.pack <$> readFile path
   cfg <- eitherToIO $ cfgFromText path content
-  spec <- eitherToIO $ cfgToDFALexerSpec cfg
+  spec <- fmap dfaCharToWord8 . eitherToIO $ cfgToDFALexerSpec cfg
   pure $ lexerDFA (0 :: Integer) spec

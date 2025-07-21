@@ -11,6 +11,7 @@ module Alpacc.Lexer.FSA
     fsaLexerFirst,
     fsaLexerSecond,
     enumerateLexer,
+    curryTransitions,
   )
 where
 
@@ -127,3 +128,11 @@ enumerateFSAsMap start_state =
     . second (enumerateFSAsInOrder start_state)
     . unzip
     . Map.toList
+
+curryTransitions :: (Ord s, Ord t) => Map (s, t) (f s) -> Map s (Map t (f s))
+curryTransitions =
+  Map.unionsWith Map.union
+    . fmap toMap
+    . Map.toList
+  where
+    toMap ((s, t), s') = Map.singleton s $ Map.singleton t s'
