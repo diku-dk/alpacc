@@ -129,6 +129,7 @@ test-suite test-alpacc
     LL
     LLP
     RegularExpression
+    CFG
 
   default-extensions:
     DeriveGeneric
@@ -141,6 +142,7 @@ test-suite test-alpacc
     ExtendedDefaultRules
     DeriveGeneric
     TemplateHaskell
+    ImportQualifiedPost
 
   type:             exitcode-stdio-1.0
   hs-source-dirs:   haskell-tests
@@ -152,3 +154,5 @@ test-suite test-alpacc
     , containers
     , base
     , mtl
+    , tasty
+    , tasty-quickcheck

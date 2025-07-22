@@ -14,6 +14,7 @@ module Alpacc.Lexer.DFA
   )
 where
 
+import Alpacc.Grammar
 import Alpacc.Lexer.FSA
 import Alpacc.Lexer.NFA
 import Alpacc.Lexer.RegularExpression
@@ -21,9 +22,11 @@ import Alpacc.Util
 import Control.Monad
 import Control.Monad.State
 import Data.Bifunctor (Bifunctor (..))
+import Data.Char
 import Data.Foldable
 import Data.Function
 import Data.Functor.Identity
+import Data.List qualified as List
 import Data.List.NonEmpty (NonEmpty)
 import Data.Map (Map)
 import Data.Map qualified as Map hiding (Map)
@@ -33,6 +36,17 @@ import Data.Set qualified as Set hiding (Set)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Word
+import Test.QuickCheck
+  ( Arbitrary (arbitrary, shrink),
+    Gen,
+    Property,
+    elements,
+    generate,
+    listOf,
+    oneof,
+    property,
+    sized,
+  )
 
 type DFA t s = FSA Identity t s
 
@@ -100,7 +114,7 @@ emptyDFA =
       alphabet = Set.empty,
       transitions = Map.empty,
       initial = Set.empty,
-      accepting = Set.empty
+      accepting = Set.singleton Set.empty
     }
 
 fromNFAtoDFAState :: (Ord s, Ord t) => State (NFA t s) (DFA t (Set s))
@@ -430,3 +444,54 @@ tokenize dfa_lexer maybe_ignore = auxiliary 0 0 [] (initial dfa)
 dfaCharToWord8 :: DFALexerSpec Char o t -> DFALexerSpec (NonEmpty Word8) o t
 dfaCharToWord8 spec@(DFALexerSpec {regexMap = regmap}) =
   spec {regexMap = toWord8 <$> regmap}
+
+shrinkSpec :: (Ord o, Ord k, Arbitrary t, Enum o) => DFALexerSpec t o k -> [DFALexerSpec t o k]
+shrinkSpec (DFALexerSpec order_map regex_map) =
+  removed_specs ++ shrinked_terminals
+  where
+    m = minimum order_map
+
+    terminals =
+      fmap fst $
+        List.sortOn snd $
+          Map.toList order_map
+
+    removeTerminals _ [] = []
+    removeTerminals ys (x : xs) =
+      (ys ++ xs) : removeTerminals (ys ++ [x]) xs
+
+    shrinked_terminals = shrinkTerminals [] terminals
+
+    shrinkTerminals _ [] = []
+    shrinkTerminals ys (x : xs) =
+      [DFALexerSpec order_map (Map.insert x r regex_map) | r <- rs]
+        ++ shrinkTerminals (ys ++ [x]) xs
+      where
+        rs = shrink (regex_map Map.! x)
+
+    removed_terminals = removeTerminals [] terminals
+
+    removed_specs =
+      [DFALexerSpec (toOrderMap ts) (toRegexMap ts) | ts <- removed_terminals]
+
+    toOrderMap = Map.fromList . flip zip [m ..]
+
+    toRegexMap ts = Map.fromList [(t, regex_map Map.! t) | t <- ts]
+
+instance Arbitrary (DFALexerSpec Char Int T) where
+  arbitrary = sized genSpec
+  shrink = shrinkSpec
+
+genSpec :: Int -> Gen (DFALexerSpec Char Int T)
+genSpec i =
+  dfaLexerSpec 0
+    . zipWith (\j -> (T $ intToAlpha j,)) [0 .. i]
+    <$> replicateM i (arbitrary :: Gen (RegEx Char))
+
+intToAlpha :: Int -> Text
+intToAlpha n =
+  if n < 26
+    then Text.singleton a
+    else Text.snoc (intToAlpha (n `div` 26 - 1)) a
+  where
+    a = chr (ord 'a' + (n `mod` 26))

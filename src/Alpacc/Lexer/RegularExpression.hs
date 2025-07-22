@@ -19,6 +19,17 @@ import Data.Text qualified as Text
 import Data.Tuple
 import Data.Void
 import Data.Word (Word8)
+import Test.QuickCheck
+  ( Arbitrary (arbitrary, shrink),
+    Gen,
+    Property,
+    elements,
+    generate,
+    listOf,
+    oneof,
+    property,
+    sized,
+  )
 import Text.Megaparsec hiding (State)
 import Text.Megaparsec.Char (char, space1, string)
 import Text.Megaparsec.Char.Lexer qualified as Lexer
@@ -197,3 +208,44 @@ printRegEx (Concat r1 r2) =
   "(" <> printRegEx r1 <> " " <> printRegEx r2 <> ")"
 printRegEx (Alter r1 r2) =
   "(" <> printRegEx r1 <> "|" <> printRegEx r2 <> ")"
+
+genRegEx :: (Arbitrary c) => Int -> Gen (RegEx c)
+genRegEx size
+  | size <= 1 =
+      oneof
+        [ pure Epsilon,
+          Literal <$> arbitrary,
+          Range <$> arbitrary
+        ]
+  | otherwise =
+      oneof
+        [ pure Epsilon,
+          Literal <$> arbitrary,
+          Range <$> arbitrary,
+          Star <$> genRegEx (size `div` 2),
+          Concat <$> genRegEx (size `div` 2) <*> genRegEx (size `div` 2),
+          Alter <$> genRegEx (size `div` 2) <*> genRegEx (size `div` 2)
+        ]
+
+instance (Arbitrary c) => Arbitrary (RegEx c) where
+  arbitrary = sized auxiliary
+    where
+      auxiliary i = do
+        ex <- genRegEx i
+        if producesEpsilon ex
+          then
+            auxiliary i
+          else
+            pure ex
+  shrink Epsilon = []
+  shrink (Literal c) = Epsilon : [Literal c' | c' <- shrink c]
+  shrink (Range r) = Epsilon : [Range r' | r' <- shrink r]
+  shrink (Star r) = [Epsilon, r] ++ [Star r' | r' <- shrink r]
+  shrink (Concat r1 r2) =
+    [r1, r2]
+      ++ [Concat r1' r2 | r1' <- shrink r1]
+      ++ [Concat r1 r2' | r2' <- shrink r2]
+  shrink (Alter r1 r2) =
+    [r1, r2]
+      ++ [Alter r1' r2 | r1' <- shrink r1]
+      ++ [Alter r1 r2' | r2' <- shrink r2]
