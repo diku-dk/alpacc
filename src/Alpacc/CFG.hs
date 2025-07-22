@@ -7,6 +7,8 @@ module Alpacc.CFG
     NTRule (..),
     everyTRule,
     dfaFromCfgFile,
+    printDfaSpec,
+    properties,
   )
 where
 
@@ -28,6 +30,17 @@ import Data.Void
 import Data.Word (Word8)
 import System.Exit (exitFailure)
 import System.IO (hPutStrLn, stderr)
+import Test.QuickCheck
+  ( Arbitrary (arbitrary, shrink),
+    Gen,
+    Property,
+    elements,
+    generate,
+    listOf,
+    oneof,
+    property,
+    sized,
+  )
 import Text.Megaparsec
 import Text.Megaparsec.Char (char, space1)
 import Text.Megaparsec.Char.Lexer qualified as Lexer
@@ -172,3 +185,29 @@ dfaFromCfgFile path = do
   cfg <- eitherToIO $ cfgFromText path content
   spec <- fmap dfaCharToWord8 . eitherToIO $ cfgToDFALexerSpec cfg
   pure $ lexerDFA (0 :: Integer) spec
+
+printDfaSpec :: DFALexerSpec Char Int T -> Text
+printDfaSpec spec =
+  Text.intercalate ";\n" $
+    fmap (printTuple . snd) $
+      List.sortOn fst $
+        toTuple <$> keys
+  where
+    ordmap = orderMap spec
+    regmap = regexMap spec
+    keys = Map.keys ordmap
+    toTuple t = (ordmap Map.! t, (t, regmap Map.! t))
+    printTuple (t, r) = Text.pack (show t) <> " = " <> printRegEx r
+
+parsePrinted :: DFALexerSpec Char Int T -> Bool
+parsePrinted spec =
+  Right spec == result
+  where
+    result = do
+      cfg <- cfgFromText "" $ printDfaSpec spec
+      cfgToDFALexerSpec cfg
+
+properties :: [(String, Property)]
+properties =
+  [ ("CFG properties", property parsePrinted)
+  ]

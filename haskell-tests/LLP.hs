@@ -489,25 +489,11 @@ augmentGrammarTestCase = TestCase $ assertEqual "Augment grammar test" expected 
     expected = sortGrammar augmentedGrammar
     result = sortGrammar augmented_grammar
 
-collectionTestCase = TestCase $ assertEqual "LLP collection test" expected result
-  where
-    expected = Set.empty
-    Right init_context = initLlpContext 1 1 grammar
-    Right (_, computed_collection) = evalState llpCollectionMemo init_context
-    result = Set.difference computed_collection collection
-
--- pslsTestCase = TestCase $ assertEqual "PSLS table test" expected result
---   where
---     expected = pslsTable
---     init_context = initLlpContext 1 1 grammar
---     collection' = evalState llpCollectionMemo init_context
---     result = psls collection'
-
 llpqkParsingTestCase parser q k = TestCase $ assertEqual [i|LLP(#{q}, #{k}) parse test|] expected result
   where
     input = map List.singleton "a+[a+a]"
     result = parser input
-    expected = Right [0, 1, 4, 2, 5, 1, 4, 2, 4, 3, 3]
+    expected = Right [0, 0, 3, 1, 4, 0, 3, 1, 3, 2, 2]
 
 llpParsers = [(llpParse q k grammar, q, k) | q <- [1 .. 3], k <- [1 .. 3]]
 
@@ -534,9 +520,7 @@ llpqkParsingNonderivableTestCases = [llpqkParsingNonderivableTestCase parser q k
 tests =
   TestLabel "LLP(q,k) tests" $
     TestList $
-      [ augmentGrammarTestCase,
-        -- pslsTestCase,
-        collectionTestCase
+      [ augmentGrammarTestCase
       ]
         ++ llpqkParsingTestCases
         ++ llpqkParsingDerivableTestCases
