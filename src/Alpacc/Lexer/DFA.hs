@@ -11,9 +11,12 @@ module Alpacc.Lexer.DFA
     dfaTerminals,
     tokenize,
     dfaCharToWord8,
+    regExEquivalence,
+    dfaLexerSpecEquivalence,
   )
 where
 
+import Alpacc.Debug
 import Alpacc.Grammar
 import Alpacc.Lexer.FSA
 import Alpacc.Lexer.NFA
@@ -30,6 +33,7 @@ import Data.List qualified as List
 import Data.List.NonEmpty (NonEmpty)
 import Data.Map (Map)
 import Data.Map qualified as Map hiding (Map)
+import Data.Maybe
 import Data.Maybe (mapMaybe)
 import Data.Set (Set)
 import Data.Set qualified as Set hiding (Set)
@@ -467,12 +471,12 @@ shrinkSpec (DFALexerSpec order_map regex_map) =
       [DFALexerSpec order_map (Map.insert x r regex_map) | r <- rs]
         ++ shrinkTerminals (ys ++ [x]) xs
       where
-        rs = shrink (regex_map Map.! x)
+        rs = filter (not . producesEpsilon) $ shrink (regex_map Map.! x)
 
     removed_terminals = removeTerminals [] terminals
 
     removed_specs =
-      [DFALexerSpec (toOrderMap ts) (toRegexMap ts) | ts <- removed_terminals]
+      [DFALexerSpec (toOrderMap ts) (toRegexMap ts) | ts <- removed_terminals, not (null ts)]
 
     toOrderMap = Map.fromList . flip zip [m ..]
 
@@ -485,8 +489,15 @@ instance Arbitrary (DFALexerSpec Char Int T) where
 genSpec :: Int -> Gen (DFALexerSpec Char Int T)
 genSpec i =
   dfaLexerSpec 0
-    . zipWith (\j -> (T $ intToAlpha j,)) [0 .. i]
-    <$> replicateM i (arbitrary :: Gen (RegEx Char))
+    . zipWith (\j -> (T $ intToAlpha j,)) [0 .. k]
+    <$> replicateM k auxiliary
+  where
+    k = max 1 i
+    auxiliary = do
+      x <- arbitrary :: Gen (RegEx Char)
+      if producesEpsilon x
+        then auxiliary
+        else pure x
 
 intToAlpha :: Int -> Text
 intToAlpha n =
@@ -495,3 +506,63 @@ intToAlpha n =
     else Text.snoc (intToAlpha (n `div` 26 - 1)) a
   where
     a = chr (ord 'a' + (n `mod` 26))
+
+regExEquivalence :: (Ord s, Ord t, Enum s) => s -> RegEx (NonEmpty t) -> RegEx (NonEmpty t) -> Bool
+regExEquivalence s r r' = minimizedDFAEquivalence dfa dfa'
+  where
+    pipeline =
+      enumerateFSA s
+        . minimize
+        . enumerateFSA s
+        . fromRegExToDFA s
+    dfa = pipeline r
+    dfa' = pipeline r'
+
+minimizedDFAEquivalence :: (Ord s, Ord t) => DFA t s -> DFA t s -> Bool
+minimizedDFAEquivalence dfa dfa' =
+  fromMaybe False $ equiv Map.empty Map.empty [(initial dfa, initial dfa')]
+  where
+    trans = fmap (fmap runIdentity) . curryTransitions . transitions
+    curried = trans dfa
+    curried' = trans dfa'
+
+    equiv _ _ [] = pure True
+    equiv f fi ((s, s') : qs)
+      | isNothing x && isNothing y = do
+          edges <- Map.lookup s curried
+          edges' <- Map.lookup s' curried'
+
+          let keys = Map.keysSet edges
+              keys' = Map.keysSet edges'
+              f' = Map.insert s s' f
+              fi' = Map.insert s' s fi
+              qs' = qs <> [(edges Map.! k, edges' Map.! k) | k <- Set.toList keys]
+          if keys == keys'
+            then equiv f' fi' qs'
+            else pure False
+      | x == Just s' && y == Just s = equiv f fi qs
+      | otherwise = pure False
+      where
+        x = Map.lookup s f
+        y = Map.lookup s' fi
+
+dfaLexerSpecEquivalence ::
+  (Eq o, Ord k, Ord s, Ord t, Enum s, Show t) =>
+  s ->
+  DFALexerSpec (NonEmpty t) o k ->
+  DFALexerSpec (NonEmpty t) o k ->
+  Bool
+dfaLexerSpecEquivalence s spec spec' =
+  ordmap == ordmap' && all eq keys
+  where
+    ordmap = orderMap spec
+    ordmap' = orderMap spec'
+    regmap = regexMap spec
+    regmap' = regexMap spec'
+
+    keys = Map.keys ordmap
+
+    eq k = fromMaybe False $ do
+      r <- Map.lookup k regmap
+      r' <- Map.lookup k regmap'
+      pure $ regExEquivalence s (debug r) (debug r')

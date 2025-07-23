@@ -228,15 +228,7 @@ genRegEx size
         ]
 
 instance (Arbitrary c) => Arbitrary (RegEx c) where
-  arbitrary = sized auxiliary
-    where
-      auxiliary i = do
-        ex <- genRegEx i
-        if producesEpsilon ex
-          then
-            auxiliary i
-          else
-            pure ex
+  arbitrary = sized genRegEx
   shrink Epsilon = []
   shrink (Literal c) = Epsilon : [Literal c' | c' <- shrink c]
   shrink (Range r) = Epsilon : [Range r' | r' <- shrink r]
