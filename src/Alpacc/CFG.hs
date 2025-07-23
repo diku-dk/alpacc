@@ -197,15 +197,20 @@ printDfaSpec spec =
     regmap = regexMap spec
     keys = Map.keys ordmap
     toTuple t = (ordmap Map.! t, (t, regmap Map.! t))
-    printTuple (t, r) = Text.pack (show t) <> " = " <> printRegEx r
+    printTuple (t, r) = Text.pack (show t) <> " = " <> printRegEx r <> ";"
 
 parsePrinted :: DFALexerSpec Char Int T -> Bool
 parsePrinted spec =
-  Right spec == result
+  case result of
+    Left _ -> False
+    Right b -> b
   where
+    expected = spec {regexMap = fmap NonEmpty.singleton <$> regexMap spec}
     result = do
       cfg <- cfgFromText "" $ printDfaSpec spec
-      cfgToDFALexerSpec cfg
+      spec' <- cfgToDFALexerSpec cfg
+      let spec'' = spec' {regexMap = fmap NonEmpty.singleton <$> regexMap spec'}
+      pure $ dfaLexerSpecEquivalence (0 :: Integer) expected spec''
 
 properties :: [(String, Property)]
 properties =
