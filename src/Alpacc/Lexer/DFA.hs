@@ -507,7 +507,7 @@ intToAlpha n =
   where
     a = chr (ord 'a' + (n `mod` 26))
 
-regExEquivalence :: (Ord s, Ord t, Enum s) => s -> RegEx (NonEmpty t) -> RegEx (NonEmpty t) -> Bool
+regExEquivalence :: (Show t, Show s, Ord s, Ord t, Enum s) => s -> RegEx (NonEmpty t) -> RegEx (NonEmpty t) -> Bool
 regExEquivalence s r r' = minimizedDFAEquivalence dfa dfa'
   where
     pipeline =
@@ -518,36 +518,33 @@ regExEquivalence s r r' = minimizedDFAEquivalence dfa dfa'
     dfa = pipeline r
     dfa' = pipeline r'
 
-minimizedDFAEquivalence :: (Ord s, Ord t) => DFA t s -> DFA t s -> Bool
+minimizedDFAEquivalence :: (Ord s, Ord t, Show t, Show s) => DFA t s -> DFA t s -> Bool
 minimizedDFAEquivalence dfa dfa' =
-  fromMaybe False $ equiv Map.empty Map.empty [(initial dfa, initial dfa')]
+  equiv Map.empty Map.empty [(initial dfa, initial dfa')]
   where
     trans = fmap (fmap runIdentity) . curryTransitions . transitions
     curried = trans dfa
     curried' = trans dfa'
 
-    equiv _ _ [] = pure True
+    equiv _ _ [] = True
     equiv f fi ((s, s') : qs)
-      | isNothing x && isNothing y = do
-          edges <- Map.lookup s curried
-          edges' <- Map.lookup s' curried'
-
-          let keys = Map.keysSet edges
-              keys' = Map.keysSet edges'
-              f' = Map.insert s s' f
-              fi' = Map.insert s' s fi
-              qs' = qs <> [(edges Map.! k, edges' Map.! k) | k <- Set.toList keys]
-          if keys == keys'
-            then equiv f' fi' qs'
-            else pure False
+      | isNothing x && isNothing y =
+          keys == keys' && equiv f' fi' qs'
       | x == Just s' && y == Just s = equiv f fi qs
-      | otherwise = pure False
+      | otherwise = False
       where
         x = Map.lookup s f
         y = Map.lookup s' fi
+        edges = fromMaybe Map.empty $ Map.lookup s curried
+        edges' = fromMaybe Map.empty $ Map.lookup s' curried'
+        keys = Map.keysSet edges
+        keys' = Map.keysSet edges'
+        f' = Map.insert s s' f
+        fi' = Map.insert s' s fi
+        qs' = qs <> [(edges Map.! k, edges' Map.! k) | k <- Set.toList keys]
 
 dfaLexerSpecEquivalence ::
-  (Eq o, Ord k, Ord s, Ord t, Enum s, Show t) =>
+  (Eq o, Ord k, Ord s, Ord t, Enum s, Show t, Show s) =>
   s ->
   DFALexerSpec (NonEmpty t) o k ->
   DFALexerSpec (NonEmpty t) o k ->
@@ -565,4 +562,4 @@ dfaLexerSpecEquivalence s spec spec' =
     eq k = fromMaybe False $ do
       r <- Map.lookup k regmap
       r' <- Map.lookup k regmap'
-      pure $ regExEquivalence s (debug r) (debug r')
+      pure $ regExEquivalence s r r'

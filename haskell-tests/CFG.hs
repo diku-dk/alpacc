@@ -1,6 +1,8 @@
 module CFG (properties) where
 
 import Alpacc.CFG qualified
+import Test.Tasty (TestTree)
 import Test.Tasty.QuickCheck (testProperties)
 
-properties = testProperties "APL properties" Alpacc.CFG.properties
+properties :: TestTree
+properties = testProperties "Lexer properties" Alpacc.CFG.properties
