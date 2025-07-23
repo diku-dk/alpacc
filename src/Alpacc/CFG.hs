@@ -12,6 +12,7 @@ module Alpacc.CFG
   )
 where
 
+import Alpacc.Debug
 import Alpacc.Grammar
 import Alpacc.Lexer.DFA
 import Alpacc.Lexer.RegularExpression
@@ -80,17 +81,13 @@ cfgToGrammar (CFG {tRules, ntRules}) =
   let productions = concatMap ruleProds ntRules
       nonterminals = map ruleNT ntRules
       start = ruleNT $ head ntRules
-      terminals' = List.nub $ map ruleT tRules ++ toList (foldMap ruleTerminals ntRules)
-      (a, b) = List.partition pred' terminals'
-      terminals = a ++ b
+      terminals = List.nub $ map ruleT tRules ++ toList (foldMap ruleTerminals ntRules)
       grammar = Grammar {start, terminals, nonterminals, productions}
    in case grammarError grammar of
         Just err -> Left err
         Nothing ->
           Right $ parsingGrammar grammar
   where
-    pred' (T "ignore") = True
-    pred' _ = False
     ruleProds NTRule {ruleNT, ruleProductions} =
       map (Production ruleNT) ruleProductions
 
@@ -188,7 +185,7 @@ dfaFromCfgFile path = do
 
 printDfaSpec :: DFALexerSpec Char Int T -> Text
 printDfaSpec spec =
-  Text.intercalate ";\n" $
+  Text.intercalate "\n" $
     fmap (printTuple . snd) $
       List.sortOn fst $
         toTuple <$> keys

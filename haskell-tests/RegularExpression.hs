@@ -1,28 +1,34 @@
 module RegularExpression (tests) where
 
 import Alpacc.Lexer.DFA
+import Alpacc.Lexer.FSA
 import Alpacc.Lexer.RegularExpression
-import qualified Data.List.NonEmpty as NonEmpty
+import Data.List.NonEmpty qualified as NonEmpty
 import Data.String.Interpolate (i)
-import Test.HUnit
+import Data.Text (Text)
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.HUnit (assertBool, assertFailure, testCase, (@?=))
 
+regularExpressionMatchCase ::
+  (DFA Char Integer -> Text -> Bool) ->
+  Text ->
+  [Text] ->
+  [Text] ->
+  TestTree
 regularExpressionMatchCase isMatch' regex valid invalid =
-  TestLabel [i|RegEx "#{regex}" test.|] $
-    TestList [valid_test, invalid_test]
+  testGroup [i|RegEx "#{regex}" test.|] [valid_test, invalid_test]
   where
     valid_test =
-      TestCase $
-        assertBool [i|Valid RegEx Strings for "#{regex}" test.|] $
-          all (isMatch' dfa) valid
+      testCase [i|Valid RegEx Strings for "#{regex}" test.|] $
+        all (isMatch' dfa) valid @?= True
     invalid_test =
-      TestCase
-        $ assertBool
-          [i|Invalid RegEx Strings for "#{regex}" test.|]
-        $ all (isNotMatch dfa) invalid
+      testCase [i|Invalid RegEx Strings for "#{regex}" test.|] $
+        all (isNotMatch dfa) invalid @?= True
     Right regex_tree = regExFromText "" regex
-    dfa = fromRegExToDFA 0 (NonEmpty.singleton <$> regex_tree)
+    dfa = enumerateFSA 0 $ fromRegExToDFA 0 (NonEmpty.singleton <$> regex_tree)
     isNotMatch dfa' = not . isMatch' dfa'
 
+regularExpressionMatchCase0 :: TestTree
 regularExpressionMatchCase0 =
   regularExpressionMatchCase
     isMatch
@@ -30,6 +36,7 @@ regularExpressionMatchCase0 =
     ["", "a", "aa", "aaa", "b", "bb", "bbb"]
     ["ab", "ba", "c", "aba", "bba", "xy"]
 
+regularExpressionMatchCase1 :: TestTree
 regularExpressionMatchCase1 =
   regularExpressionMatchCase
     isMatch
@@ -37,6 +44,7 @@ regularExpressionMatchCase1 =
     ["", "ab", "aab", "b", "bb", "aaa", "abb", "aabbb"]
     ["aba", "bab", "xy", "abab", "bbaaa"]
 
+regularExpressionMatchCase2 :: TestTree
 regularExpressionMatchCase2 =
   regularExpressionMatchCase
     isMatch
@@ -44,6 +52,7 @@ regularExpressionMatchCase2 =
     ["a", "b", "c"]
     ["ab", "abc", "cba", "ac", "bb", "cc", "abcab", "xy", ""]
 
+regularExpressionMatchCase3 :: TestTree
 regularExpressionMatchCase3 =
   regularExpressionMatchCase
     isMatch
@@ -51,6 +60,7 @@ regularExpressionMatchCase3 =
     ["abc", "aabbcc", "aaabbbccc", "aaaaaabbbbbbcccccc", "abbc"]
     ["ab", "acb", "bca", "aabccx", "aabcbccc", "abcabc", "xy", ""]
 
+regularExpressionMatchCase4 :: TestTree
 regularExpressionMatchCase4 =
   regularExpressionMatchCase
     isMatch
@@ -58,6 +68,7 @@ regularExpressionMatchCase4 =
     ["abc", "aabbcc", "aaabbbccc", "aaaaaabbbbbbcccccc", "abbc", "ab", "acb", "bca", "aabccx", "aabcbccc", "abcabc", "xy"]
     ["", "4234", "324", "1", "<", "#", "\\"]
 
+regularExpressionMatchCase5 :: TestTree
 regularExpressionMatchCase5 =
   regularExpressionMatchCase
     isMatch
@@ -65,6 +76,7 @@ regularExpressionMatchCase5 =
     ["bd", "bde", "abd", "cd", "abdde", "cdde", "abde"]
     ["a", "b", "aa", "bb", "cc", "ade", "de", "xbdde", "abbddee"]
 
+regularExpressionMatchCase6 :: TestTree
 regularExpressionMatchCase6 =
   regularExpressionMatchCase
     isMatch
@@ -72,6 +84,7 @@ regularExpressionMatchCase6 =
     ["xab", "xyab", "xyyab", "zab", "xabc", "xyabc", "xyyyabc"]
     ["x", "xy", "xz", "ab", "abb", "xyyy", "abc4", "zatbc"]
 
+regularExpressionMatchCase7 :: TestTree
 regularExpressionMatchCase7 =
   regularExpressionMatchCase
     isMatch
@@ -79,6 +92,7 @@ regularExpressionMatchCase7 =
     ["aabcdeef", "aabbcdeef", "abbcdef", "abbcccdeef", "abdeef"]
     ["aaaeef", "abcdf", "aabbcczdeef", "aabccddeef", "abccddef", "xy", ""]
 
+regularExpressionMatchCase8 :: TestTree
 regularExpressionMatchCase8 =
   regularExpressionMatchCase
     isMatch
@@ -86,6 +100,7 @@ regularExpressionMatchCase8 =
     ["catfish", "catcatfish", "dogdogdog4", "fish3", "catdogfish0", "cat3"]
     ["catdoga", "0fishfish", "4cat4", " dogdogdogdog", "ddogfish3", "xy", ""]
 
+regularExpressionMatchCase9 :: TestTree
 regularExpressionMatchCase9 =
   regularExpressionMatchCase
     isMatch
@@ -93,6 +108,7 @@ regularExpressionMatchCase9 =
     [""]
     ["catdoga", "0fishfish", "4cat4", " dogdogdogdog", "ddogfish3", "xy"]
 
+regularExpressionMatchCase10 :: TestTree
 regularExpressionMatchCase10 =
   regularExpressionMatchCase
     isMatch
@@ -101,17 +117,16 @@ regularExpressionMatchCase10 =
     ["catdoga", "0fishfish", "4cat4", " dogdogdogdog", "ddogfish3", "xy"]
 
 tests =
-  TestLabel "Regular Expression tests" $
-    TestList
-      [ regularExpressionMatchCase0,
-        regularExpressionMatchCase1,
-        regularExpressionMatchCase2,
-        regularExpressionMatchCase3,
-        regularExpressionMatchCase4,
-        regularExpressionMatchCase5,
-        regularExpressionMatchCase6,
-        regularExpressionMatchCase7,
-        regularExpressionMatchCase8,
-        regularExpressionMatchCase9,
-        regularExpressionMatchCase10
-      ]
+  testGroup "Regular Expression tests" $
+    [ regularExpressionMatchCase0,
+      regularExpressionMatchCase1,
+      regularExpressionMatchCase2,
+      regularExpressionMatchCase3,
+      regularExpressionMatchCase4,
+      regularExpressionMatchCase5,
+      regularExpressionMatchCase6,
+      regularExpressionMatchCase7,
+      regularExpressionMatchCase8,
+      regularExpressionMatchCase9,
+      regularExpressionMatchCase10
+    ]

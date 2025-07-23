@@ -10,7 +10,7 @@ where
 
 import Codec.Binary.UTF8.String (encodeChar)
 import Control.Monad (liftM2)
-import Data.Char (chr, isDigit, isPrint, ord)
+import Data.Char (chr, isDigit, isPrint, isSpace, ord)
 import Data.List qualified as List
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NonEmpty
@@ -39,7 +39,7 @@ type Parser = Parsec Void Text
 data RegEx c
   = Epsilon
   | Literal c
-  | Range [c]
+  | Range (NonEmpty c)
   | Star (RegEx c)
   | Alter (RegEx c) (RegEx c)
   | Concat (RegEx c) (RegEx c)
@@ -56,7 +56,6 @@ instance Functor RegEx where
 producesEpsilon :: RegEx c -> Bool
 producesEpsilon Epsilon = True
 producesEpsilon (Literal _) = False
-producesEpsilon (Range []) = True
 producesEpsilon (Range _) = False
 producesEpsilon (Star _) = True
 producesEpsilon (Alter a b) = producesEpsilon a || producesEpsilon b
@@ -83,7 +82,8 @@ escapeChars =
     ("s", ' '),
     ("t", '\t'),
     ("n", '\n'),
-    ("r", '\r')
+    ("r", '\r'),
+    ("?", '?')
   ]
 
 pEscapeChar :: Text -> Char -> Parser Char
@@ -105,7 +105,7 @@ pUnicode = fmap (chr . read . Text.unpack) . lexeme $ do
   takeWhile1P Nothing isDigit
 
 isPrint' :: Char -> Bool
-isPrint' c = c `notElem` [';', '\\', '[', ']', '(', ')', '*', '|', '+', '-'] && isPrint c
+isPrint' c = c `notElem` [';', '\\', '[', ']', '(', ')', '*', '|', '+', '-', '#', '?'] && isPrint c && not (isSpace c)
 
 pIsPrint :: Parser Char
 pIsPrint = lexeme $ satisfy isPrint'
@@ -146,7 +146,7 @@ pRegEx = pAlter
 pRange :: Parser (RegEx Char)
 pRange =
   between (lexeme "[") (lexeme "]") $
-    Range . concat
+    Range . NonEmpty.fromList . concat
       <$> many1
         ( choice
             [ try $
@@ -202,7 +202,7 @@ printRegEx (Range cs) =
   ("[" <>) $
     (<> "]") $
       Text.intercalate " " $
-        charToText <$> cs
+        charToText <$> NonEmpty.toList cs
 printRegEx (Star r) = "(" <> printRegEx r <> ")*"
 printRegEx (Concat r1 r2) =
   "(" <> printRegEx r1 <> " " <> printRegEx r2 <> ")"
@@ -215,23 +215,34 @@ genRegEx size
       oneof
         [ pure Epsilon,
           Literal <$> arbitrary,
-          Range <$> arbitrary
+          Range <$> nonEmptyArbitray
         ]
   | otherwise =
       oneof
         [ pure Epsilon,
           Literal <$> arbitrary,
-          Range <$> arbitrary,
+          Range <$> nonEmptyArbitray,
           Star <$> genRegEx (size `div` 2),
           Concat <$> genRegEx (size `div` 2) <*> genRegEx (size `div` 2),
           Alter <$> genRegEx (size `div` 2) <*> genRegEx (size `div` 2)
         ]
+  where
+    nonEmptyArbitray = do
+      x <- arbitrary
+      xs <- arbitrary
+      pure $ NonEmpty.fromList $ x : xs
 
 instance (Arbitrary c) => Arbitrary (RegEx c) where
   arbitrary = sized genRegEx
   shrink Epsilon = []
   shrink (Literal c) = Epsilon : [Literal c' | c' <- shrink c]
-  shrink (Range r) = Epsilon : [Range r' | r' <- shrink r]
+  shrink (Range r) = Epsilon : [Range r' | r' <- shrinkNonEmpty r]
+    where
+      shrinkNonEmpty =
+        fmap NonEmpty.fromList
+          . filter (not . null)
+          . shrink
+          . NonEmpty.toList
   shrink (Star r) = [Epsilon, r] ++ [Star r' | r' <- shrink r]
   shrink (Concat r1 r2) =
     [r1, r2]

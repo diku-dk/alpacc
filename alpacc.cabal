@@ -148,7 +148,6 @@ test-suite test-alpacc
   hs-source-dirs:   haskell-tests
   main-is:          Main.hs
   build-depends:
-    , HUnit
     , alpacc
     , interpolate
     , containers
@@ -156,3 +155,5 @@ test-suite test-alpacc
     , mtl
     , tasty
     , tasty-quickcheck
+    , tasty-hunit
+    , text

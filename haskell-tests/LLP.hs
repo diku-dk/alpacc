@@ -6,11 +6,12 @@ import Alpacc.LLP
 import Control.Monad.State
 import Data.Either
 import Data.Foldable (Foldable (toList))
-import qualified Data.List as List
-import qualified Data.Map as Map
-import qualified Data.Set as Set
+import Data.List qualified as List
+import Data.Map qualified as Map
+import Data.Set qualified as Set
 import Data.String.Interpolate (i)
-import Test.HUnit
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.HUnit (assertEqual, assertFailure, testCase, (@?=))
 
 grammar :: Grammar String String
 grammar =
@@ -482,14 +483,14 @@ collection =
         ]
     ]
 
-augmentGrammarTestCase = TestCase $ assertEqual "Augment grammar test" expected result
+augmentGrammarTestCase = testCase "Augment grammar test" $ expected @?= result
   where
     sortGrammar (Grammar s t nt ps) = Grammar s (List.sort t) (List.sort nt) (List.sort ps)
     augmented_grammar = augmentGrammar grammar
     expected = sortGrammar augmentedGrammar
     result = sortGrammar augmented_grammar
 
-llpqkParsingTestCase parser q k = TestCase $ assertEqual [i|LLP(#{q}, #{k}) parse test|] expected result
+llpqkParsingTestCase parser q k = testCase [i|LLP(#{q}, #{k}) parse test|] $ expected @?= result
   where
     input = map List.singleton "a+[a+a]"
     result = parser input
@@ -500,7 +501,7 @@ llpParsers = [(llpParse q k grammar, q, k) | q <- [1 .. 3], k <- [1 .. 3]]
 derivable10 = derivableNLengths 10 grammar
 
 llpqkParsingDerivableTestCase parser q k =
-  TestCase $ assertEqual [i|LLP(#{q}, #{k}) can parse derivables of length 10.|] expected True
+  testCase [i|LLP(#{q}, #{k}) can parse derivables of length 10.|] $ expected @?= True
   where
     expected = all isRight $ parser <$> Set.toList derivable10
 
@@ -511,17 +512,16 @@ llpqkParsingTestCases = [llpqkParsingTestCase parser q k | (parser, k, q) <- llp
 nonderivable3 = nonderivableNLengths 3 grammar
 
 llpqkParsingNonderivableTestCase parser q k =
-  TestCase $ assertEqual [i|LLP(#{q}, #{k}) fails on parsing nonderivables of length 3.|] expected True
+  testCase [i|LLP(#{q}, #{k}) fails on parsing nonderivables of length 3.|] $ expected @?= True
   where
     expected = all isLeft $ parser <$> Set.toList nonderivable3
 
 llpqkParsingNonderivableTestCases = [llpqkParsingNonderivableTestCase parser q k | (parser, k, q) <- llpParsers]
 
 tests =
-  TestLabel "LLP(q,k) tests" $
-    TestList $
-      [ augmentGrammarTestCase
-      ]
-        ++ llpqkParsingTestCases
-        ++ llpqkParsingDerivableTestCases
-        ++ llpqkParsingNonderivableTestCases
+  testGroup "LLP(q,k) tests" $
+    [ augmentGrammarTestCase
+    ]
+      ++ llpqkParsingTestCases
+      ++ llpqkParsingDerivableTestCases
+      ++ llpqkParsingNonderivableTestCases
