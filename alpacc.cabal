@@ -81,9 +81,10 @@ library
     Alpacc.Lexer.ParallelLexing
     Alpacc.Lexer.DFAParallelLexer
     Alpacc.Lexer.Encode
-    Alpacc.Test.Test
+    Alpacc.Test
     Alpacc.Test.Parser
     Alpacc.Test.Lexer
+    Alpacc.Random
 
   hs-source-dirs:     src
 
