@@ -9,6 +9,7 @@ import Alpacc.Generator.Analyzer
   )
 import Alpacc.Generator.Cuda.Generator qualified as Cuda
 import Alpacc.Generator.Futhark.Generator qualified as Futhark
+import Alpacc.Random qualified as Random
 import Data.Maybe
 import Data.Text (Text)
 import Data.Text qualified as Text
@@ -35,6 +36,12 @@ data Gen
   | GenBoth
   deriving (Show)
 
+data Command
+  = Generate !GeneratorParameters
+  | Test !TestParameters
+  | Random !RandomParameters
+  deriving (Show)
+
 combine :: Gen -> Gen -> Gen
 a `combine` GenBoth = a
 GenBoth `combine` a = a
@@ -42,13 +49,30 @@ GenLexer `combine` GenLexer = GenLexer
 GenParser `combine` GenParser = GenParser
 _ `combine` _ = GenBoth
 
-data Parameters = Parameters
-  { input :: !Input,
-    output :: !(Maybe String),
-    lookback :: !Int,
-    lookahead :: !Int,
-    generator :: !Gen,
-    backend :: !Backend
+data GeneratorParameters = GeneratorParameters
+  { generatorInput :: !Input,
+    generatorOutput :: !(Maybe String),
+    generatorLookback :: !Int,
+    generatorLookahead :: !Int,
+    generatorGenerator :: !Gen,
+    generatorBackend :: !Backend
+  }
+  deriving (Show)
+
+data RandomParameters = RandomParameters
+  { randomOutput :: !(Maybe String),
+    randomLookback :: !Int,
+    randomLookahead :: !Int,
+    randomGenerator :: !Gen
+  }
+  deriving (Show)
+
+data TestParameters = TestParameters
+  { testInput :: !Input,
+    testOutput :: !(Maybe String),
+    testLookback :: !Int,
+    testLookahead :: !Int,
+    testGenerator :: !Gen
   }
   deriving (Show)
 
@@ -127,24 +151,49 @@ lexerParserParametar = combine <$> parserParameter <*> lexerParameter
 generateParametar :: Parser Gen
 generateParametar = lexerParserParametar <|> pure GenBoth
 
-parameters :: Backend -> Parser Parameters
-parameters backend =
-  Parameters
-    <$> inputParameter
-    <*> outputParameter
-    <*> lookbackParameter
-    <*> lookaheadParameter
-    <*> generateParametar
-    <*> pure backend
+generatorParameters :: Backend -> Parser Command
+generatorParameters backend =
+  Generate
+    <$> ( GeneratorParameters
+            <$> inputParameter
+            <*> outputParameter
+            <*> lookbackParameter
+            <*> lookaheadParameter
+            <*> generateParametar
+            <*> pure backend
+        )
 
-commands :: Parser Parameters
+randomParameters :: Parser Command
+randomParameters =
+  Random
+    <$> ( RandomParameters
+            <$> outputParameter
+            <*> lookbackParameter
+            <*> lookaheadParameter
+            <*> generateParametar
+        )
+
+testParameters :: Parser Command
+testParameters =
+  Test
+    <$> ( TestParameters
+            <$> inputParameter
+            <*> outputParameter
+            <*> lookbackParameter
+            <*> lookaheadParameter
+            <*> generateParametar
+        )
+
+commands :: Parser Command
 commands =
   subparser
-    ( command "futhark" (info (parameters Futhark) (progDesc "Generate parsers written in CUDA."))
-        <> command "cuda" (info (parameters CUDA) (progDesc "Generate parsers written in Futhark."))
+    ( command "futhark" (info (generatorParameters Futhark) (progDesc "Generate parsers written in CUDA."))
+        <> command "cuda" (info (generatorParameters CUDA) (progDesc "Generate parsers written in Futhark."))
+        <> command "random" (info randomParameters (progDesc "Generate random parser that can be used for testing."))
+        <> command "test" (info testParameters (progDesc "Generate test inputs for ."))
     )
 
-options :: ParserInfo Parameters
+options :: ParserInfo Command
 options =
   info
     (commands <**> helper)
@@ -158,17 +207,17 @@ writeProgram program_path program = do
   TextIO.writeFile program_path program
   putStrLn ("The parser " ++ program_path ++ " was created.")
 
-extension :: Parameters -> String
-extension opts =
-  case backend opts of
+extension :: Backend -> String
+extension backend =
+  case backend of
     CUDA -> ".cu"
     Futhark -> ".fut"
 
-outputPath :: Parameters -> String
-outputPath opts =
-  case output opts of
+outputPath :: Backend -> Maybe String -> Input -> String
+outputPath backend output input =
+  case output of
     Just path -> path
-    Nothing -> case input opts of
+    Nothing -> case input of
       StdInput -> "parser" ++ ext
       FileInput path ->
         (++ ext)
@@ -176,46 +225,69 @@ outputPath opts =
           . stripExtension "alp"
           $ takeFileName path
   where
-    ext = extension opts
+    ext = extension backend
 
-readContents :: Parameters -> IO Text
-readContents opts =
-  case input opts of
+readContents :: Input -> IO Text
+readContents input =
+  case input of
     StdInput -> TextIO.getContents
     FileInput path -> TextIO.readFile path
 
-generateProgram :: Parameters -> CFG -> Either Text Text
-generateProgram opts cfg =
-  case generator opts of
+generateProgram :: Backend -> Gen -> Int -> Int -> CFG -> Either Text Text
+generateProgram backend generator q k cfg =
+  case generator of
     GenBoth -> generate gen <$> mkLexerParser q k cfg
     GenLexer -> generate gen <$> mkLexer cfg
     GenParser -> generate gen <$> mkParser q k cfg
   where
-    q = lookback opts
-    k = lookahead opts
     gen =
-      case backend opts of
+      case backend of
         CUDA -> Cuda.generator
         Futhark -> Futhark.generator
 
-readCfg :: Parameters -> String -> IO CFG
-readCfg opts program_path = do
-  contents <- readContents opts
+readCfg :: Input -> String -> IO CFG
+readCfg input program_path = do
+  contents <- readContents input
   case cfgFromText program_path contents of
     Left e -> do
       hPutStrLn stderr $ Text.unpack e
       exitFailure
     Right g -> pure g
 
-main :: IO ()
-main = do
-  opts <- execParser options
-  let program_path = outputPath opts
-  cfg <- readCfg opts program_path
-  let either_program = generateProgram opts cfg
+mainGenerator :: GeneratorParameters -> IO ()
+mainGenerator params = do
+  let program_path = outputPath backend output input
+  cfg <- readCfg input program_path
+  let either_program = generateProgram backend gen q k cfg
 
   case either_program of
     Left e -> do
       TextIO.hPutStrLn stderr e
       exitFailure
     Right program -> writeProgram program_path program
+  where
+    backend = generatorBackend params
+    q = generatorLookback params
+    k = generatorLookahead params
+    output = generatorOutput params
+    input = generatorInput params
+    gen = generatorGenerator params
+
+mainRandom :: RandomParameters -> IO ()
+mainRandom params =
+  case gen of
+    GenLexer -> Random.randomLexer >>= writeProgram output
+    _ -> undefined
+  where
+    q = randomLookback params
+    k = randomLookahead params
+    output = fromMaybe "random.alp" $ randomOutput params
+    gen = randomGenerator params
+
+main :: IO ()
+main = do
+  opts <- execParser options
+  case opts of
+    Generate params -> mainGenerator params
+    Random params -> mainRandom params
+    Test _ -> undefined
