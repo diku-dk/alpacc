@@ -78,13 +78,14 @@ instance (Show nt, Show t) => Show (Item nt t) where
 
 -- | Computes the initial item set which is $D_0$ in the LLP paper.
 initD :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> Set (Item nt t)
-initD q grammar = init' `Set.map` last'
+initD q grammar =
+  case findProductions grammar (start grammar) of
+    [p] -> Set.map (init' p) $ last q grammar $ symbols p
+    _any -> Set.empty
   where
-    production' = head $ findProductions grammar (start grammar)
-    last' = last q grammar $ symbols production'
-    init' l =
+    init' p l =
       Item
-        { dotProduction = toDotProduction production',
+        { dotProduction = toDotProduction p,
           suffix = l,
           prefix = [],
           llpConfig = ([], [], [])
@@ -359,15 +360,14 @@ solveLlpItemsMemo items = do
     safeLast [] = []
     safeLast x = [List.last x]
     groupByDotSymbol symbol_map [] = symbol_map
-    groupByDotSymbol symbol_map (a : as)
-      | null x' = groupByDotSymbol symbol_map as
-      | x `Map.member` symbol_map = groupByDotSymbol new_symbol_map as
-      | otherwise = groupByDotSymbol new_symbol_map' as
+    groupByDotSymbol symbol_map (a : as) =
+      case auxiliary a of
+        [] -> groupByDotSymbol symbol_map as
+        x : _ | x `Map.member` symbol_map -> groupByDotSymbol (new_symbol_map x) as
+        x : _ -> groupByDotSymbol (new_symbol_map' x) as
       where
-        new_symbol_map = Map.adjust (Set.insert a) x symbol_map
-        new_symbol_map' = Map.insert x (Set.singleton a) symbol_map
-        x = head x'
-        x' = auxiliary a
+        new_symbol_map y = Map.adjust (Set.insert a) y symbol_map
+        new_symbol_map' y = Map.insert y (Set.singleton a) symbol_map
 
 -- | Creates the LLP collection as described in algorithm 8 from the LLP paper.
 -- This is done using memoization.
@@ -504,9 +504,12 @@ allStarts = do
   ctx <- get
   let grammar = theGrammar ctx
   let start' = start grammar
-  let Production _ s = head $ findProductions grammar start'
+  let (s, tail_s) =
+        case findProductions grammar start' of
+          Production _ s'@(_ : tail_s') : _ -> (s', tail_s')
+          _any -> ([], [])
   zero_symbols <- toList <$> useFirst s
-  let zero_keys = Map.fromList $ (,([Nonterminal start'], tail s, [0])) . ([],) <$> zero_symbols
+  let zero_keys = Map.fromList $ (,([Nonterminal start'], tail_s, [0])) . ([],) <$> zero_symbols
   return zero_keys
 
 llpParserTableWithStarts ::

@@ -22,12 +22,7 @@ import Data.Word (Word8)
 import Test.QuickCheck
   ( Arbitrary (arbitrary, shrink),
     Gen,
-    Property,
-    elements,
-    generate,
-    listOf,
     oneof,
-    property,
     sized,
   )
 import Text.Megaparsec hiding (State)

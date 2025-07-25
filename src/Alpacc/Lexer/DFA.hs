@@ -16,7 +16,6 @@ module Alpacc.Lexer.DFA
   )
 where
 
-import Alpacc.Debug
 import Alpacc.Grammar
 import Alpacc.Lexer.FSA
 import Alpacc.Lexer.NFA
@@ -34,7 +33,6 @@ import Data.List.NonEmpty (NonEmpty)
 import Data.Map (Map)
 import Data.Map qualified as Map hiding (Map)
 import Data.Maybe
-import Data.Maybe (mapMaybe)
 import Data.Set (Set)
 import Data.Set qualified as Set hiding (Set)
 import Data.Text (Text)
@@ -43,12 +41,7 @@ import Data.Word
 import Test.QuickCheck
   ( Arbitrary (arbitrary, shrink),
     Gen,
-    Property,
-    elements,
-    generate,
-    listOf,
-    oneof,
-    property,
+    choose,
     sized,
   )
 
@@ -487,12 +480,12 @@ instance Arbitrary (DFALexerSpec Char Int T) where
   shrink = shrinkSpec
 
 genSpec :: Int -> Gen (DFALexerSpec Char Int T)
-genSpec i =
+genSpec i = do
+  k <- choose (1, max 1 i)
   dfaLexerSpec 0
     . zipWith (\j -> (T $ intToAlpha j,)) [0 .. k]
     <$> replicateM k auxiliary
   where
-    k = max 1 i
     auxiliary = do
       x <- arbitrary :: Gen (RegEx Char)
       if producesEpsilon x
@@ -507,7 +500,7 @@ intToAlpha n =
   where
     a = chr (ord 'a' + (n `mod` 26))
 
-regExEquivalence :: (Show t, Show s, Ord s, Ord t, Enum s) => s -> RegEx (NonEmpty t) -> RegEx (NonEmpty t) -> Bool
+regExEquivalence :: (Ord s, Ord t, Enum s) => s -> RegEx (NonEmpty t) -> RegEx (NonEmpty t) -> Bool
 regExEquivalence s r r' = minimizedDFAEquivalence dfa dfa'
   where
     pipeline =
@@ -518,7 +511,7 @@ regExEquivalence s r r' = minimizedDFAEquivalence dfa dfa'
     dfa = pipeline r
     dfa' = pipeline r'
 
-minimizedDFAEquivalence :: (Ord s, Ord t, Show t, Show s) => DFA t s -> DFA t s -> Bool
+minimizedDFAEquivalence :: (Ord s, Ord t) => DFA t s -> DFA t s -> Bool
 minimizedDFAEquivalence dfa dfa' =
   equiv Map.empty Map.empty [(initial dfa, initial dfa')]
   where
@@ -544,7 +537,7 @@ minimizedDFAEquivalence dfa dfa' =
         qs' = qs <> [(edges Map.! k, edges' Map.! k) | k <- Set.toList keys]
 
 dfaLexerSpecEquivalence ::
-  (Eq o, Ord k, Ord s, Ord t, Enum s, Show t, Show s) =>
+  (Eq o, Ord k, Ord s, Ord t, Enum s) =>
   s ->
   DFALexerSpec (NonEmpty t) o k ->
   DFALexerSpec (NonEmpty t) o k ->

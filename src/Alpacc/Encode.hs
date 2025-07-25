@@ -266,24 +266,16 @@ toIntLLPTable encoder table = table'
     table' = first (fmap (fmap toIndex)) <$> table_index_keys
     toIndex = fromJust . flip symbolLookup encoder
 
-padLLPTableValues ::
-  Int ->
-  Int ->
-  Map ([t], [t]) ([a], [b]) ->
-  Map ([t], [t]) ([Maybe a], [Maybe b])
-padLLPTableValues max_ao max_pi =
-  fmap (BI.bimap aoPad piPad)
-  where
-    aoPad = rpad Nothing max_ao . fmap Just
-    piPad = rpad Nothing max_pi . fmap Just
-
 flatten :: (Ord k) => Map k [v] -> ([v], Map k (Int, Int))
 flatten m = (concat vs, m')
   where
     (ks, vs) = unzip $ Map.toList m
     offsets = scanl (+) 0 $ map length vs
     starts = init offsets
-    ends = tail offsets
+    ends =
+      case offsets of
+        _ : xs -> xs
+        _any -> error "Error: Internal error that should never happen."
     vs' = zip starts ends
     m' = Map.fromList $ zip ks vs'
 

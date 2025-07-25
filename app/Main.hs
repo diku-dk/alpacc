@@ -279,8 +279,6 @@ mainRandom params =
     GenLexer -> Random.randomLexer >>= writeProgram output
     _ -> undefined
   where
-    q = randomLookback params
-    k = randomLookahead params
     output = fromMaybe "random.alp" $ randomOutput params
     gen = randomGenerator params
 
