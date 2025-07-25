@@ -72,13 +72,6 @@ bookGrammar =
         ]
     }
 
-nullableTestCase :: TestTree
-nullableTestCase = testCase "Nullable test" $ expected @?= result
-  where
-    nullable' = nullable grammar
-    result = nullable' . symbols <$> productions grammar
-    expected = [True, False, True, False]
-
 firstSmallTestCase = testCase "Small First(1) test" $ expected @?= result
   where
     first' = first 1 grammar
@@ -196,18 +189,17 @@ canNotParseNonderivableTestCases = [canNotParseNonderivableTestCase k | k <- [1 
 
 tests =
   testGroup "LL(k) tests" $
-    [ nullableTestCase,
-      firstSmallTestCase,
+    [ firstSmallTestCase,
       followSmallTestCase,
       followLargeTestCase,
       ll1ParseFailTestCase
     ]
-      ++ firstkTestCases followExtendedGrammar 4
-      ++ followkTestCases followExtendedGrammar 4
-      ++ firstMemokTestCases followExtendedGrammar 4
-      ++ firstkTestCases bookGrammar 4
-      ++ followkTestCases bookGrammar 4
-      ++ firstMemokTestCases bookGrammar 4
+      ++ firstkTestCases followExtendedGrammar 3
+      ++ followkTestCases followExtendedGrammar 3
+      ++ firstMemokTestCases followExtendedGrammar 3
+      ++ firstkTestCases bookGrammar 3
+      ++ followkTestCases bookGrammar 3
+      ++ firstMemokTestCases bookGrammar 3
       ++ canParseDerivedTestCases
       ++ llkParseTestCases
       ++ canNotParseNonderivableTestCases

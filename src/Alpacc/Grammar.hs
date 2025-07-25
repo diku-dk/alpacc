@@ -22,7 +22,6 @@ module Alpacc.Grammar
     unpackNTTGrammar,
     unpackNonterminal,
     unpackTerminal,
-    substringGrammar,
     rightSymbols,
     grammarDuplicates,
     grammarError,
@@ -240,39 +239,6 @@ unpackNTTGrammar grammar =
     unpackT (T s) = Text.unpack s
     unpackT (TLit s) = Text.unpack s
     unpackNT (NT s) = Text.unpack s
-
-data SubstringNonterminal nt
-  = ExistingNT nt
-  | ArbitraryNT Integer
-  deriving (Eq, Ord, Show)
-
-substringGrammar ::
-  (Ord nt, Ord t, Show nt, Show t) =>
-  Grammar nt t ->
-  Grammar (SubstringNonterminal nt) t
-substringGrammar grammar =
-  grammar
-    { nonterminals = new_nts,
-      productions = new_prods,
-      start = new_start
-    }
-  where
-    nts' = ExistingNT <$> nonterminals grammar
-    prods' = first ExistingNT <$> productions grammar
-    prods_map = toProductionsMap prods'
-    substr_prods_map = Map.mapKeys toAnt $ concatMap extraSubstrings <$> prods_map
-    mapEntryToProds = Map.mapWithKey (\k v -> Production k <$> v)
-    substr_prods = concat . Map.elems $ mapEntryToProds substr_prods_map
-    to_substr_prods = Production new_start . List.singleton . Nonterminal <$> (nts' ++ Map.keys substr_prods_map)
-    nt_to_ant_map = Map.fromList . zip nts' $ ArbitraryNT <$> [1 ..]
-    toAnt = (nt_to_ant_map Map.!)
-    new_start = ArbitraryNT 0
-    new_prods = prods' ++ fmap firstChange substr_prods ++ to_substr_prods
-    new_nts = new_start : (nts' ++ Map.keys substr_prods_map)
-    extraSubstrings [] = []
-    extraSubstrings s@(_x : xs) = s : extraSubstrings xs
-    firstChange (Production nt ((Nonterminal x) : xs)) = Production nt (Nonterminal (toAnt x) : xs)
-    firstChange a = a
 
 -- | Given a string of symbols, find all the nonterminals and make tuples where
 -- each nonterminal is the first element of the tuple and the second element is

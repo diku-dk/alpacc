@@ -12,7 +12,6 @@ import Alpacc.Lexer.ParallelLexing
 import Data.Array.Base (IArray (..))
 import Data.Array.Unboxed (UArray)
 import Data.Array.Unboxed qualified as UArray hiding (UArray)
-import Data.Bits
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map hiding (Map)
 import Data.Maybe

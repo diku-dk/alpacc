@@ -7,7 +7,6 @@ module Alpacc.Lexer.Encode
 where
 
 import Alpacc.Encode
-import Alpacc.Grammar
 import Alpacc.Lexer.ParallelLexing
 import Alpacc.Types
 import Control.Monad

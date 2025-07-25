@@ -12,14 +12,12 @@ module Alpacc.CFG
   )
 where
 
-import Alpacc.Debug
 import Alpacc.Grammar
 import Alpacc.Lexer.DFA
 import Alpacc.Lexer.RegularExpression
 import Data.Char (isAlphaNum, isLower, isPrint, isUpper)
 import Data.Foldable
 import Data.List qualified as List
-import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NonEmpty hiding (NonEmpty)
 import Data.Map qualified as Map hiding (Map)
 import Data.Set (Set)
@@ -32,15 +30,8 @@ import Data.Word (Word8)
 import System.Exit (exitFailure)
 import System.IO (hPutStrLn, stderr)
 import Test.QuickCheck
-  ( Arbitrary (arbitrary, shrink),
-    Gen,
-    Property,
-    elements,
-    generate,
-    listOf,
-    oneof,
+  ( Property,
     property,
-    sized,
   )
 import Text.Megaparsec
 import Text.Megaparsec.Char (char, space1)
@@ -77,11 +68,14 @@ cfgToGrammar ::
   CFG ->
   Either Text (ParsingGrammar NT T)
 cfgToGrammar (CFG {ntRules = []}) = Left "CFG has no production rules."
-cfgToGrammar (CFG {tRules, ntRules}) =
+cfgToGrammar (CFG {tRules, ntRules}) = do
   let productions = concatMap ruleProds ntRules
       nonterminals = map ruleNT ntRules
-      start = ruleNT $ head ntRules
-      terminals = List.nub $ map ruleT tRules ++ toList (foldMap ruleTerminals ntRules)
+  start <-
+    case List.uncons ntRules of
+      Just (a, _) -> Right $ ruleNT a
+      Nothing -> Left "CFG has no production rules."
+  let terminals = List.nub $ map ruleT tRules ++ toList (foldMap ruleTerminals ntRules)
       grammar = Grammar {start, terminals, nonterminals, productions}
    in case grammarError grammar of
         Just err -> Left err

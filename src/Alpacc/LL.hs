@@ -1,7 +1,5 @@
 module Alpacc.LL
-  ( nullableOne,
-    nullable,
-    first,
+  ( first,
     follow,
     last,
     before,
@@ -20,7 +18,6 @@ module Alpacc.LL
     AlphaBetaMemoizedContext (..),
     derivableNLengths,
     nonderivableNLengths,
-    validLlSubstrings,
     firstAndFollow,
     lastAndBefore,
     firstMap,
@@ -35,7 +32,6 @@ import Control.DeepSeq
 import Control.Monad (foldM, zipWithM)
 import Control.Monad.State hiding (state)
 import Data.Bifunctor qualified as Bifunctor
-import Data.Composition
 import Data.Foldable
 import Data.List qualified as List
 import Data.Map (Map)
@@ -51,9 +47,6 @@ import Data.Text qualified as Text
 import Data.Tuple.Extra (both)
 import GHC.Generics
 import Prelude hiding (last)
-
-validLlSubstrings :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar nt t -> Set [t]
-validLlSubstrings k = Set.unions . firstMap k . substringGrammar
 
 derivableNLengths :: (Ord t, Ord nt, Show nt, Show t) => Int -> Grammar nt t -> Set [t]
 derivableNLengths n grammar =
@@ -165,10 +158,9 @@ naiveFollows k grammar =
     . Map.unionsWith Set.union
     $ bfs Set.empty start'
   where
-    Production nt _ = head $ findProductions grammar (start grammar)
     init_maps = Map.fromList $ (,Set.empty) <$> nonterminals grammar
     first'' = first k grammar
-    start' = Seq.singleton [Nonterminal nt]
+    start' = Seq.singleton [Nonterminal $ start grammar]
     derivations' = derivations grammar
     bfs _ Empty = []
     bfs visited (top :<| queue)
@@ -186,35 +178,6 @@ naiveFollow :: (Show nt, Show t, Ord nt, Ord t) => Int -> Grammar nt t -> nt -> 
 naiveFollow k grammar = (follow_map Map.!)
   where
     follow_map = naiveFollows k grammar
-
--- | Determines the nullablity of each nonterminal using the algorithm described
--- in Introduction to Compiler Design.
-nullables :: (Show nt, Show t, Ord nt, Ord t) => Grammar nt t -> Map nt Bool
-nullables grammar = fixedPointIterate (==) nullableNtProd init_nullable_map
-  where
-    nullableNtProd = nullableNt productions_map
-    init_nullable_map = Map.fromList . map (,False) $ nonterminals grammar
-    nullable' _ (Terminal _) = False
-    nullable' nullable_map (Nonterminal a) = nullable_map Map.! a
-    productions_map = toProductionsMap $ productions grammar
-    nullableNt prods nullable_map = nullableNt' <$> prods
-      where
-        nullableNt' = any . all $ nullable' nullable_map
-
--- | Determines the nullablity of each symbol using the algorithm described
--- in Introduction to Compiler Design.
-nullableOne :: (Show nt, Show t, Ord nt, Ord t) => Grammar nt t -> Symbol nt t -> Bool
-nullableOne _ (Terminal _) = False
-nullableOne grammar (Nonterminal nt) = nullable_map Map.! nt
-  where
-    nullable_map = nullables grammar
-
--- | Determines the nullablity of a string of symbols using the algorithm
--- described in Introduction to Compiler Design.
-nullable :: (Show nt, Show t, Ord nt, Ord t) => Grammar nt t -> [Symbol nt t] -> Bool
-nullable grammar = all nullableOne'
-  where
-    nullableOne' = nullableOne grammar
 
 -- | Concatenates each element of set a on the front of each element of set b
 -- and then takes the first k symbols.
@@ -631,9 +594,9 @@ llTableM k grammar follow''
       let prods = productions grammar
       tables <- zipWithM tableEntry [0 ..] prods
       let table = Map.unionsWith Set.union tables
-      let unwrapped = head . Set.toList <$> table
-      let conflicts = Map.filter ((1 <) . Set.size) table
-      return $
+          unwrapped = Set.findMin <$> table
+          conflicts = Map.filter ((1 <) . Set.size) table
+      pure $
         if null conflicts
           then Right unwrapped
           else Left $ Text.pack [i|LL(#{k}) Table Conflicts:\n|] <> mapToStr grammar conflicts
