@@ -9,6 +9,7 @@ module Alpacc.CFG
     dfaFromCfgFile,
     printDfaSpec,
     properties,
+    printGrammar,
   )
 where
 
@@ -189,6 +190,30 @@ printDfaSpec spec =
     keys = Map.keys ordmap
     toTuple t = (ordmap Map.! t, (t, regmap Map.! t))
     printTuple (t, r) = Text.pack (show t) <> " = " <> printRegEx r <> ";"
+
+printGrammar :: Grammar NT T -> Text
+printGrammar grammar =
+  printProductions as <> printProductions bs
+  where
+    prods = toProductionsMap $ productions grammar
+    s = start grammar
+    (as, bs) = Map.partitionWithKey (\k _ -> k == s) prods
+    printSymbol (Terminal (T t)) = t
+    printSymbol (Terminal (TLit t)) = t
+    printSymbol (Nonterminal (NT nt)) = nt
+
+    printSymbols = Text.unwords . fmap printSymbol
+
+    printProductions =
+      Text.unlines
+        . fmap printProduction
+        . Map.toList
+
+    printProduction (NT k, v) =
+      k
+        <> " = "
+        <> Text.intercalate " | " (fmap printSymbols v)
+        <> ";"
 
 parsePrinted :: DFALexerSpec Char Int T -> Bool
 parsePrinted spec =

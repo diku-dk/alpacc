@@ -27,12 +27,15 @@ module Alpacc.Grammar
     grammarError,
     parsingGrammar,
     getGrammar,
+    genNonterminals,
+    genGrammar,
   )
 where
 
 import Alpacc.Util
 import Control.DeepSeq
 import Data.Bifunctor (Bifunctor (bimap, first, second))
+import Data.Char
 import Data.List qualified as List
 import Data.Map (Map)
 import Data.Map qualified as Map hiding (Map)
@@ -42,6 +45,12 @@ import Data.String.Interpolate (i)
 import Data.Text (Text)
 import Data.Text qualified as Text hiding (Text)
 import GHC.Generics
+import Test.QuickCheck
+  ( Gen,
+    choose,
+    sized,
+    vectorOf,
+  )
 
 -- | Used in augmenting terminals for the augmented grammar.
 data AugmentedTerminal t
@@ -361,3 +370,52 @@ parsingGrammar =
     . augmentGrammar
     . addUnusedTerminal
     . extendByTerminals
+
+pickN :: Int -> [a] -> Gen [a]
+pickN n xs = do
+  indices <- vectorOf n $ choose (0, length xs - 1)
+  pure [xs !! j | j <- indices]
+
+pickOne :: [a] -> Gen a
+pickOne xs = do
+  j <- choose (0, length xs - 1)
+  pure $ xs !! j
+
+genProduction :: [t] -> [nt] -> Gen (Production nt t)
+genProduction ts nts = sized $ \j -> do
+  k <- choose (0, j `div` 3)
+  Production
+    <$> pickOne nts
+    <*> pickN k ((Terminal <$> ts) <> (Nonterminal <$> nts))
+
+genNtProduction :: [t] -> [nt] -> nt -> Gen (Production nt t)
+genNtProduction ts nts nt = sized $ \j -> do
+  k <- choose (0, j `div` 5)
+  Production
+    <$> pure nt
+    <*> pickN k ((Terminal <$> ts) <> (Nonterminal <$> nts))
+
+genGrammar :: Int -> [nt] -> [t] -> Gen (Grammar nt t)
+genGrammar k nts ts =
+  Grammar
+    <$> pickOne nts
+    <*> pure ts
+    <*> pure nts
+    <*> ( (<>)
+            <$> mapM (genNtProduction ts nts) nts
+            <*> vectorOf (k - n) (genProduction ts nts)
+        )
+  where
+    n = length nts
+
+intToAlpha :: Int -> Text
+intToAlpha n =
+  if n < 26
+    then Text.singleton a
+    else Text.snoc (intToAlpha (n `div` 26 - 1)) a
+  where
+    a = chr (ord 'A' + (n `mod` 26))
+
+genNonterminals :: Int -> [NT]
+genNonterminals k =
+  NT . intToAlpha <$> [0 .. max 0 (k - 1)]

@@ -13,6 +13,7 @@ module Alpacc.Lexer.DFA
     dfaCharToWord8,
     regExEquivalence,
     dfaLexerSpecEquivalence,
+    genDfaLexerSpec,
   )
 where
 
@@ -476,15 +477,17 @@ shrinkSpec (DFALexerSpec order_map regex_map) =
     toRegexMap ts = Map.fromList [(t, regex_map Map.! t) | t <- ts]
 
 instance Arbitrary (DFALexerSpec Char Int T) where
-  arbitrary = sized genSpec
+  arbitrary =
+    sized $ \i -> do
+      k <- choose (1, max 1 i)
+      genDfaLexerSpec k
   shrink = shrinkSpec
 
-genSpec :: Int -> Gen (DFALexerSpec Char Int T)
-genSpec i = do
-  k <- choose (1, max 1 i)
+genDfaLexerSpec :: Int -> Gen (DFALexerSpec Char Int T)
+genDfaLexerSpec i = do
   dfaLexerSpec 0
-    . zipWith (\j -> (T $ intToAlpha j,)) [0 .. k]
-    <$> replicateM k auxiliary
+    . zipWith (\j -> (T $ intToAlpha j,)) [0 .. i]
+    <$> replicateM i auxiliary
   where
     auxiliary = do
       x <- arbitrary :: Gen (RegEx Char)
