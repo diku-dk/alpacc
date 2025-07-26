@@ -33,6 +33,7 @@ library
     ExtendedDefaultRules
     DeriveAnyClass
     TemplateHaskell
+    BlockArguments
 
   build-depends:
     , base
@@ -54,6 +55,7 @@ library
     , array
     , random
     , QuickCheck
+    , bytestring
 
   exposed-modules:
     Alpacc.CFG

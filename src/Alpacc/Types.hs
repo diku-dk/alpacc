@@ -23,6 +23,7 @@ class IntType a where
   addIntType :: a -> Integer -> Integer -> Integer
   mulIntType :: a -> Integer -> Integer -> Integer
   modIntType :: a -> Integer -> Integer -> Integer
+  numBits :: a -> Integer
 
 convertBinOp :: (Integral a) => (a -> a -> a) -> Integer -> Integer -> Integer
 convertBinOp f = fromIntegral .: f `on` fromIntegral
@@ -51,6 +52,10 @@ instance IntType UInt where
   modIntType U16 = convertBinOp (mod :: Word16 -> Word16 -> Word16)
   modIntType U32 = convertBinOp (mod :: Word32 -> Word32 -> Word32)
   modIntType U64 = convertBinOp (mod :: Word64 -> Word64 -> Word64)
+  numBits U8 = 8
+  numBits U16 = 16
+  numBits U32 = 32
+  numBits U64 = 64
 
 instance IntType IInt where
   intTypeMaxBound I8 = fromIntegral (maxBound :: Int8)
@@ -79,3 +84,7 @@ instance IntType IInt where
   modIntType I16 = convertBinOp (mod :: Int16 -> Int16 -> Int16)
   modIntType I32 = convertBinOp (mod :: Int32 -> Int32 -> Int32)
   modIntType I64 = convertBinOp (mod :: Int64 -> Int64 -> Int64)
+  numBits I8 = 8
+  numBits I16 = 16
+  numBits I32 = 32
+  numBits I64 = 64
