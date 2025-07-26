@@ -25,4 +25,6 @@ toWord8s :: String -> [Word8]
 toWord8s = concatMap encodeChar
 
 listProducts :: Int -> [a] -> [[a]]
-listProducts i = foldr (liftA2 (:)) [[]] . replicate i
+listProducts i = concat . zipWith auxiliary [0 .. i] . repeat
+  where
+    auxiliary j = foldr (liftA2 (:)) [[]] . replicate j
