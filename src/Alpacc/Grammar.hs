@@ -39,6 +39,7 @@ import Data.Char
 import Data.List qualified as List
 import Data.Map (Map)
 import Data.Map qualified as Map hiding (Map)
+import Data.Maybe
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.String.Interpolate (i)
@@ -284,7 +285,7 @@ grammarError grammar
   | otherwise = Nothing
   where
     nts = Set.fromList $ nonterminals grammar
-    nonproductive = nts `Set.difference` closureAlgorithm grammar
+    nonproductive = nts `Set.difference` closure grammar
     nonproductive_str = List.intercalate ", " . fmap show $ Set.toList nonproductive
     (nt_dups, t_dups, p_dups) = grammarDuplicates grammar
     nt_dups_str = List.intercalate ", " . fmap show $ nt_dups
@@ -292,14 +293,29 @@ grammarError grammar
     p_dups_str = List.intercalate ", " $ fmap show p_dups
 
 -- https://zerobone.net/blog/cs/non-productive-cfg-rules/
-closureAlgorithm :: (Ord nt, Ord t, Show nt, Show t) => Grammar nt t -> Set nt
-closureAlgorithm grammar = fixedPointIterate (==) (`newProductives` prods) Set.empty
+closure :: (Ord nt, Ord t) => Grammar nt t -> Set nt
+closure grammar = fixedPointIterate (==) (`newProductives` prods) Set.empty
   where
     prods = productions grammar
     isProductive1 set (Nonterminal nt) = nt `Set.member` set
     isProductive1 _ (Terminal _) = True
     isProductive set = all (isProductive1 set) . symbols
     newProductives set = Set.fromList . fmap nonterminal . List.filter (isProductive set)
+
+reachable :: (Ord nt, Ord t) => Grammar nt t -> Set nt
+reachable grammar = fixedPointIterate (==) f initial
+  where
+    prods_map =
+      Map.map
+        ( Set.fromList
+            . fmap unpackNonterminal
+            . concatMap (filter isNonterminal)
+        )
+        $ toProductionsMap
+        $ productions grammar
+    initial = Set.singleton $ start grammar
+    prods = fromMaybe Set.empty . flip Map.lookup prods_map
+    f prev = prev `Set.union` Set.unions (Set.map prods prev)
 
 data Unused t
   = Unused
@@ -383,30 +399,43 @@ pickOne xs = do
 
 genProduction :: [t] -> [nt] -> Gen (Production nt t)
 genProduction ts nts = sized $ \j -> do
-  k <- choose (0, j `div` 3)
+  k <- choose (0, j `div` 5)
   Production
     <$> pickOne nts
-    <*> pickN k ((Terminal <$> ts) <> (Nonterminal <$> nts))
+    <*> pickProductionSymbols k ts nts
+
+pickProductionSymbols :: Int -> [t] -> [nt] -> Gen [Symbol nt t]
+pickProductionSymbols 0 _ _ = pure []
+pickProductionSymbols k ts nts =
+  (:)
+    <$> pickOne (Terminal <$> ts)
+    <*> pickN (k - 1) ((Terminal <$> ts) <> (Nonterminal <$> nts))
 
 genNtProduction :: [t] -> [nt] -> nt -> Gen (Production nt t)
 genNtProduction ts nts nt = sized $ \j -> do
   k <- choose (0, j `div` 5)
   Production
     <$> pure nt
-    <*> pickN k ((Terminal <$> ts) <> (Nonterminal <$> nts))
+    <*> pickProductionSymbols k ts nts
 
-genGrammar :: Int -> [nt] -> [t] -> Gen (Grammar nt t)
-genGrammar k nts ts =
-  Grammar
-    <$> pickOne nts
-    <*> pure ts
-    <*> pure nts
-    <*> ( (<>)
-            <$> mapM (genNtProduction ts nts) nts
-            <*> vectorOf (k - n) (genProduction ts nts)
-        )
+genGrammar :: (Ord nt, Ord t) => Int -> [nt] -> [t] -> Gen (Grammar nt t)
+genGrammar k nts ts = do
+  g <- grammar
+  if nts_set == closure g && nts_set == reachable g
+    then pure g
+    else genGrammar k nts ts
   where
+    nts_set = Set.fromList nts
     n = length nts
+    grammar =
+      Grammar
+        <$> pickOne nts
+        <*> pure ts
+        <*> pure nts
+        <*> ( (<>)
+                <$> mapM (genNtProduction ts nts) nts
+                <*> vectorOf (k - n) (genProduction ts nts)
+            )
 
 intToAlpha :: Int -> Text
 intToAlpha n =
