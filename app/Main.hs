@@ -61,9 +61,9 @@ data GeneratorParameters = GeneratorParameters
 
 data RandomParameters = RandomParameters
   { randomOutput :: !(Maybe String),
-    randomLookback :: !Int,
-    randomLookahead :: !Int,
-    randomGenerator :: !Gen
+    randomNumTerminals :: !Int,
+    randomNumNonterminals :: !Int,
+    randomNumProductions :: !Int
   }
   deriving (Show)
 
@@ -120,6 +120,42 @@ lookaheadParameter =
         <> metavar "INT"
     )
 
+numTerminalsParameter :: Parser Int
+numTerminalsParameter =
+  option
+    auto
+    ( long "num-terminals"
+        <> short 't'
+        <> help "The amount of terminals."
+        <> showDefault
+        <> value 3
+        <> metavar "INT"
+    )
+
+numNonterminalsParameter :: Parser Int
+numNonterminalsParameter =
+  option
+    auto
+    ( long "num-nonterminals"
+        <> short 'n'
+        <> help "The amount of nonterminals."
+        <> showDefault
+        <> value 2
+        <> metavar "INT"
+    )
+
+numProductionsParameter :: Parser Int
+numProductionsParameter =
+  option
+    auto
+    ( long "num-productions"
+        <> short 'p'
+        <> help "The amount of nonterminals."
+        <> showDefault
+        <> value 3
+        <> metavar "INT"
+    )
+
 outputParameter :: Parser (Maybe String)
 outputParameter =
   optional $
@@ -168,9 +204,9 @@ randomParameters =
   Random
     <$> ( RandomParameters
             <$> outputParameter
-            <*> lookbackParameter
-            <*> lookaheadParameter
-            <*> generateParametar
+            <*> numTerminalsParameter
+            <*> numNonterminalsParameter
+            <*> numProductionsParameter
         )
 
 testParameters :: Parser Command
@@ -275,12 +311,13 @@ mainGenerator params = do
 
 mainRandom :: RandomParameters -> IO ()
 mainRandom params =
-  case gen of
-    GenLexer -> Random.randomLexer >>= writeProgram output
-    _ -> undefined
+  Random.random num_terminals num_nonterminals num_productions
+    >>= writeProgram path
   where
-    output = fromMaybe "random.alp" $ randomOutput params
-    gen = randomGenerator params
+    num_terminals = randomNumTerminals params
+    num_nonterminals = randomNumNonterminals params
+    num_productions = randomNumProductions params
+    path = fromMaybe "random.alp" $ randomOutput params
 
 main :: IO ()
 main = do
