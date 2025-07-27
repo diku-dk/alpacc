@@ -10,6 +10,8 @@ import Alpacc.Generator.Analyzer
 import Alpacc.Generator.Cuda.Generator qualified as Cuda
 import Alpacc.Generator.Futhark.Generator qualified as Futhark
 import Alpacc.Random qualified as Random
+import Alpacc.Test.Lexer
+import Data.ByteString qualified as ByteString
 import Data.Maybe
 import Data.Text (Text)
 import Data.Text qualified as Text
@@ -61,6 +63,7 @@ data GeneratorParameters = GeneratorParameters
 
 data RandomParameters = RandomParameters
   { randomOutput :: !(Maybe String),
+    randomNumChars :: !Int,
     randomNumTerminals :: !Int,
     randomNumNonterminals :: !Int,
     randomNumProductions :: !Int
@@ -117,6 +120,18 @@ lookaheadParameter =
         <> help "The amount of characters used for lookahead."
         <> showDefault
         <> value 1
+        <> metavar "INT"
+    )
+
+numCharsParameter :: Parser Int
+numCharsParameter =
+  option
+    auto
+    ( long "num-chars"
+        <> short 'c'
+        <> help "The amount of different chars, max is 26."
+        <> showDefault
+        <> value 3
         <> metavar "INT"
     )
 
@@ -204,6 +219,7 @@ randomParameters =
   Random
     <$> ( RandomParameters
             <$> outputParameter
+            <*> numCharsParameter
             <*> numTerminalsParameter
             <*> numNonterminalsParameter
             <*> numProductionsParameter
@@ -281,19 +297,29 @@ generateProgram backend generator q k cfg =
         CUDA -> Cuda.generator
         Futhark -> Futhark.generator
 
-readCfg :: Input -> String -> IO CFG
-readCfg input program_path = do
+pathOfInput :: Input -> FilePath
+pathOfInput StdInput = ""
+pathOfInput (FileInput p) = p
+
+readCfg :: Input -> IO CFG
+readCfg input = do
   contents <- readContents input
-  case cfgFromText program_path contents of
+  case cfgFromText (pathOfInput input) contents of
     Left e -> do
       hPutStrLn stderr $ Text.unpack e
       exitFailure
     Right g -> pure g
 
+eitherToIO :: Either Text a -> IO a
+eitherToIO (Left e) = do
+  hPutStrLn stderr $ Text.unpack e
+  exitFailure
+eitherToIO (Right a) = pure a
+
 mainGenerator :: GeneratorParameters -> IO ()
 mainGenerator params = do
   let program_path = outputPath backend output input
-  cfg <- readCfg input program_path
+  cfg <- readCfg input
   let either_program = generateProgram backend gen q k cfg
 
   case either_program of
@@ -311,13 +337,27 @@ mainGenerator params = do
 
 mainRandom :: RandomParameters -> IO ()
 mainRandom params =
-  Random.random num_terminals num_nonterminals num_productions
+  Random.random num_chars num_terminals num_nonterminals num_productions
     >>= writeProgram path
   where
+    num_chars = randomNumChars params
     num_terminals = randomNumTerminals params
     num_nonterminals = randomNumNonterminals params
     num_productions = randomNumProductions params
     path = fromMaybe "random.alp" $ randomOutput params
+
+mainTest :: TestParameters -> IO ()
+mainTest params = do
+  cfg <- readCfg input
+
+  case testGenerator params of
+    GenLexer -> do
+      (inputs, ouputs) <- eitherToIO $ lexerTests cfg 5
+      ByteString.writeFile "inputs" inputs
+      ByteString.writeFile "outputs" ouputs
+    _ -> undefined
+  where
+    input = testInput params
 
 main :: IO ()
 main = do
@@ -325,4 +365,4 @@ main = do
   case opts of
     Generate params -> mainGenerator params
     Random params -> mainRandom params
-    Test _ -> undefined
+    Test params -> mainTest params
