@@ -5,6 +5,7 @@ module Alpacc.Lexer.RegularExpression
     toWord8,
     producesEpsilon,
     printRegEx,
+    genRegEx,
   )
 where
 
@@ -22,8 +23,10 @@ import Data.Word (Word8)
 import Test.QuickCheck
   ( Arbitrary (arbitrary, shrink),
     Gen,
+    choose,
     oneof,
     sized,
+    vectorOf,
   )
 import Text.Megaparsec hiding (State)
 import Text.Megaparsec.Char (char, space1, string)
@@ -204,31 +207,47 @@ printRegEx (Concat r1 r2) =
 printRegEx (Alter r1 r2) =
   "(" <> printRegEx r1 <> "|" <> printRegEx r2 <> ")"
 
-genRegEx :: (Arbitrary c) => Int -> Gen (RegEx c)
-genRegEx size
+pickN :: Int -> [a] -> Gen [a]
+pickN n xs = do
+  indices <- vectorOf n $ choose (0, length xs - 1)
+  pure [xs !! j | j <- indices]
+
+pickOne :: [a] -> Gen a
+pickOne xs = do
+  j <- choose (0, length xs - 1)
+  pure $ xs !! j
+
+genRegEx :: (Arbitrary c) => [c] -> Int -> Gen (RegEx c)
+genRegEx cs size
   | size <= 1 =
       oneof
         [ pure Epsilon,
-          Literal <$> arbitrary,
+          Literal <$> pickOne cs,
           Range <$> nonEmptyArbitray
         ]
   | otherwise =
       oneof
         [ pure Epsilon,
-          Literal <$> arbitrary,
+          Literal <$> pickOne cs,
           Range <$> nonEmptyArbitray,
-          Star <$> genRegEx (size `div` 2),
-          Concat <$> genRegEx (size `div` 2) <*> genRegEx (size `div` 2),
-          Alter <$> genRegEx (size `div` 2) <*> genRegEx (size `div` 2)
+          Star <$> genRegEx cs (size `div` 2),
+          Concat
+            <$> genRegEx cs (size `div` 2)
+            <*> genRegEx cs (size `div` 2),
+          Alter
+            <$> genRegEx cs (size `div` 2)
+            <*> genRegEx cs (size `div` 2)
         ]
   where
     nonEmptyArbitray = do
-      x <- arbitrary
-      xs <- arbitrary
+      x <- pickOne cs
+      xs <- pickN size cs
       pure $ NonEmpty.fromList $ x : xs
 
 instance (Arbitrary c) => Arbitrary (RegEx c) where
-  arbitrary = sized genRegEx
+  arbitrary = sized $ \i -> do
+    vec <- vectorOf i arbitrary
+    genRegEx vec i
   shrink Epsilon = []
   shrink (Literal c) = Epsilon : [Literal c' | c' <- shrink c]
   shrink (Range r) = Epsilon : [Range r' | r' <- shrinkNonEmpty r]

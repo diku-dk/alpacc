@@ -46,6 +46,7 @@ import Test.QuickCheck
     Gen,
     choose,
     sized,
+    vectorOf,
   )
 
 type DFA t s = FSA Identity t s
@@ -429,14 +430,14 @@ tokenize dfa_lexer maybe_ignore = auxiliary 0 0 [] (initial dfa)
       s' <- Map.lookup (s, t) trans
       guard $ s' `Set.member` accept
       k <- Map.lookup s' token_map
-      pure $ append (Token k (i, j + 1)) lexemes
+      pure $ append (Lexeme k (i, j + 1)) lexemes
     auxiliary i j lexemes s (t : str'@(t' : _)) = do
       s' <- Map.lookup (s, t) trans
       let j' = j + 1
       if (s', t') `Set.member` produces_token
         then do
           k <- Map.lookup s' token_map
-          let new_lexemes = append (Token k (i, j')) lexemes
+          let new_lexemes = append (Lexeme k (i, j')) lexemes
           auxiliary j' j' new_lexemes s' str'
         else
           auxiliary i j' lexemes s' str'
@@ -490,17 +491,18 @@ instance Arbitrary (DFALexerSpec Char Int T) where
   arbitrary =
     sized $ \i -> do
       k <- choose (1, max 1 i)
-      genDfaLexerSpec k
+      vec <- vectorOf k arbitrary
+      genDfaLexerSpec k vec
   shrink = shrinkSpec
 
-genDfaLexerSpec :: Int -> Gen (DFALexerSpec Char Int T)
-genDfaLexerSpec i = do
+genDfaLexerSpec :: Int -> [Char] -> Gen (DFALexerSpec Char Int T)
+genDfaLexerSpec i cs = do
   dfaLexerSpec 0
     . zipWith (\j -> (T $ intToAlpha j,)) [0 .. i]
     <$> replicateM i auxiliary
   where
     auxiliary = do
-      x <- arbitrary :: Gen (RegEx Char)
+      x <- genRegEx cs i :: Gen (RegEx Char)
       if producesEpsilon x
         then auxiliary
         else pure x
