@@ -297,14 +297,14 @@ generateProgram backend generator q k cfg =
         CUDA -> Cuda.generator
         Futhark -> Futhark.generator
 
-pathOfInput :: Input -> FilePath
-pathOfInput StdInput = ""
-pathOfInput (FileInput p) = p
+pathOfInput :: FilePath -> Input -> FilePath
+pathOfInput p StdInput = p
+pathOfInput _ (FileInput p) = p
 
 readCfg :: Input -> IO CFG
 readCfg input = do
   contents <- readContents input
-  case cfgFromText (pathOfInput input) contents of
+  case cfgFromText (pathOfInput "" input) contents of
     Left e -> do
       hPutStrLn stderr $ Text.unpack e
       exitFailure
@@ -349,12 +349,16 @@ mainRandom params =
 mainTest :: TestParameters -> IO ()
 mainTest params = do
   cfg <- readCfg input
+  let path =
+        fromJust $
+          stripExtension "alp" $
+            pathOfInput "test.alp" input
 
   case testGenerator params of
     GenLexer -> do
-      (inputs, ouputs) <- eitherToIO $ lexerTests cfg 5
-      ByteString.writeFile "inputs" inputs
-      ByteString.writeFile "outputs" ouputs
+      (inputs, ouputs) <- eitherToIO $ lexerTests cfg 2
+      ByteString.writeFile (path <> ".inputs") inputs
+      ByteString.writeFile (path <> ".outputs") ouputs
     _ -> undefined
   where
     input = testInput params

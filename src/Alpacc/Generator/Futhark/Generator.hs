@@ -56,6 +56,8 @@ entry lex s =
                   let (starts, ends) = unzip spans
                   in (tokens, starts, ends)
   case #none -> ([], [], [])
+
+entry test [n] (s: [n]u8) : []u8 = lexer.test 16777216 s
 |]
 
 parserFunction :: Text
