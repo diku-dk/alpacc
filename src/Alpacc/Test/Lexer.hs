@@ -8,7 +8,6 @@ import Alpacc.Encode
 import Alpacc.Grammar
 import Alpacc.Lexer.DFA
 import Alpacc.Lexer.FSA
-import Alpacc.Types
 import Alpacc.Util
 import Data.Binary
 import Data.ByteString qualified as ByteString
@@ -24,67 +23,52 @@ newtype Output
   }
   deriving (Show)
 
-data Outputs
+newtype Outputs
   = Outputs
-  { tokenType :: UInt,
-    results :: [Output]
+  { results :: [Output]
   }
   deriving (Show)
 
-newtype Input = Input ByteString
+newtype Input = Input ByteString deriving (Show)
 
-newtype Inputs = Inputs [Input]
+newtype Inputs = Inputs [Input] deriving (Show)
 
-rep :: (Monad m) => Word64 -> m a -> m [a]
-rep 0 _ = pure []
-rep i m = (:) <$> m <*> rep (i - 1) m
+instance Binary Output where
+  put (Output Nothing) =
+    put (False :: Bool)
+  put (Output (Just ts)) = do
+    put (True :: Bool)
+    put (fromIntegral $ ts :: Word64)
+    mapM_ putToken ts
+    where
+      putToken (Lexeme t (i, j)) = do
+        put (fromIntegral t :: Word64)
+        put i
+        put j
 
-putOutput :: UInt -> Output -> Put
-putOutput _ (Output Nothing) = do
-  put (False :: Bool)
-putOutput token_type (Output (Just ts)) = do
-  put (True :: Bool)
-  put (fromIntegral $ length ts :: Word64)
-  mapM_ putToken ts
-  where
-    putToken (Lexeme t (i, j)) = do
-      case token_type of
-        U8 -> put (fromIntegral t :: Word8)
-        U16 -> put (fromIntegral t :: Word16)
-        U32 -> put (fromIntegral t :: Word32)
-        U64 -> put (fromIntegral t :: Word64)
-      put i
-      put j
-
-getOutput :: UInt -> Get Output
-getOutput token_type = do
-  is_valid <- get :: Get Bool
-  if is_valid
-    then do
-      num_tokens <- get :: Get Word64
-      ts <- rep num_tokens getLexeme
-      pure $ Output $ Just ts
-    else pure $ Output Nothing
-  where
-    getLexeme = do
-      t <-
-        case token_type of
-          U8 -> toInteger <$> (get :: Get Word8)
-          U16 -> toInteger <$> (get :: Get Word16)
-          U32 -> toInteger <$> (get :: Get Word32)
-          U64 -> toInteger <$> (get :: Get Word64)
-      i <- get :: Get Word64
-      j <- get :: Get Word64
-      pure $ Lexeme t (i, j)
+  get = do
+    is_valid <- get :: Get Bool
+    if is_valid
+      then do
+        num_tokens <- get :: Get Word64
+        ts <- mapM (const getLexeme) [1 .. num_tokens]
+        pure $ Output $ Just ts
+      else pure $ Output Nothing
+    where
+      getLexeme = do
+        t <- toInteger <$> (get :: Get Word64)
+        i <- get :: Get Word64
+        j <- get :: Get Word64
+        pure $ Lexeme t (i, j)
 
 instance Binary Input where
   put (Input str) = do
     put (fromIntegral $ ByteString.length str :: Word64)
-    put str
+    mapM_ put $ ByteString.unpack str
 
   get = do
     i <- get :: Get Word64
-    str <- ByteString.pack <$> rep i get
+    str <- ByteString.pack <$> mapM (const get) [1 .. i]
     pure $ Input str
 
 instance Binary Inputs where
@@ -94,35 +78,24 @@ instance Binary Inputs where
 
   get = do
     i <- get :: Get Word64
-    inps <- rep i get
+    inps <- mapM (const get) [1 .. i]
     pure $ Inputs inps
 
 instance Binary Outputs where
-  put (Outputs token_type results) = do
-    put (fromIntegral $ numBits token_type :: Word64)
+  put (Outputs results) = do
     put (fromIntegral $ length results :: Word64)
-    mapM_ (putOutput token_type) results
+    mapM_ put results
 
   get = do
-    num_bits <- get :: Get Word64
-    token_type <-
-      case num_bits of
-        8 -> pure U8
-        16 -> pure U16
-        32 -> pure U32
-        64 -> pure U64
-        _any -> fail "Error: Only 8, 16, 32, and 64 are valid."
     i <- get :: Get Word64
-
-    results <- rep i (getOutput token_type)
-    pure $ Outputs token_type results
+    results <- mapM (const get) [1 .. i]
+    pure $ Outputs results
 
 lexerTests :: CFG -> Int -> Either Text (ByteString, ByteString)
 lexerTests cfg k = do
   spec <- dfaCharToWord8 <$> cfgToDFALexerSpec cfg
   let ts = Map.keys $ regexMap spec
       encoder = encodeTerminals (T "ignore") $ parsingTerminals ts
-  token_type <- terminalIntType encoder
   dfa <-
     maybeToEither "Error: Could not encode tokens." $
       mapTokens (`terminalLookup` encoder) $
@@ -130,14 +103,12 @@ lexerTests cfg k = do
   let ignore = terminalLookup (T "ignore") encoder
       alpha = alphabet $ fsa dfa
       comb = listProducts k $ Set.toList alpha
-      outputs = toOutputs token_type dfa ignore comb
       inputs = toInputs comb
+      outputs = toOutputs dfa ignore comb
   pure
     ( ByteString.toStrict $ encode inputs,
       ByteString.toStrict $ encode outputs
     )
   where
-    toOutputs token_type dfa ignore =
-      Outputs token_type
-        . fmap (Output . tokenize dfa ignore)
+    toOutputs dfa ignore = Outputs . fmap (Output . tokenize dfa ignore)
     toInputs = Inputs . fmap (Input . ByteString.pack)
