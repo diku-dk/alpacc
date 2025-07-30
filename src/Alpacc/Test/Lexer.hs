@@ -38,7 +38,7 @@ instance Binary Output where
     put (False :: Bool)
   put (Output (Just ts)) = do
     put (True :: Bool)
-    put (fromIntegral $ ts :: Word64)
+    put (fromIntegral $ length ts :: Word64)
     mapM_ putToken ts
     where
       putToken (Lexeme t (i, j)) = do
