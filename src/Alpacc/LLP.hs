@@ -623,11 +623,11 @@ llpParse ::
   (Ord nt, Show nt, Show t, Ord t, NFData t, NFData nt) =>
   Int ->
   Int ->
-  ParsingGrammar nt t ->
+  Grammar (AugmentedNonterminal nt) (AugmentedTerminal t) ->
   [t] ->
   Either Text [Int]
 llpParse q k grammar string = do
-  table' <- llpParserTableWithStarts q k $ getGrammar grammar
+  table' <- llpParserTableWithStarts q k grammar
   let padded_string = addStoppers $ aug string
   pairs <- maybeToEither "Could not be parsed." . sequence $ pairLookup table' q k padded_string
   thd3 <$> maybeToEither "Could not be parsed." (glueAll pairs)
