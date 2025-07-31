@@ -496,7 +496,7 @@ llpqkParsingTestCase parser q k = testCase [i|LLP(#{q}, #{k}) parse test|] $ exp
     result = parser input
     expected = Right [0, 0, 3, 1, 4, 0, 3, 1, 3, 2, 2]
 
-llpParsers = [(llpParse q k grammar, q, k) | q <- [1 .. 3], k <- [1 .. 3]]
+llpParsers = [(llpParse q k (augmentGrammar grammar), q, k) | q <- [1 .. 3], k <- [1 .. 3]]
 
 derivable10 = derivableNLengths 10 grammar
 
