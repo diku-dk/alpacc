@@ -4,8 +4,14 @@ module Alpacc.Test.Parser
 where
 
 import Alpacc.CFG
+import Alpacc.Encode
+import Alpacc.Grammar
+import Alpacc.LLP
+import Alpacc.Util
 import Data.Binary
+import Data.ByteString qualified as ByteString
 import Data.ByteString.Internal
+import Data.Maybe
 import Data.Text (Text)
 
 newtype Output
@@ -71,10 +77,27 @@ instance Binary Outputs where
     results <- mapM (const get) [1 .. i]
     pure $ Outputs results
 
-parserTests :: CFG -> Int -> Either Text (ByteString, ByteString)
-parserTests cfg k = do
+parserTests :: CFG -> Int -> Int -> Int -> Either Text (ByteString, ByteString)
+parserTests cfg q k n = do
   grammar <- cfgToGrammar cfg
+  let s_encoder = encodeSymbols (T "ignore") grammar
+      p x = x /= AugmentedTerminal Unused && x /= LeftTurnstile && x /= RightTurnstile
+      encode' x = fromJust $ Terminal x `symbolLookup` s_encoder
+      comb =
+        listProducts n $
+          mapMaybe unaug $
+            filter p $
+              terminals $
+                getGrammar grammar
+      inputs = Inputs $ Input . fmap (fromIntegral . encode' . AugmentedTerminal) <$> comb
+      parse = llpParse q k (getGrammar grammar)
+      outputs = Outputs $ Output . fmap (fmap fromIntegral) . toMaybe . parse <$> comb
   pure
-    ( mempty,
-      mempty
+    ( ByteString.toStrict $ encode inputs,
+      ByteString.toStrict $ encode outputs
     )
+  where
+    toMaybe (Left _) = Nothing
+    toMaybe (Right a) = Just a
+    unaug (AugmentedTerminal t) = Just t
+    unaug _ = Nothing

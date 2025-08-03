@@ -181,14 +181,19 @@ module mk_parser (P: parser_context) = {
        then idxs
        else idxs
 
-  def to_productions ks =
+  def to_productions [n] (ks: [n]((i64, i64), (i64, i64))) : opt ([]production) =
     let (stack_spans, productions_spans) = unzip ks
     let stacks = construct_stacks stack_spans
-    in if brackets_matches stacks
-       then construct_productions productions_spans
-       else []
+    let is_valid = brackets_matches stacks
+    let prods =
+      if is_valid
+      then construct_productions productions_spans
+      else []
+    in if is_valid
+       then #some prods
+       else #none
 
-  def pre_productions [n] (arr: [n]terminal) : []production =
+  def pre_productions [n] (arr: [n]terminal) : opt ([]production) =
     arr
     |> to_keys
     |> to_productions
@@ -198,14 +203,6 @@ module mk_parser (P: parser_context) = {
 
   def production_to_arity (p: production) : i64 =
     copy P.production_to_arity[production_module.to_i64 p]
-
-  def productions [n] (arr: [n]terminal) : []production =
-    let r =
-      pre_productions arr
-      |> filter (is_none <-< production_to_terminal)
-    in if length r == 0
-       then []
-       else tail r
 
   def size (h: i64) : i64 =
     (1 << h) - 1
@@ -280,7 +277,7 @@ module mk_parser (P: parser_context) = {
   def safe_zip [n] [m] 'a 'b (a: [n]a) (b: [m]b) =
     if n == m
     then zip a (sized n b)
-    else []
+    else assert true []
 
   def terminal_offsets [n] [m]
                        (spans: [m](i64, i64))
@@ -293,23 +290,23 @@ module mk_parser (P: parser_context) = {
               from_opt empty_terminal t
               |> (\t' -> (i, #terminal t' s)))
 
-  def safe_tail arr =
-    if length arr == 0
-    then arr
-    else tail arr
-
   def parse [n] (arr: [n](terminal, (i64, i64))) =
     let (ters, spans) = unzip arr
-    let prods = ters |> pre_productions |> safe_tail
-    let parent_vector = parents prods
-    let ts = map production_to_terminal prods
-    let (offsets, ts') = terminal_offsets spans ts |> unzip
-    let prods' =
-      map (\p -> #production p)
-          prods
-      :> [](node terminal production)
-    in scatter prods' offsets ts'
-       |> zip parent_vector
+    let prods' = ters |> pre_productions
+    let result =
+      match prods'
+      case #some prods ->
+        let parent_vector = parents prods
+        let ts = map production_to_terminal prods
+        let (offsets, tprods) = terminal_offsets spans ts |> unzip
+        let prods =
+          map (\p -> #production p)
+              prods
+          :> [](node terminal production)
+        in scatter prods offsets tprods
+           |> zip parent_vector
+      case _ -> []
+    in if is_some prods' then some result else #none
 }
 
 -- End of parser.fut
