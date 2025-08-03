@@ -6,9 +6,13 @@ where
 import Alpacc.Generator.Analyzer
 import Alpacc.Generator.Futhark.Lexer qualified as Lexer
 import Alpacc.Generator.Futhark.Parser qualified as Parser
+import Data.FileEmbed
 import Data.String.Interpolate (i)
 import Data.Text (Text)
 import Data.Text qualified as Text
+
+futharkTest :: Text
+futharkTest = $(embedStringFile "futhark/test.fut")
 
 parentVectorTest :: Text
 parentVectorTest =
@@ -50,6 +54,8 @@ lexerFunction =
   Text.strip $
     Text.pack
       [i|
+module tester = lexer_test lexer u8
+
 entry lex s =
   match lexer.lex 16777216 s
   case #some r -> let (tokens, spans) = unzip r
@@ -65,6 +71,8 @@ parserFunction =
   Text.strip $
     Text.pack
       [i|
+module tester = lexer_test lexer u8
+
 entry parse = parser.parse
 |]
       <> parentVectorTest
@@ -76,12 +84,14 @@ auxiliary analyzer =
       Text.unlines
         [ Text.unlines (("-- " <>) <$> meta analyzer),
           Lexer.generateLexer terminal_type lexer,
+          futharkTest,
           lexerFunction
         ]
     Parse parser ->
       Text.unlines
         [ Text.unlines (("-- " <>) <$> meta analyzer),
           Parser.generateParser terminal_type parser,
+          futharkTest,
           parserFunction
         ]
     Both lexer parser ->
@@ -89,6 +99,7 @@ auxiliary analyzer =
         [ Text.unlines (("-- " <>) <$> meta analyzer),
           Lexer.generateLexer terminal_type lexer,
           Parser.generateParser terminal_type parser,
+          futharkTest,
           bothFunction
         ]
   where
