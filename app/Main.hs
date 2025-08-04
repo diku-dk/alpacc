@@ -353,7 +353,8 @@ mainTest params = do
   let path =
         fromJust $
           stripExtension "alp" $
-            pathOfInput "test.alp" input
+            takeFileName $
+              pathOfInput "test.alp" input
 
   case testGenerator params of
     GenLexer -> do

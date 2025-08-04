@@ -4,8 +4,10 @@ module Alpacc.Generator.Futhark.Generator
 where
 
 import Alpacc.Generator.Analyzer
+import Alpacc.Generator.Futhark.Futharkify
 import Alpacc.Generator.Futhark.Lexer qualified as Lexer
 import Alpacc.Generator.Futhark.Parser qualified as Parser
+import Alpacc.Types
 import Data.FileEmbed
 import Data.String.Interpolate (i)
 import Data.Text (Text)
@@ -33,28 +35,24 @@ bothFunction =
     Text.pack
       [i|
 entry parse s =
-  match lexer.lex 16777216 s
-  case #some r -> parser.parse r
-  case #none -> []
-
-entry productions s =
-  match lexer.lex 16777216 s
-  case #some r -> map (.0) r |> parser.productions 
-  case #none -> []
-
-entry pre_productions s =
-  match lexer.lex 16777216 s
-  case #some r -> map (.0) r |> parser.pre_productions 
-  case #none -> []
+  let tokens' = lexer.lex 16777216 s
+  let tokens =
+    match tokens'
+    case #some t -> t
+    case #none -> []
+  let cst = parser.parse tokens
+  in if is_some tokens'
+     then cst
+     else #none
 |]
       <> parentVectorTest
 
-lexerFunction :: Text
-lexerFunction =
+lexerFunction :: UInt -> Text
+lexerFunction terminal_type =
   Text.strip $
     Text.pack
       [i|
-module tester = lexer_test lexer u8
+module tester = lexer_test lexer #{futharkify terminal_type}
 
 entry lex s =
   match lexer.lex 16777216 s
@@ -63,17 +61,19 @@ entry lex s =
                   in (tokens, starts, ends)
   case #none -> ([], [], [])
 
-entry test [n] (s: [n]u8) : []u8 = lexer.test 16777216 s
+entry test [n] (s: [n]u8) : []u8 = tester.test 16777216 s
 |]
 
-parserFunction :: Text
-parserFunction =
+parserFunction :: UInt -> UInt -> Text
+parserFunction terminal_type production_type =
   Text.strip $
     Text.pack
       [i|
-module tester = lexer_test lexer u8
+module tester = parser_test parser #{futharkify terminal_type} #{futharkify production_type}
 
 entry parse = parser.parse
+
+entry test [n] (s: [n]u8) : []u8 = tester.test s
 |]
       <> parentVectorTest
 
@@ -85,14 +85,14 @@ auxiliary analyzer =
         [ Text.unlines (("-- " <>) <$> meta analyzer),
           Lexer.generateLexer terminal_type lexer,
           futharkTest,
-          lexerFunction
+          lexerFunction terminal_type
         ]
     Parse parser ->
       Text.unlines
         [ Text.unlines (("-- " <>) <$> meta analyzer),
           Parser.generateParser terminal_type parser,
           futharkTest,
-          parserFunction
+          parserFunction terminal_type (productionType parser)
         ]
     Both lexer parser ->
       Text.unlines
