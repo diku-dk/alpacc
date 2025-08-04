@@ -80,8 +80,12 @@ instance Binary Outputs where
 parserTests :: CFG -> Int -> Int -> Int -> Either Text (ByteString, ByteString)
 parserTests cfg q k n = do
   grammar <- cfgToGrammar cfg
+  table <- llpParserTableWithStarts q k $ getGrammar grammar
   let s_encoder = encodeSymbols (T "ignore") grammar
-      p x = x /= AugmentedTerminal Unused && x /= LeftTurnstile && x /= RightTurnstile
+      p x =
+        x /= AugmentedTerminal Unused
+          && x /= LeftTurnstile
+          && x /= RightTurnstile
       encode' x = fromJust $ Terminal x `symbolLookup` s_encoder
       comb =
         listProducts n $
@@ -90,14 +94,12 @@ parserTests cfg q k n = do
               terminals $
                 getGrammar grammar
       inputs = Inputs $ Input . fmap (fromIntegral . encode' . AugmentedTerminal) <$> comb
-      parse = llpParse q k (getGrammar grammar)
-      outputs = Outputs $ Output . fmap (fmap fromIntegral) . toMaybe . parse <$> comb
+      parse = llpParse q k table
+      outputs = Outputs $ Output . fmap (fmap fromIntegral) . parse <$> comb
   pure
     ( ByteString.toStrict $ encode inputs,
       ByteString.toStrict $ encode outputs
     )
   where
-    toMaybe (Left _) = Nothing
-    toMaybe (Right a) = Just a
     unaug (AugmentedTerminal t) = Just t
     unaug _ = Nothing

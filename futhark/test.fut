@@ -17,14 +17,14 @@ def encode_u64 (a: u64) : [8]u8 =
   ]
 
 def decode_u64 (a: [8]u8) : u64 =
-  (u64.u8 a[7] << 56)
-  | (u64.u8 a[6] << 48)
-  | (u64.u8 a[5] << 40)
-  | (u64.u8 a[4] << 32)
-  | (u64.u8 a[3] << 24)
-  | (u64.u8 a[2] << 16)
-  | (u64.u8 a[1] << 8)
-  | (u64.u8 a[0] << 0)
+  (u64.u8 a[0] << 56)
+  | (u64.u8 a[1] << 48)
+  | (u64.u8 a[2] << 40)
+  | (u64.u8 a[3] << 32)
+  | (u64.u8 a[4] << 24)
+  | (u64.u8 a[5] << 16)
+  | (u64.u8 a[6] << 8)
+  | (u64.u8 a[7] << 0)
 
 module lexer_test
   (L: {
@@ -73,6 +73,14 @@ module parser_test
   type terminal = P.terminal
   type production = P.production
 
+  def encode_productions [n] (ts: opt ([n]production)) : []u8 =
+    match ts
+    case #some ts' ->
+      [u8.bool true]
+      ++ encode_u64 (u64.i64 n)
+      ++ flatten (map (encode_u64 <-< u64.i64 <-< Q.to_i64) ts')
+    case #none -> [u8.bool false]
+
   def test [n] (bytes: [n]u8) : []u8 =
     let num = take 8 bytes
     let num_tests = decode_u64 num
@@ -85,11 +93,10 @@ module parser_test
           take (input_size * 8) inputs'
           |> unflatten
           |> map (T.u64 <-< decode_u64)
-        let inputs'' = drop input_size inputs'
+        let inputs'' = drop (input_size * 8) inputs'
         let output =
           P.pre_productions input
-          |> map (encode_u64 <-< u64.i64 <-< Q.to_i64)
-          |> flatten
+          |> encode_productions
         in (result ++ output, inputs'')
     in a
 }

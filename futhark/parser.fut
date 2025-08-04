@@ -178,8 +178,8 @@ module mk_parser (P: parser_context) = {
     let arr' = [P.start_terminal] ++ arr ++ [P.end_terminal]
     let idxs = keys arr'
     in if valid_keys idxs
-       then idxs
-       else idxs
+       then some idxs
+       else #none
 
   def to_productions [n] (ks: [n]((i64, i64), (i64, i64))) : opt ([]production) =
     let (stack_spans, productions_spans) = unzip ks
@@ -194,9 +194,15 @@ module mk_parser (P: parser_context) = {
        else #none
 
   def pre_productions [n] (arr: [n]terminal) : opt ([]production) =
-    arr
-    |> to_keys
-    |> to_productions
+    let ks' = to_keys arr
+    let ks =
+      match ks'
+      case #some k -> k
+      case #none -> []
+    let prods = to_productions ks
+    in if is_some ks'
+       then prods
+       else #none
 
   def production_to_terminal (p: production) : opt terminal =
     copy P.production_to_terminal[production_module.to_i64 p]

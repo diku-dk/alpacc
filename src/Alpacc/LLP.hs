@@ -19,7 +19,6 @@ import Control.DeepSeq
 import Control.Monad (foldM, join)
 import Control.Monad.State
 import Data.Bifunctor qualified as BI
-import Data.Either.Extra (maybeToEither)
 import Data.Foldable
 import Data.List qualified as List
 import Data.Map (Map)
@@ -509,7 +508,7 @@ allStarts = do
           Production _ s'@(_ : tail_s') : _ -> (s', tail_s')
           _any -> ([], [])
   zero_symbols <- toList <$> useFirst s
-  let zero_keys = Map.fromList $ (,([Nonterminal start'], tail_s, [0])) . ([],) <$> zero_symbols
+  let zero_keys = Map.fromList $ (,([Nonterminal start'], tail_s, [])) . ([],) <$> zero_symbols
   return zero_keys
 
 llpParserTableWithStarts ::
@@ -623,14 +622,19 @@ llpParse ::
   (Ord nt, Show nt, Show t, Ord t, NFData t, NFData nt) =>
   Int ->
   Int ->
-  Grammar (AugmentedNonterminal nt) (AugmentedTerminal t) ->
+  ( Map
+      ([AugmentedTerminal t], [AugmentedTerminal t])
+      ( [Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)],
+        [Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)],
+        [Int]
+      )
+  ) ->
   [t] ->
-  Either Text [Int]
-llpParse q k grammar string = do
-  table' <- llpParserTableWithStarts q k grammar
+  Maybe [Int]
+llpParse q k table string = do
   let padded_string = addStoppers $ aug string
-  pairs <- maybeToEither "Could not be parsed." . sequence $ pairLookup table' q k padded_string
-  thd3 <$> maybeToEither "Could not be parsed." (glueAll pairs)
+  pairs <- sequence $ pairLookup table q k padded_string
+  thd3 <$> glueAll pairs
   where
     addStoppers = (replicate 1 RightTurnstile ++) . (++ replicate 1 LeftTurnstile)
     aug = fmap AugmentedTerminal
