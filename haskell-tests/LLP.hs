@@ -7,7 +7,9 @@ import Control.Monad.State
 import Data.Either
 import Data.Foldable (Foldable (toList))
 import Data.List qualified as List
+import Data.Map (Map)
 import Data.Map qualified as Map
+import Data.Maybe
 import Data.Set qualified as Set
 import Data.String.Interpolate (i)
 import Test.Tasty (TestTree, testGroup)
@@ -494,16 +496,29 @@ llpqkParsingTestCase parser q k = testCase [i|LLP(#{q}, #{k}) parse test|] $ exp
   where
     input = map List.singleton "a+[a+a]"
     result = parser input
-    expected = Right [0, 0, 3, 1, 4, 0, 3, 1, 3, 2, 2]
+    expected = Just [0, 3, 1, 4, 0, 3, 1, 3, 2, 2]
 
-llpParsers = [(llpParse q k (augmentGrammar grammar), q, k) | q <- [1 .. 3], k <- [1 .. 3]]
+mkTable ::
+  Int ->
+  Int ->
+  Grammar String String ->
+  ( Map
+      ([AugmentedTerminal String], [AugmentedTerminal String])
+      ( [Symbol (AugmentedNonterminal String) (AugmentedTerminal String)],
+        [Symbol (AugmentedNonterminal String) (AugmentedTerminal String)],
+        [Int]
+      )
+  )
+mkTable q k = fromRight (error "Could not construct LLP parser") . llpParserTableWithStarts q k . augmentGrammar
+
+llpParsers = [(llpParse q k (mkTable q k grammar), q, k) | q <- [1 .. 3], k <- [1 .. 3]]
 
 derivable10 = derivableNLengths 10 grammar
 
 llpqkParsingDerivableTestCase parser q k =
   testCase [i|LLP(#{q}, #{k}) can parse derivables of length 10.|] $ expected @?= True
   where
-    expected = all isRight $ parser <$> Set.toList derivable10
+    expected = all (isJust . parser) $ Set.toList derivable10
 
 llpqkParsingDerivableTestCases = [llpqkParsingDerivableTestCase parser q k | (parser, k, q) <- llpParsers]
 
@@ -514,7 +529,7 @@ nonderivable3 = nonderivableNLengths 3 grammar
 llpqkParsingNonderivableTestCase parser q k =
   testCase [i|LLP(#{q}, #{k}) fails on parsing nonderivables of length 3.|] $ expected @?= True
   where
-    expected = all isLeft $ parser <$> Set.toList nonderivable3
+    expected = all (isNothing . parser) $ Set.toList nonderivable3
 
 llpqkParsingNonderivableTestCases = [llpqkParsingNonderivableTestCase parser q k | (parser, k, q) <- llpParsers]
 
