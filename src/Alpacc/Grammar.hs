@@ -58,62 +58,37 @@ data AugmentedTerminal t
   = AugmentedTerminal t
   | RightTurnstile
   | LeftTurnstile
-  deriving (Ord, Eq, Generic)
+  deriving (Ord, Eq, Generic, Show)
 
 instance (NFData t) => NFData (AugmentedTerminal t)
-
--- | Prints whats inside the augmented terminal structure.
-instance (Show t) => Show (AugmentedTerminal t) where
-  show RightTurnstile = "⊢"
-  show LeftTurnstile = "⊣"
-  show (AugmentedTerminal t) = show t
 
 -- | Used in augmenting nonterminals for the augmented grammar.
 data AugmentedNonterminal nt
   = AugmentedNonterminal nt
   | Start
-  deriving (Ord, Eq, Generic)
+  deriving (Ord, Eq, Generic, Show)
 
 instance (NFData nt) => NFData (AugmentedNonterminal nt)
 
--- | Prints whats inside the augmented nonterminal structure.
-instance (Show nt) => Show (AugmentedNonterminal nt) where
-  show (AugmentedNonterminal nt) = show nt
-  show Start = "⊥"
-
 -- | Structure used for terminals making it easier to print strings in a
 -- readable manner.
-data T = T Text | TLit Text deriving (Ord, Eq, Generic)
+data T = T Text | TLit Text deriving (Ord, Eq, Generic, Show)
 
 instance NFData T
 
--- | Prints the string inside the terminal symbol.
-instance Show T where
-  show (T a) = Text.unpack a
-  show (TLit a) = "\"" <> Text.unpack a <> "\""
-
 -- | Structure used for nonterminals making it easier to print strings in a
 -- readable manner.
-newtype NT = NT Text deriving (Ord, Eq, Generic)
+newtype NT = NT Text deriving (Ord, Eq, Generic, Show)
 
 instance NFData NT
-
--- | Reads the string as it is for the nonterminal.
-instance Show NT where
-  show (NT a) = Text.unpack a
 
 -- | An algebraic data structure which can contain a terminal or a nonterminal.
 data Symbol nt t
   = Nonterminal nt
   | Terminal t
-  deriving (Ord, Eq, Read, Functor, Generic)
+  deriving (Ord, Eq, Read, Functor, Generic, Show)
 
 instance (NFData t, NFData nt) => NFData (Symbol nt t)
-
--- | Shows whats inside the symbol.
-instance (Show nt, Show t) => Show (Symbol nt t) where
-  show (Nonterminal a) = show a
-  show (Terminal a) = show a
 
 -- | Bifunctor for symbol where first is the Nonterminal and second is Terminal.
 instance Bifunctor Symbol where
@@ -124,10 +99,7 @@ instance Bifunctor Symbol where
 
 -- | An algebraic data structure which describes a production.
 data Production nt t = Production {prodLHS :: nt, prodRHS :: [Symbol nt t]}
-  deriving (Ord, Eq, Read, Functor, Generic)
-
-instance (Show nt, Show t) => Show (Production nt t) where
-  show (Production nt s) = show nt ++ " = " ++ unwords (fmap show s)
+  deriving (Ord, Eq, Read, Functor, Generic, Show)
 
 instance (NFData t, NFData nt) => NFData (Production nt t)
 
