@@ -189,7 +189,8 @@ printDfaSpec spec =
     regmap = regexMap spec
     keys = Map.keys ordmap
     toTuple t = (ordmap Map.! t, (t, regmap Map.! t))
-    printTuple (t, r) = Text.pack (show t) <> " = " <> printRegEx r <> ";"
+    printTuple (T t, r) = t <> " = " <> printRegEx r <> ";"
+    printTuple (TLit _, _) = error "Error: Cannot print a literal terminal rule."
 
 printGrammar :: Grammar NT T -> Text
 printGrammar grammar =

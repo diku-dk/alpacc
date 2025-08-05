@@ -88,6 +88,7 @@ library
     Alpacc.Test
     Alpacc.Test.Parser
     Alpacc.Test.Lexer
+    Alpacc.Test.LexerParser
     Alpacc.Random
 
   hs-source-dirs:     src

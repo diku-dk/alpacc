@@ -19,7 +19,7 @@ import Data.Text (Text)
 
 newtype Output
   = Output
-  { result :: Maybe [Lexeme Integer]
+  { result :: Maybe [Lexeme Word64]
   }
   deriving (Show)
 
@@ -56,7 +56,7 @@ instance Binary Output where
       else pure $ Output Nothing
     where
       getLexeme = do
-        t <- toInteger <$> (get :: Get Word64)
+        t <- get :: Get Word64
         i <- get :: Get Word64
         j <- get :: Get Word64
         pure $ Lexeme t (i, j)
@@ -98,9 +98,9 @@ lexerTests cfg k = do
       encoder = encodeTerminals (T "ignore") $ parsingTerminals ts
   dfa <-
     maybeToEither "Error: Could not encode tokens." $
-      mapTokens (`terminalLookup` encoder) $
+      mapTokens (fmap fromIntegral . (`terminalLookup` encoder)) $
         lexerDFA (0 :: Integer) spec
-  let ignore = terminalLookup (T "ignore") encoder
+  let ignore = fromIntegral <$> terminalLookup (T "ignore") encoder
       alpha = alphabet $ fsa dfa
       comb = listProducts k $ Set.toList alpha
       inputs = toInputs comb

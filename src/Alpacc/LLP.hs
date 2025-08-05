@@ -8,11 +8,14 @@ module Alpacc.LLP
     initLlpContext,
     llpCollectionMemo,
     llpParserTableWithStartsHomomorphisms,
+    llpParseFlatTree,
     Bracket (..),
     LlpContext (..),
+    FlatNode (..),
   )
 where
 
+import Alpacc.Debug
 import Alpacc.Grammar
 import Alpacc.LL hiding (before, follow, llParse)
 import Control.DeepSeq
@@ -32,6 +35,7 @@ import Data.String.Interpolate (i)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Tuple.Extra (both, fst3, thd3)
+import Data.Word
 import GHC.Generics
 import Prelude hiding (last)
 
@@ -622,21 +626,76 @@ llpParse ::
   (Ord nt, Show nt, Show t, Ord t, NFData t, NFData nt) =>
   Int ->
   Int ->
-  ( Map
-      ([AugmentedTerminal t], [AugmentedTerminal t])
-      ( [Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)],
-        [Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)],
-        [Int]
-      )
-  ) ->
+  Map
+    ([AugmentedTerminal t], [AugmentedTerminal t])
+    ( [Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)],
+      [Symbol (AugmentedNonterminal nt) (AugmentedTerminal t)],
+      [Int]
+    ) ->
   [t] ->
   Maybe [Int]
 llpParse q k table string = do
   let padded_string = addStoppers $ aug string
   pairs <- sequence $ pairLookup table q k padded_string
+  x <- Just padded_string
+  let !y = debug x
   thd3 <$> glueAll pairs
   where
-    addStoppers = (replicate 1 RightTurnstile ++) . (++ replicate 1 LeftTurnstile)
+    addStoppers = ([RightTurnstile] <>) . (<> [LeftTurnstile])
     aug = fmap AugmentedTerminal
     glueAll [] = Nothing
     glueAll (x : xs) = foldM glue x xs
+
+data FlatNode i m t
+  = FlatProduction !i !i
+  | FlatTerminal !i !(t, m)
+  deriving (Show)
+
+instance Functor (FlatNode i m) where
+  fmap _ (FlatProduction j p) = FlatProduction j p
+  fmap f (FlatTerminal j (t, m)) = FlatTerminal j (f t, m)
+
+llpParseFlatTree ::
+  (Ord nt, Show nt, Show t, Ord t, Show t', Ord t', NFData t', NFData t, NFData nt) =>
+  Grammar
+    (AugmentedNonterminal (Symbol nt t))
+    (AugmentedTerminal t') ->
+  Int ->
+  Int ->
+  Map
+    ([AugmentedTerminal t'], [AugmentedTerminal t'])
+    ( [Symbol (AugmentedNonterminal (Symbol nt t)) (AugmentedTerminal t')],
+      [Symbol (AugmentedNonterminal (Symbol nt t)) (AugmentedTerminal t')],
+      [Int]
+    ) ->
+  [(t', m)] ->
+  Maybe [FlatNode Word64 m t]
+llpParseFlatTree grammar q k table str_meta = do
+  derivation <- llpParse q k table str
+  mkFlatTree 0 [0] [] [] meta derivation
+  where
+    (str, meta) = unzip str_meta
+    prod_map = Map.fromList $ zip [(0 :: Int) ..] $ productions grammar
+    toProd = flip Map.lookup prod_map
+    mkFlatTree
+      c
+      parents@(p : _)
+      tree
+      ((Nonterminal (AugmentedNonterminal (Terminal t))) : stack)
+      (m : ms)
+      (_ : ds) =
+        mkFlatTree (c + 1) parents (tree ++ [ter]) stack ms ds
+        where
+          ter = FlatTerminal p (t, m)
+    mkFlatTree
+      c
+      parents@(p : _)
+      tree
+      ((Nonterminal (AugmentedNonterminal (Nonterminal _))) : t)
+      ms
+      (j : ds) = do
+        Production _ s <- toProd j
+        let j' = fromIntegral j
+        mkFlatTree (c + 1) (c : parents) (FlatProduction p j' : tree) (s <> t) ms ds
+    mkFlatTree _ _ tree [] [] [] = Just tree
+    mkFlatTree _ _ _ _ _ _ = Nothing

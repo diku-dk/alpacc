@@ -10,8 +10,7 @@ import Alpacc.Generator.Analyzer
 import Alpacc.Generator.Cuda.Generator qualified as Cuda
 import Alpacc.Generator.Futhark.Generator qualified as Futhark
 import Alpacc.Random qualified as Random
-import Alpacc.Test.Lexer
-import Alpacc.Test.Parser
+import Alpacc.Test
 import Data.ByteString qualified as ByteString
 import Data.Maybe
 import Data.Text (Text)
@@ -365,7 +364,10 @@ mainTest params = do
       (inputs, ouputs) <- eitherToIO $ parserTests cfg q k 2
       ByteString.writeFile (path <> ".inputs") inputs
       ByteString.writeFile (path <> ".outputs") ouputs
-    _ -> undefined
+    GenBoth -> do
+      (inputs, ouputs) <- eitherToIO $ lexerParserTests cfg q k 3
+      ByteString.writeFile (path <> ".inputs") inputs
+      ByteString.writeFile (path <> ".outputs") ouputs
   where
     input = testInput params
     q = testLookback params
