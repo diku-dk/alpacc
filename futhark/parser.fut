@@ -296,7 +296,7 @@ module mk_parser (P: parser_context) = {
               from_opt empty_terminal t
               |> (\t' -> (i, #terminal t' s)))
 
-  def parse [n] (arr: [n](terminal, (i64, i64))) =
+  def parse [n] (arr: [n](terminal, (i64, i64))) : opt ([](i64, node terminal production)) =
     let (ters, spans) = unzip arr
     let prods' = ters |> pre_productions
     let result =

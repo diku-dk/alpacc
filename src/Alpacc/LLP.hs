@@ -16,7 +16,6 @@ module Alpacc.LLP
   )
 where
 
-import Alpacc.Debug
 import Alpacc.Grammar
 import Alpacc.LL hiding (before, follow, llParse)
 import Control.DeepSeq

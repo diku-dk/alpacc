@@ -34,25 +34,26 @@ This will create the Futhark source file `paper_grammar.fut` which contains the 
 
 A leftmost derivable string from this grammar is `1+[2+3]`. When parsing this the resulting syntax tree is.
 ```
-[(0, #production 0)
-,(0, #production 3)
-,(1, #terminal 1 (0, 1))
-,(0, #production 1)
-,(3, #terminal 2 (1, 2))
-,(3, #production 4)
-,(5, #terminal 3 (2, 3))
-,(5, #production 0)
-,(7, #production 3)
-,(8, #terminal 1 (3, 4))
-,(7, #production 1)
-,(10, #terminal 2 (4, 5))
-,(10, #production 3)
-,(12, #terminal 1 (5, 6))
-,(10, #production 2)
-,(5, #terminal 4 (6, 7))
-,(3, #production 2)]
+#some [ (0, #production 0)
+      , (0, #production 3)
+      , (1, #terminal 0 (0, 1))
+      , (0, #production 1)
+      , (3, #terminal 1 (1, 2))
+      , (3, #production 4)
+      , (5, #terminal 2 (2, 3))
+      , (5, #production 0)
+      , (7, #production 3)
+      , (8, #terminal 0 (3, 4))
+      , (7, #production 1)
+      , (10, #terminal 1 (4, 5))
+      , (10, #production 3)
+      , (12, #terminal 0 (5, 6))
+      , (10, #production 2)
+      , (5, #terminal 3 (6, 7))
+      , (3, #production 2)
+      ]
 ```
-First element in each tuple is the parent index of each node, so the root nodes has itself as a parent. The second element in each tuple is the actual node. A node is either a production or a terminal, and they are enumerated seperately. They are also enumerated in the order they are defined (besides `ignore` it will always have the value `0`). So if we look at the first element then its parent is itself and the node is a production `#production 0`. The first production defined is `E = T E'` which is the starting production and has been given the value `0`. If we look at the element `(1, #terminal 1 (0, 1))` then its parent is at index `1` and its the terminal is `a` since `ignore` is defined. `(0, 1))` is the span of the substring that token corresponds to in the input string.
+First element in each tuple is the parent index of each node, and we define the root node to be its own parent. The second element in each tuple is the actual node. A node is either a production or a terminal, and they are enumerated seperately. They are also enumerated in the order they are defined (besides `ignore` it will be included). So if we look at the first element then its parent is itself and the node is a production `#production 0`. The first production defined is `E = T E'` which is the starting production and has been given the value `0`. If we look at the element `(1, #terminal 0 (0, 1))` then its parent is at index `1` and its the terminal is `a`. `(0, 1))` is the span of the substring that token corresponds to in the input string.
 
 It is also possible to only generate a lexer or parser using the flags `--lexer` or `--parser`. 
 

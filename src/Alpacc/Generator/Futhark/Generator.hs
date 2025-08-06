@@ -16,21 +16,8 @@ import Data.Text qualified as Text
 futharkTest :: Text
 futharkTest = $(embedStringFile "futhark/test.fut")
 
-parentVectorTest :: Text
-parentVectorTest =
-  Text.strip $
-    Text.pack
-      [i|
--- ==
--- entry: test_previous_equal_or_smaller
--- compiled random input { [100]i32 }
--- output { true }
-entry test_previous_equal_or_smaller [n] (arr: [n]i32): bool =
-  parser.test_previous_equal_or_smaller arr
-|]
-
-bothFunction :: Text
-bothFunction =
+bothFunction :: UInt -> UInt -> Text
+bothFunction terminal_type production_type =
   Text.strip $
     Text.pack
       [i|
@@ -44,8 +31,16 @@ entry parse s =
   in if is_some tokens'
      then cst
      else #none
+
+module tester = lexer_parser_test {
+  type terminal = parser.terminal
+  type production = parser.production
+  type node 't 'p = parser.node t p
+  def parse = parse
+} #{futharkify terminal_type} #{futharkify production_type}
+
+entry test [n] (s: [n]u8) : []u8 = tester.test s
 |]
-      <> parentVectorTest
 
 lexerFunction :: UInt -> Text
 lexerFunction terminal_type =
@@ -75,7 +70,6 @@ entry parse = parser.parse
 
 entry test [n] (s: [n]u8) : []u8 = tester.test s
 |]
-      <> parentVectorTest
 
 auxiliary :: Analyzer [Text] -> Text
 auxiliary analyzer =
@@ -100,7 +94,7 @@ auxiliary analyzer =
           Lexer.generateLexer terminal_type lexer,
           Parser.generateParser terminal_type parser,
           futharkTest,
-          bothFunction
+          bothFunction terminal_type (productionType parser)
         ]
   where
     terminal_type = terminalType analyzer
