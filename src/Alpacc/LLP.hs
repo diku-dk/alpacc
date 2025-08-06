@@ -8,10 +8,11 @@ module Alpacc.LLP
     initLlpContext,
     llpCollectionMemo,
     llpParserTableWithStartsHomomorphisms,
-    llpParseFlatTree,
     Bracket (..),
     LlpContext (..),
     FlatNode (..),
+    llpParseTree,
+    llpParseFlatTree,
   )
 where
 
@@ -637,8 +638,6 @@ llpParse ::
 llpParse q k table string = do
   let padded_string = addStoppers $ aug string
   pairs <- sequence $ pairLookup table q k padded_string
-  x <- Just padded_string
-  let !y = debug x
   thd3 <$> glueAll pairs
   where
     addStoppers = ([RightTurnstile] <>) . (<> [LeftTurnstile])
@@ -648,14 +647,23 @@ llpParse q k table string = do
 
 data FlatNode i m t
   = FlatProduction !i !i
-  | FlatTerminal !i !(t, m)
+  | FlatTerminal !i m !t
   deriving (Show)
 
 instance Functor (FlatNode i m) where
-  fmap _ (FlatProduction j p) = FlatProduction j p
-  fmap f (FlatTerminal j (t, m)) = FlatTerminal j (f t, m)
+  fmap _ (FlatProduction i1 i2) = FlatProduction i1 i2
+  fmap f (FlatTerminal j m t) = FlatTerminal j m (f t)
 
-llpParseFlatTree ::
+data CST i m t
+  = CSTProduction i [CST i m t]
+  | CSTTerminal m t
+  deriving (Show)
+
+instance Functor (CST i m) where
+  fmap f (CSTProduction j subtrees) = CSTProduction j (map (fmap f) subtrees)
+  fmap f (CSTTerminal m t) = CSTTerminal m (f t)
+
+llpParseTree ::
   (Ord nt, Show nt, Show t, Ord t, Show t', Ord t', NFData t', NFData t, NFData nt) =>
   Grammar
     (AugmentedNonterminal (Symbol nt t))
@@ -669,33 +677,61 @@ llpParseFlatTree ::
       [Int]
     ) ->
   [(t', m)] ->
-  Maybe [FlatNode Word64 m t]
-llpParseFlatTree grammar q k table str_meta = do
+  Maybe (CST Word64 m t)
+llpParseTree grammar q k table str_meta = do
   derivation <- llpParse q k table str
-  mkFlatTree 0 [0] [] [] meta derivation
+  let (tree, _, _) = mkTree meta derivation
+  pure tree
   where
     (str, meta) = unzip str_meta
     prod_map = Map.fromList $ zip [(0 :: Int) ..] $ productions grammar
     toProd = flip Map.lookup prod_map
-    mkFlatTree
-      c
-      parents@(p : _)
-      tree
-      ((Nonterminal (AugmentedNonterminal (Terminal t))) : stack)
-      (m : ms)
-      (_ : ds) =
-        mkFlatTree (c + 1) parents (tree ++ [ter]) stack ms ds
-        where
-          ter = FlatTerminal p (t, m)
-    mkFlatTree
-      c
-      parents@(p : _)
-      tree
-      ((Nonterminal (AugmentedNonterminal (Nonterminal _))) : t)
-      ms
-      (j : ds) = do
-        Production _ s <- toProd j
-        let j' = fromIntegral j
-        mkFlatTree (c + 1) (c : parents) (FlatProduction p j' : tree) (s <> t) ms ds
-    mkFlatTree _ _ tree [] [] [] = Just tree
-    mkFlatTree _ _ _ _ _ _ = Nothing
+
+    mkTree [] [d]
+      | Just (Production (AugmentedNonterminal (Nonterminal _)) []) <- toProd d =
+          (CSTProduction (fromIntegral d :: Word64) [], [], [])
+    mkTree [m] [d]
+      | Just (Production (AugmentedNonterminal (Terminal t)) [_]) <- toProd d =
+          (CSTTerminal m t, [], [])
+    mkTree ms@(m : tms) (d : ds)
+      | Just (Production (AugmentedNonterminal (Terminal t)) _) <- toProd d =
+          (CSTTerminal m t, tms, ds)
+      | Just (Production (AugmentedNonterminal (Nonterminal _)) syms) <- toProd d =
+          let (nodes, new_ms, new_ds) = foldl' auxiliary ([], ms, ds) syms
+           in (CSTProduction (fromIntegral d :: Word64) nodes, new_ms, new_ds)
+    mkTree _ _ = error "An internal error occurred."
+
+    auxiliary (ns', ms', ds') _ = (ns' <> [n], ms'', ds'')
+      where
+        (n, ms'', ds'') = mkTree ms' ds'
+
+flattenTree :: (Integral i) => CST i m t -> [FlatNode i m t]
+flattenTree = fst . mkFlatTree 0 0
+  where
+    mkFlatTree c p (CSTTerminal m t) = ([FlatTerminal p m t], succ c)
+    mkFlatTree c p (CSTProduction j subtrees) =
+      (curr : res, succ c''')
+      where
+        curr = FlatProduction p j
+        (res, c''') = foldl' auxiliary ([], c) subtrees
+        auxiliary (flat, c') t = (flat <> flat', c'')
+          where
+            (flat', c'') = mkFlatTree c' c t
+
+llpParseFlatTree ::
+  (Ord nt, Show nt, Show t, Ord t, Show t', Ord t', NFData t', NFData t, NFData nt, Show m) =>
+  Grammar
+    (AugmentedNonterminal (Symbol nt t))
+    (AugmentedTerminal t') ->
+  Int ->
+  Int ->
+  Map
+    ([AugmentedTerminal t'], [AugmentedTerminal t'])
+    ( [Symbol (AugmentedNonterminal (Symbol nt t)) (AugmentedTerminal t')],
+      [Symbol (AugmentedNonterminal (Symbol nt t)) (AugmentedTerminal t')],
+      [Int]
+    ) ->
+  [(t', m)] ->
+  Maybe [FlatNode Word64 m t]
+llpParseFlatTree grammar q k table str_meta =
+  flattenTree <$> llpParseTree grammar q k table str_meta
