@@ -710,10 +710,10 @@ flattenTree = fst . mkFlatTree 0 0
   where
     mkFlatTree c p (CSTTerminal m t) = ([FlatTerminal p m t], succ c)
     mkFlatTree c p (CSTProduction j subtrees) =
-      (curr : res, succ c''')
+      (curr : res, c''')
       where
         curr = FlatProduction p j
-        (res, c''') = foldl' auxiliary ([], c) subtrees
+        (res, c''') = foldl' auxiliary ([], succ c) subtrees
         auxiliary (flat, c') t = (flat <> flat', c'')
           where
             (flat', c'') = mkFlatTree c' c t
