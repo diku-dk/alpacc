@@ -1,4 +1,4 @@
-module Alpacc.Test.LexerParser (lexerParserTests) where
+module Alpacc.Test.LexerParser (lexerParserTests, parse) where
 
 import Alpacc.CFG
 import Alpacc.Encode
@@ -7,6 +7,7 @@ import Alpacc.LLP
 import Alpacc.Lexer.DFA
 import Alpacc.Lexer.FSA
 import Alpacc.Util
+import Codec.Binary.UTF8.String (encodeChar)
 import Data.Bifunctor
 import Data.Binary
 import Data.ByteString qualified as ByteString
@@ -15,6 +16,7 @@ import Data.Map qualified as Map
 import Data.Maybe
 import Data.Set qualified as Set
 import Data.Text (Text)
+import Data.Text qualified as Text
 
 newtype Output
   = Output
@@ -46,7 +48,7 @@ instance Binary Output where
         put t
         put (0 :: Word64)
         put (0 :: Word64)
-      putNode (FlatTerminal p (t, (i, j))) = do
+      putNode (FlatTerminal p (i, j) t) = do
         put (1 :: Word8)
         put p
         put t
@@ -76,7 +78,7 @@ instance Binary Output where
             t <- get :: Get Word64
             i <- get :: Get Word64
             j <- get :: Get Word64
-            pure $ FlatTerminal p (t, (i, j))
+            pure $ FlatTerminal p (i, j) t
           _ -> fail "Error: Could not parse input due to invalid CST node type."
 
 instance Binary Input where
@@ -108,6 +110,27 @@ instance Binary Outputs where
     i <- get :: Get Word64
     results <- mapM (const get) [1 .. i]
     pure $ Outputs results
+
+parse :: CFG -> Int -> Int -> Text -> Either Text (Maybe [FlatNode Word64 (Word64, Word64) Word64])
+parse cfg q k str = do
+  spec <- dfaCharToWord8 <$> cfgToDFALexerSpec cfg
+  grammar <- cfgToGrammar cfg
+  table <- llpParserTableWithStarts q k $ getGrammar grammar
+  let regex_map = regexMap spec
+      ignore = T "ignore"
+      ters = Map.keys regex_map
+      encoder = encodeTerminals (T "ignore") $ parsingTerminals ters
+      maybe_ignore = if ignore `Map.member` regex_map then Just ignore else Nothing
+      dfa = lexerDFA (0 :: Integer) spec
+      bytes = concatMap encodeChar $ Text.unpack str
+      ts = fmap toTuple <$> tokenize dfa maybe_ignore bytes
+  case ts of
+    Just ts' ->
+      let tree = llpParseFlatTree (getGrammar grammar) q k table (first Used <$> ts')
+       in pure $ fmap (fmap (fromIntegral . fromJust . (`terminalLookup` encoder))) <$> tree
+    Nothing -> pure Nothing
+  where
+    toTuple (Lexeme t m) = (t, m)
 
 lexerParserTests :: CFG -> Int -> Int -> Int -> Either Text (ByteString, ByteString)
 lexerParserTests cfg q k n = do

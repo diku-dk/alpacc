@@ -357,11 +357,11 @@ mainTest params = do
 
   case testGenerator params of
     GenLexer -> do
-      (inputs, ouputs) <- eitherToIO $ lexerTests cfg 2
+      (inputs, ouputs) <- eitherToIO $ lexerTests cfg 3
       ByteString.writeFile (path <> ".inputs") inputs
       ByteString.writeFile (path <> ".outputs") ouputs
     GenParser -> do
-      (inputs, ouputs) <- eitherToIO $ parserTests cfg q k 2
+      (inputs, ouputs) <- eitherToIO $ parserTests cfg q k 3
       ByteString.writeFile (path <> ".inputs") inputs
       ByteString.writeFile (path <> ".outputs") ouputs
     GenBoth -> do
