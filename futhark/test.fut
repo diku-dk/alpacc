@@ -101,4 +101,57 @@ module parser_test
     in a
 }
 
+module lexer_parser_test
+  (P: {
+    type terminal
+    type production
+    type node 't 'p = #terminal t (i64, i64) | #production p
+    val parse [n] : [n]u8 -> opt ([](i64, node terminal production))
+  })
+  (T: integral with t = P.terminal)
+  (Q: integral with t = P.production) = {
+  type terminal = P.terminal
+  type production = P.production
+  type node 't 'p = P.node t p
+
+  def encode_node (p: i64) (n: node terminal production) : []u8 =
+    match n
+    case #production t ->
+      [0u8]
+      ++ ((encode_u64 <-< u64.i64) p)
+      ++ ((encode_u64 <-< u64.i64 <-< Q.to_i64) t)
+      ++ encode_u64 0
+      ++ encode_u64 0
+    case #terminal t (i, j) ->
+      [1u8]
+      ++ ((encode_u64 <-< u64.i64) p)
+      ++ ((encode_u64 <-< u64.i64 <-< T.to_i64) t)
+      ++ ((encode_u64 <-< u64.i64) i)
+      ++ ((encode_u64 <-< u64.i64) j)
+
+  def encode_tree [n] (ns: opt ([n](i64, P.node terminal production))) : []u8 =
+    match ns
+    case #some ns' ->
+      [u8.bool true]
+      ++ encode_u64 (u64.i64 n)
+      ++ flatten (map (uncurry encode_node) ns')
+    case #none -> [u8.bool false]
+
+  def test [n] (bytes: [n]u8) : []u8 =
+    let num = take 8 bytes
+    let num_tests = decode_u64 num
+    let (a, _) =
+      loop (result, inputs) = (num, drop 8 bytes)
+      for _i < u64.to_i64 num_tests do
+        let input_size = u64.to_i64 (decode_u64 (take 8 inputs))
+        let inputs' = drop 8 inputs
+        let input = take input_size inputs'
+        let inputs'' = drop input_size inputs'
+        let output =
+          P.parse input
+          |> encode_tree
+        in (result ++ output, inputs'')
+    in a
+}
+
 -- End of test.fut
