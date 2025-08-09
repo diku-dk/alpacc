@@ -2,6 +2,7 @@ module Alpacc.Test
   ( lexerTests,
     parserTests,
     lexerParserTests,
+    lexerTestsCompare,
   )
 where
 
