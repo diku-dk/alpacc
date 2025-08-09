@@ -417,8 +417,14 @@ mainTestCompare params = do
       () <- eitherToIO $ lexerTestsCompare cfg input_bytes expected_bytes result_bytes
       putStrLn "Tests passes."
       pure ()
-    GenParser -> pure ()
-    GenBoth -> pure ()
+    GenParser -> do
+      () <- eitherToIO $ parserTestsCompare input_bytes expected_bytes result_bytes
+      putStrLn "Tests passes."
+      pure ()
+    GenBoth -> do
+      () <- eitherToIO $ lexerParserTestsCompare cfg input_bytes expected_bytes result_bytes
+      putStrLn "Tests passes."
+      pure ()
   where
     input' = testCompareCFG params
     input = testCompareInput params
