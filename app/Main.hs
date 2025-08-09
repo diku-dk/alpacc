@@ -40,8 +40,13 @@ data Gen
 
 data Command
   = Generate !GeneratorParameters
-  | Test !TestParameters
+  | Test !TestCommand
   | Random !RandomParameters
+  deriving (Show)
+
+data TestCommand
+  = TestGenerate !TestGenerateParameters
+  | TestCompare !TestCompareParameters
   deriving (Show)
 
 combine :: Gen -> Gen -> Gen
@@ -70,12 +75,21 @@ data RandomParameters = RandomParameters
   }
   deriving (Show)
 
-data TestParameters = TestParameters
-  { testInput :: !Input,
-    testOutput :: !(Maybe String),
-    testLookback :: !Int,
-    testLookahead :: !Int,
-    testGenerator :: !Gen
+data TestGenerateParameters = TestGenerateParameters
+  { testGenerateInput :: !Input,
+    testGenerateOutput :: !(Maybe String),
+    testGenerateLookback :: !Int,
+    testGenerateLookahead :: !Int,
+    testGenerateGenerator :: !Gen
+  }
+  deriving (Show)
+
+data TestCompareParameters = TestCompareParameters
+  { testCompareCFG :: !Input,
+    testCompareInput :: !String,
+    testCompareExpected :: !String,
+    testCompareResult :: !String,
+    testCompareGenerator :: !Gen
   }
   deriving (Show)
 
@@ -225,10 +239,10 @@ randomParameters =
             <*> numProductionsParameter
         )
 
-testParameters :: Parser Command
-testParameters =
-  Test
-    <$> ( TestParameters
+testGenerateParameters :: Parser Command
+testGenerateParameters =
+  Test . TestGenerate
+    <$> ( TestGenerateParameters
             <$> inputParameter
             <*> outputParameter
             <*> lookbackParameter
@@ -236,13 +250,31 @@ testParameters =
             <*> generateParametar
         )
 
+testCompareParameters :: Parser Command
+testCompareParameters =
+  Test . TestCompare
+    <$> ( TestCompareParameters
+            <$> inputParameter
+            <*> argument str (metavar "FILE")
+            <*> argument str (metavar "FILE")
+            <*> argument str (metavar "FILE")
+            <*> generateParametar
+        )
+
+testCommands :: Parser Command
+testCommands =
+  subparser
+    ( command "generate" (info testGenerateParameters (progDesc "Generate tests."))
+        <> command "compare" (info testCompareParameters (progDesc "Inspect if test passed."))
+    )
+
 commands :: Parser Command
 commands =
   subparser
     ( command "futhark" (info (generatorParameters Futhark) (progDesc "Generate parsers written in CUDA."))
         <> command "cuda" (info (generatorParameters CUDA) (progDesc "Generate parsers written in Futhark."))
         <> command "random" (info randomParameters (progDesc "Generate random parser that can be used for testing."))
-        <> command "test" (info testParameters (progDesc "Generate test inputs for ."))
+        <> command "test" (info testCommands (progDesc "Test related commands."))
     )
 
 options :: ParserInfo Command
@@ -346,8 +378,8 @@ mainRandom params =
     num_productions = randomNumProductions params
     path = fromMaybe "random.alp" $ randomOutput params
 
-mainTest :: TestParameters -> IO ()
-mainTest params = do
+mainTestGenerate :: TestGenerateParameters -> IO ()
+mainTestGenerate params = do
   cfg <- readCfg input
   let path =
         fromJust $
@@ -355,7 +387,7 @@ mainTest params = do
             takeFileName $
               pathOfInput "test.alp" input
 
-  case testGenerator params of
+  case testGenerateGenerator params of
     GenLexer -> do
       (inputs, ouputs) <- eitherToIO $ lexerTests cfg 3
       ByteString.writeFile (path <> ".inputs") inputs
@@ -369,9 +401,29 @@ mainTest params = do
       ByteString.writeFile (path <> ".inputs") inputs
       ByteString.writeFile (path <> ".outputs") ouputs
   where
-    input = testInput params
-    q = testLookback params
-    k = testLookahead params
+    input = testGenerateInput params
+    q = testGenerateLookback params
+    k = testGenerateLookahead params
+
+mainTestCompare :: TestCompareParameters -> IO ()
+mainTestCompare params = do
+  cfg <- readCfg input'
+  input_bytes <- ByteString.readFile input
+  expected_bytes <- ByteString.readFile expected
+  result_bytes <- ByteString.readFile result
+
+  case testCompareGenerator params of
+    GenLexer -> do
+      () <- eitherToIO $ lexerTestsCompare cfg input_bytes expected_bytes result_bytes
+      putStrLn "Tests passes."
+      pure ()
+    GenParser -> pure ()
+    GenBoth -> pure ()
+  where
+    input' = testCompareCFG params
+    input = testCompareInput params
+    expected = testCompareExpected params
+    result = testCompareResult params
 
 main :: IO ()
 main = do
@@ -379,4 +431,6 @@ main = do
   case opts of
     Generate params -> mainGenerator params
     Random params -> mainRandom params
-    Test params -> mainTest params
+    Test test -> case test of
+      TestGenerate params -> mainTestGenerate params
+      TestCompare params -> mainTestCompare params

@@ -95,7 +95,10 @@ module mk_lexer (L: lexer_context) : lexer with terminal = L.terminal_module.t =
       |> scan (+) 0
     let offsets = map2 (\f o -> if f then o - 1 else -1) flags is
     let starts =
-      tabulate n (\i -> if is_produce endos[i] then i else i64.highest)
+      tabulate n (\i ->
+                    if is_produce endos[i] && (not <-< is_ignore <-< to_terminal) endos[i]
+                    then i
+                    else if i == 0 then take_right (prev_start - offset) i64.highest else i64.highest)
       |> scan take_right i64.highest
     let ends = iota n
     let vs = zip (map to_terminal endos) (zip starts ends)
@@ -103,7 +106,6 @@ module mk_lexer (L: lexer_context) : lexer with terminal = L.terminal_module.t =
     let result =
       scatter dest offsets vs
       |> map (\(t, (s, e)) -> (t, (s + offset, 1 + e + offset)))
-    let result[0] = (copy result[0].0, (prev_start, result[0].1.1))
     let size = is[n - 1]
     let last_endo = endos[n - 1]
     let last_start = starts[n - 1]
