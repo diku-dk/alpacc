@@ -1,4 +1,9 @@
-module Alpacc.Test.LexerParser (lexerParserTests, parse) where
+module Alpacc.Test.LexerParser
+  ( lexerParserTests,
+    parse,
+    lexerParserTestsCompare,
+  )
+where
 
 import Alpacc.CFG
 import Alpacc.Encode
@@ -8,10 +13,13 @@ import Alpacc.Lexer.DFA
 import Alpacc.Lexer.FSA
 import Alpacc.Util
 import Codec.Binary.UTF8.String (encodeChar)
+import Control.Monad
 import Data.Bifunctor
 import Data.Binary
 import Data.ByteString qualified as ByteString
 import Data.ByteString.Internal
+import Data.Either.Extra
+import Data.List (zip4)
 import Data.Map qualified as Map
 import Data.Maybe
 import Data.Set qualified as Set
@@ -161,3 +169,53 @@ lexerParserTests cfg q k n = do
       pure $ fmap (fromIntegral . fromJust . (`terminalLookup` encoder)) <$> tree
       where
         toTuple (Lexeme t m) = (t, m)
+
+lexerParserTestsCompare :: CFG -> ByteString -> ByteString -> ByteString -> Either Text ()
+lexerParserTestsCompare cfg input expected result = do
+  spec <- dfaCharToWord8 <$> cfgToDFALexerSpec cfg
+
+  let ts = Map.keys $ regexMap spec
+      encoder = encodeTerminals (T "ignore") $ parsingTerminals ts
+  encodings <-
+    maybeToEither "Error: Could not encode tokens." $
+      mapM (fmap fromIntegral . (`terminalLookup` encoder)) ts
+  let int_to_token = Map.fromList $ zip encodings ts
+  Inputs inp <- dec "Error: Could not parse input file." input
+  Outputs ex <- dec "Error: Could not parse expected output file." expected
+  Outputs res <- dec "Error: Could not parse result output file." result
+  failwith (length inp == length ex) "Error: Input and expected output file do not have the same number of tests."
+  failwith (length inp == length res) "Error: Input and result output file do not have the same number of tests."
+
+  mapM_ (compareTest int_to_token) $ zip4 [0 :: Integer ..] inp ex res
+  where
+    dec str =
+      bimap (const str) (\(_, _, a) -> a)
+        . decodeOrFail
+        . ByteString.fromStrict
+
+    failwith b s = unless b (Left s)
+
+    showNode _ p@(FlatProduction _ _) = pure $ Text.pack $ show p
+    showNode int_to_token (FlatTerminal p sp t) = do
+      t' <- maybeToEither err $ Map.lookup t int_to_token
+      pure $ Text.pack $ show $ FlatTerminal p sp t'
+      where
+        err = "Error: Could not find the token with encoding '" <> Text.pack (show t) <> "'"
+
+    showOutput _ Nothing = Right "Unable to parse."
+    showOutput int_to_token (Just nodes) = do
+      ts <- mapM (showNode int_to_token) nodes
+      pure $ Text.unwords ts
+
+    compareTest int_to_token (idx, Input i, Output e, Output r) = do
+      failwith (e == r) $
+        case (showOutput int_to_token e, showOutput int_to_token r) of
+          (Right e', Right r') ->
+            Text.unlines
+              [ "Failed on Input: " <> Text.pack (show i),
+                "Input Index: " <> Text.pack (show idx),
+                "Expected: " <> e',
+                "Got: " <> r'
+              ]
+          (Left s, _) -> s
+          (_, Left s) -> s

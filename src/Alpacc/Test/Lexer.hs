@@ -147,7 +147,7 @@ lexerTestsCompare cfg input expected result = do
       t' <- maybeToEither err $ Map.lookup t int_to_token
       pure $ Text.pack $ show (t', sp)
       where
-        err = "Error: Could not find the token with endcoding '" <> Text.pack (show t) <> "'"
+        err = "Error: Could not find the token with encoding '" <> Text.pack (show t) <> "'"
 
     showOutput _ Nothing = Right "Unable to parse."
     showOutput int_to_token (Just lexemes) = do

@@ -647,7 +647,7 @@ llpParse q k table string = do
 data FlatNode i m t
   = FlatProduction !i !i
   | FlatTerminal !i m !t
-  deriving (Show)
+  deriving (Show, Ord, Eq)
 
 instance Functor (FlatNode i m) where
   fmap _ (FlatProduction i1 i2) = FlatProduction i1 i2
@@ -656,7 +656,7 @@ instance Functor (FlatNode i m) where
 data CST i m t
   = CSTProduction i [CST i m t]
   | CSTTerminal m t
-  deriving (Show)
+  deriving (Show, Ord, Eq)
 
 instance Functor (CST i m) where
   fmap f (CSTProduction j subtrees) = CSTProduction j (map (fmap f) subtrees)

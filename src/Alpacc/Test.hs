@@ -3,6 +3,8 @@ module Alpacc.Test
     parserTests,
     lexerParserTests,
     lexerTestsCompare,
+    parserTestsCompare,
+    lexerParserTestsCompare,
   )
 where
 
