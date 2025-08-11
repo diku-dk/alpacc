@@ -58,6 +58,7 @@ library
     , QuickCheck
     , bytestring
     , binary
+    , combinatorial
 
   exposed-modules:
     Alpacc.CFG

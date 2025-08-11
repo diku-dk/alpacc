@@ -80,6 +80,7 @@ data TestGenerateParameters = TestGenerateParameters
     testGenerateOutput :: !(Maybe String),
     testGenerateLookback :: !Int,
     testGenerateLookahead :: !Int,
+    testGenerateLength :: !Int,
     testGenerateGenerator :: !Gen
   }
   deriving (Show)
@@ -92,6 +93,18 @@ data TestCompareParameters = TestCompareParameters
     testCompareGenerator :: !Gen
   }
   deriving (Show)
+
+lengthParameter :: Parser Int
+lengthParameter =
+  option
+    auto
+    ( long "length"
+        <> short 'l'
+        <> help "The maximum length of the input(s)."
+        <> showDefault
+        <> value 7
+        <> metavar "INT"
+    )
 
 lookbackParameter :: Parser Int
 lookbackParameter =
@@ -247,6 +260,7 @@ testGenerateParameters =
             <*> outputParameter
             <*> lookbackParameter
             <*> lookaheadParameter
+            <*> lengthParameter
             <*> generateParametar
         )
 
@@ -381,29 +395,34 @@ mainRandom params =
 mainTestGenerate :: TestGenerateParameters -> IO ()
 mainTestGenerate params = do
   cfg <- readCfg input
-  let path =
-        fromJust $
-          stripExtension "alp" $
-            takeFileName $
-              pathOfInput "test.alp" input
+  let name =
+        case out of
+          Just a -> a
+          Nothing ->
+            fromJust $
+              stripExtension "alp" $
+                takeFileName $
+                  pathOfInput "test.alp" input
 
   case testGenerateGenerator params of
     GenLexer -> do
-      (inputs, ouputs) <- eitherToIO $ lexerTests cfg 7
-      ByteString.writeFile (path <> ".inputs") inputs
-      ByteString.writeFile (path <> ".outputs") ouputs
+      (inputs, ouputs) <- eitherToIO $ lexerTests cfg len
+      ByteString.writeFile (name <> ".inputs") inputs
+      ByteString.writeFile (name <> ".outputs") ouputs
     GenParser -> do
-      (inputs, ouputs) <- eitherToIO $ parserTests cfg q k 7
-      ByteString.writeFile (path <> ".inputs") inputs
-      ByteString.writeFile (path <> ".outputs") ouputs
+      (inputs, ouputs) <- eitherToIO $ parserTests cfg q k len
+      ByteString.writeFile (name <> ".inputs") inputs
+      ByteString.writeFile (name <> ".outputs") ouputs
     GenBoth -> do
-      (inputs, ouputs) <- eitherToIO $ lexerParserTests cfg q k 7
-      ByteString.writeFile (path <> ".inputs") inputs
-      ByteString.writeFile (path <> ".outputs") ouputs
+      (inputs, ouputs) <- eitherToIO $ lexerParserTests cfg q k len
+      ByteString.writeFile (name <> ".inputs") inputs
+      ByteString.writeFile (name <> ".outputs") ouputs
   where
+    out = testGenerateOutput params
     input = testGenerateInput params
     q = testGenerateLookback params
     k = testGenerateLookahead params
+    len = testGenerateLength params
 
 mainTestCompare :: TestCompareParameters -> IO ()
 mainTestCompare params = do
