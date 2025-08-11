@@ -56,7 +56,7 @@ module mk_parser (P: parser_context) = {
     #[sequential]
     tabulate (P.q + P.k)
              (\j ->
-                if i + j < P.q then empty_terminal else arr[i + j - P.q])
+                if i + j < P.q || i + j >= n + P.q then empty_terminal else arr[i + j - P.q])
 
   def array_equal [n] 'a (eq: a -> a -> bool) (as: [n]a) (bs: [n]a) : bool =
     #[inline]

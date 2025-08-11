@@ -39,92 +39,14 @@ jobs:
 
       - name: Run tests
         run: cabal test all
-  
-  futhark-test:
-    if: github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'test')
-    runs-on: ubuntu-22.04
-  
-    steps:
-    - uses: actions/checkout@v3
-  
-    - name: Install Futhark
-      uses: diku-dk/install-futhark@v1.1.0
-      with:
-        version: 'nightly'
-  
-    - name: Set up GHC 9.6.5
-      uses: haskell-actions/setup@v2
-      id: setup
-      with:
-        ghc-version: '9.6.5'
-        cabal-version: '3.10.3.0'
-        cabal-update: true
-  
-    - name: Installed versions of GHC and Cabal
-      shell: bash
-      run: |
-        GHC_VERSION=$(ghc --numeric-version)
-        CABAL_VERSION=$(cabal --numeric-version)
-        echo "GHC_VERSION=${GHC_VERSION}"     >> "${GITHUB_ENV}"
-        echo "CABAL_VERSION=${CABAL_VERSION}" >> "${GITHUB_ENV}"
 
-    - name: Build
-      run: cabal build all
-
-    - name: Setup test
-      shell: bash
-      run: |
-        python3 futhark-tests --test-type=setup
-
-    - name: Run stuck test
-      shell: bash
-      run: |
-        cabal exec -- python3 futhark-tests \
-          --test-type=stuck \
-          --grammar-size=1000 \
-          --lookback=1 \
-          --lookahead=1
-
-    - name: LLP(1,1) parsing
-      shell: bash
-      run: |
-        cabal exec -- python3 futhark-tests \
-          --test-type=parser \
-          --grammar-size=50 \
-          --lookback=1 \
-          --lookahead=1 \
-          --valid-size=20 \
-          --invalid-size=6
-
-    - name: LLP(2,2) parsing
-      shell: bash
-      run: |
-        cabal exec -- python3 futhark-tests \
-          --test-type=parser \
-          --grammar-size=50 \
-          --lookback=2 \
-          --lookahead=2 \
-          --valid-size=20 \
-          --invalid-size=6
-
-    - name: LLP(3,3) parsing
-      shell: bash
-      run: |
-        cabal exec -- python3 futhark-tests \
-          --test-type=parser \
-          --grammar-size=50 \
-          --lookback=3 \
-          --lookahead=3 \
-          --valid-size=20 \
-          --invalid-size=6
-    
-    - name: Lexing
-      shell: bash
-      run: |
-        cabal exec -- python3 futhark-tests \
-          --test-type=lexer
-
-    - name: futhark-tests
-      shell: bash
-      run: |
-        futhark test -c --no-terminal --no-tuning --backend=c futhark-tests/*.fut
+      - name: Run Futhark tests.
+        run: |
+          cabal exec -- sh tests/testfuthark.sh 0 0 10 --lexer
+          cabal exec -- sh tests/testfuthark.sh 0 1 10 --parser
+          cabal exec -- sh tests/testfuthark.sh 1 1 10 --parser
+          cabal exec -- sh tests/testfuthark.sh 2 2 10 --parser
+          cabal exec -- sh tests/testfuthark.sh 3 3 10 --parser
+          cabal exec -- sh tests/testfuthark.sh 1 1 10
+          cabal exec -- sh tests/testfuthark.sh 2 2 10
+          cabal exec -- sh tests/testfuthark.sh 3 3 10
