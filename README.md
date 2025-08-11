@@ -1,7 +1,7 @@
 # Alpacc <sup><sub><sup><sub>(Array Language Parallelism-Accelerated Compiler Compiler)</sup></sub></sup></sub>
 Alpacc is a parallel LL parser generator which creates parsers written in [Futhark](https://futhark-lang.org/). These parsers uses the LLP grammmar class [1] together with a parallel lexer generator [2].
 
-The parsing is done using the entry point `parse`. This function takes a UTF-8 encoded array of `u8` values and returns an empty array if the string could not be parse. If the string could be parsed then an nonempty array with a tree will be returned. The tree will be a preorder traversal of the syntax tree where each node either is a production or a terminal. If the node is a terminal then it will also have value which gives the span of that token in the input string. Each node will have a index to the parent node.
+The parsing is done using the entry point `parse`. This function takes a UTF-8 encoded array of `u8` values and returns some if it could parse the input otherwise none. If the string could be parsed then an nonempty array with a tree will be returned. The tree will be a preorder traversal of the syntax tree where each node either is a production or a terminal. If the node is a terminal then it will also have value which gives the span of that token in the input string. Each node will have a index to the parent node.
 
 ## Defining parsers
 Either a terminal or a nonterminal can be defined on each line which ends in a semicolon.
