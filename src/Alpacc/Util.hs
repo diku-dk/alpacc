@@ -6,6 +6,8 @@ module Alpacc.Util
 where
 
 import Codec.Binary.UTF8.String (encodeChar)
+import Combinatorics (variateRep)
+import Data.Maybe
 import Data.Word
 
 -- | Performs fixed point iteration until a predicate holds true.
@@ -25,6 +27,4 @@ toWord8s :: String -> [Word8]
 toWord8s = concatMap encodeChar
 
 listProducts :: Int -> [a] -> [[a]]
-listProducts i = concat . zipWith auxiliary [0 .. i] . repeat
-  where
-    auxiliary j = foldr (liftA2 (:)) [[]] . replicate j
+listProducts i = map catMaybes . variateRep i . map Just
