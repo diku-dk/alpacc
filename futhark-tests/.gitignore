@@ -1,6 +1,0 @@
-*
-!./lexer-tests/*.json
-!*.py
-!.gitignore
-!*.pkg
-!*.md
