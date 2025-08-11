@@ -40,6 +40,9 @@ jobs:
       - name: Run tests
         run: cabal test all
 
+      - name: Install
+        run: cabal install
+
       - uses: diku-dk/install-futhark@v1.1.0
         with:
           version: 'nightly'
@@ -52,11 +55,11 @@ jobs:
 
       - name: Run Futhark tests.
         run: |
-          cabal exec -- bash tests/testfuthark.sh 0 0 10 --lexer;
-                        bash tests/testfuthark.sh 0 1 10 --parser;
-                        bash tests/testfuthark.sh 1 1 10 --parser;
-                        bash tests/testfuthark.sh 2 2 10 --parser;
-                        bash tests/testfuthark.sh 3 3 10 --parser;
-                        bash tests/testfuthark.sh 1 1 10;
-                        bash tests/testfuthark.sh 2 2 10;
-                        bash tests/testfuthark.sh 3 3 10
+          bash tests/testfuthark.sh 0 0 10 --lexer
+          bash tests/testfuthark.sh 0 1 10 --parser
+          bash tests/testfuthark.sh 1 1 10 --parser
+          bash tests/testfuthark.sh 2 2 10 --parser
+          bash tests/testfuthark.sh 3 3 10 --parser
+          bash tests/testfuthark.sh 1 1 10
+          bash tests/testfuthark.sh 2 2 10
+          bash tests/testfuthark.sh 3 3 10
