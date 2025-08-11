@@ -8,7 +8,7 @@ on:
     branches: [ main ]
 
 jobs:
-  haskell-test:
+  test:
     if: github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'test')
     runs-on: ubuntu-22.04
 
