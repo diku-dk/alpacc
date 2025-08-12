@@ -228,12 +228,12 @@ decoupledLookbackScan(volatile States<I, T> states,
                       volatile T* shmem,
                       OP op,
                       T ne,
-                      uint32_t dyn_idx,
+                      unsigned int dyn_idx,
                       bool write_back = true) {
   volatile __shared__ T values[WARP];
   volatile __shared__ Status statuses[WARP];
   volatile __shared__ T shmem_prefix;
-  const uint8_t lane = threadIdx.x & (WARP - 1);
+  const unsigned char lane = threadIdx.x & (WARP - 1);
   const bool is_first = threadIdx.x == 0;
 
   if (is_first) {
@@ -320,7 +320,7 @@ scan(volatile T* block,
      volatile States<I, T> states,
      OP op,
      T ne,
-     uint32_t dyn_idx,
+     unsigned int dyn_idx,
      bool write_back = true) {
     
   scanBlock<T, I, OP, ITEMS_PER_THREAD>(block, block_aux, op);
