@@ -285,8 +285,8 @@ testCommands =
 commands :: Parser Command
 commands =
   subparser
-    ( command "futhark" (info (generatorParameters Futhark) (progDesc "Generate parsers written in CUDA."))
-        <> command "cuda" (info (generatorParameters CUDA) (progDesc "Generate parsers written in Futhark."))
+    ( command "futhark" (info (generatorParameters Futhark) (progDesc "Generate parsers written in Futhark."))
+        <> command "cuda" (info (generatorParameters CUDA) (progDesc "Generate parsers written in CUDA."))
         <> command "random" (info randomParameters (progDesc "Generate random parser that can be used for testing."))
         <> command "test" (info testCommands (progDesc "Test related commands."))
     )
