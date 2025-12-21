@@ -30,7 +30,19 @@ jobs:
           CABAL_VERSION=$(cabal --numeric-version)
           echo "GHC_VERSION=${GHC_VERSION}"     >> "${GITHUB_ENV}"
           echo "CABAL_VERSION=${CABAL_VERSION}" >> "${GITHUB_ENV}"
-      
+
+      - name: Cache Cabal packages
+        uses:  actions/cache@v3
+        with:
+          path: |
+            ~/.cabal/packages
+            ~/.cabal/store
+            dist-newstyle
+          key:  ${{ runner.os }}-cabal-${{ env.GHC_VERSION }}-${{ hashFiles('**/*.cabal', '**/cabal.project') }}
+          restore-keys: |
+            ${{ runner.os }}-cabal-${{ env.GHC_VERSION }}-
+            ${{ runner.os }}-cabal-
+
       - name: Install dependencies
         run: cabal build all --only-dependencies
 
