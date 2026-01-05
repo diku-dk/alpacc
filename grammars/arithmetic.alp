@@ -1,7 +1,8 @@
-# Arithmetic with optionally signed integers, addition, subtraction,
+# Arithmetic with variables, signed integers, addition, subtraction,
 # multiplication, division, and parentheses.
 
 num = \-?[0-9]+;
+var = [a-z]+;
 ignore = \s|\n|\t|\r;
 
 E0 = E1 E0';
@@ -12,5 +13,6 @@ E1 = E2 E1';
 E1' = "*" E2 E1'
     | "/" E2 E1'
     | ;
-E2 = num
-   | "(" E0 ")";
+E2 = "(" E0 ")"
+   | num
+   | var;
