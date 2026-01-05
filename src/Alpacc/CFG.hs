@@ -163,7 +163,7 @@ pCFG = CFG <$> many pTRule <*> many pNTRule
 
 cfgFromText :: FilePath -> Text -> Either Text CFG
 cfgFromText fname s =
-  either (Left . Text.pack . errorBundlePretty) Right $ parse (pCFG <* eof) fname s
+  either (Left . Text.pack . errorBundlePretty) Right $ parse (space *> pCFG <* eof) fname s
 
 eitherToIO :: Either Text a -> IO a
 eitherToIO (Right x) = return x
