@@ -1,5 +1,9 @@
 # Arithmetic with variables, signed integers, addition, subtraction,
 # multiplication, division, and parentheses.
+#
+# Compile with:
+#
+#   alpacc futhark --lookback 1 --lookahead 1 grammars/arithmetic.alp
 
 num = \-?[0-9]+;
 var = [a-z]+;
