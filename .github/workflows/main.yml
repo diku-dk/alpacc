@@ -61,11 +61,11 @@ jobs:
 
       - name: Run Futhark tests.
         run: |
-          bash tests/testfuthark.sh 0 0 50 1 --lexer
-          bash tests/testfuthark.sh 0 1 50 1 --parser 
-          bash tests/testfuthark.sh 1 1 50 1 --parser 
-          bash tests/testfuthark.sh 2 2 50 1 --parser 
-          bash tests/testfuthark.sh 3 3 50 1 --parser 
-          bash tests/testfuthark.sh 1 1 50 1
-          bash tests/testfuthark.sh 2 2 50 1
-          bash tests/testfuthark.sh 3 3 50 1
+          bash tests/testfuthark.sh 0 0 50 10 --lexer
+          bash tests/testfuthark.sh 0 1 50 10 --parser 
+          bash tests/testfuthark.sh 1 1 50 10 --parser 
+          bash tests/testfuthark.sh 2 2 50 10 --parser 
+          bash tests/testfuthark.sh 3 3 50 10 --parser 
+          bash tests/testfuthark.sh 1 1 50 10
+          bash tests/testfuthark.sh 2 2 50 10
+          bash tests/testfuthark.sh 3 3 50 10
