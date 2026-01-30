@@ -5,6 +5,7 @@
 
 import "lib/github.com/diku-dk/containers/opt"
 
+#[inline]
 def encode_u64 (a: u64) : [8]u8 =
   [ u8.u64 (a >> 56)
   , u8.u64 (a >> 48)
@@ -16,6 +17,7 @@ def encode_u64 (a: u64) : [8]u8 =
   , u8.u64 (a >> 0)
   ]
 
+#[inline]
 def decode_u64 (a: [8]u8) : u64 =
   (u64.u8 a[0] << 56)
   | (u64.u8 a[1] << 48)
@@ -34,11 +36,13 @@ module lexer_test
   (T: integral with t = L.terminal) = {
   type terminal = L.terminal
 
+  #[inline]
   def encode_terminal ((t, (i, j)): (terminal, (i64, i64))) : [24]u8 =
     sized 24 (encode_u64 (T.to_i64 t |> u64.i64)
               ++ encode_u64 (u64.i64 i)
               ++ encode_u64 (u64.i64 j))
 
+  #[inline]
   def encode_terminals [n] (ts: opt ([n](terminal, (i64, i64)))) : []u8 =
     match ts
     case #some ts' ->
@@ -50,16 +54,22 @@ module lexer_test
   def test [n] (chunk_size: i32) (bytes: [n]u8) : []u8 =
     let num = take 8 bytes
     let num_tests = decode_u64 num
-    let (a, _) =
-      loop (result, inputs) = (num, drop 8 bytes)
+    let (a, _, size) =
+      loop (result, inputs, size) = copy (num, drop 8 bytes, length num)
       for _i < u64.to_i64 num_tests do
         let input_size = u64.to_i64 (decode_u64 (take 8 inputs))
         let inputs' = drop 8 inputs
         let input = take input_size inputs'
         let inputs'' = drop input_size inputs'
         let output = L.lex chunk_size input |> encode_terminals
-        in (result ++ output, inputs'')
-    in a
+        let new_size = size + length output
+        let result =
+          if length result <= new_size
+          then scatter (replicate (2 * new_size) 0) (indices result) result
+          else result
+        let result = scatter result (map (+ size) (indices output)) output
+        in (result, inputs'', new_size)
+    in take size a
 }
 
 module parser_test
@@ -84,8 +94,8 @@ module parser_test
   def test [n] (bytes: [n]u8) : []u8 =
     let num = take 8 bytes
     let num_tests = decode_u64 num
-    let (a, _) =
-      loop (result, inputs) = (num, drop 8 bytes)
+    let (a, _, size) =
+      loop (result, inputs, size) = copy (num, drop 8 bytes, length num)
       for _i < u64.to_i64 num_tests do
         let input_size = u64.to_i64 (decode_u64 (take 8 inputs))
         let inputs' = drop 8 inputs
@@ -97,8 +107,14 @@ module parser_test
         let output =
           P.pre_productions input
           |> encode_productions
-        in (result ++ output, inputs'')
-    in a
+        let new_size = size + length output
+        let result =
+          if length result <= new_size
+          then scatter (replicate (2 * new_size) 0) (indices result) result
+          else result
+        let result = scatter result (map (+ size) (indices output)) output
+        in (result, inputs'', new_size)
+    in take size a
 }
 
 module lexer_parser_test
@@ -140,8 +156,8 @@ module lexer_parser_test
   def test [n] (bytes: [n]u8) : []u8 =
     let num = take 8 bytes
     let num_tests = decode_u64 num
-    let (a, _) =
-      loop (result, inputs) = (num, drop 8 bytes)
+    let (a, _, size) =
+      loop (result, inputs, size) = copy (num, drop 8 bytes, length num)
       for _i < u64.to_i64 num_tests do
         let input_size = u64.to_i64 (decode_u64 (take 8 inputs))
         let inputs' = drop 8 inputs
@@ -150,8 +166,14 @@ module lexer_parser_test
         let output =
           P.parse input
           |> encode_tree
-        in (result ++ output, inputs'')
-    in a
+        let new_size = size + length output
+        let result =
+          if length result <= new_size
+          then scatter (replicate (2 * new_size) 0) (indices result) result
+          else result
+        let result = scatter result (map (+ size) (indices output)) output
+        in (result, inputs'', new_size)
+    in take size a
 }
 
 -- End of test.fut
