@@ -52,7 +52,6 @@ cd "$temp_dir"
 futhark pkg add github.com/diku-dk/containers
 futhark pkg add github.com/diku-dk/sorts
 futhark pkg sync
-
 if [ $? -ne 0 ]; then
     echo "Failed to set up Futhark packages"
     exit 1
@@ -66,7 +65,7 @@ echo "0" > "$counter_file"
 # Flag file to signal early termination
 done_file="$temp_dir/done"
 
-# Function to run a single test iteration
+# Function to run a single test iteration - mirrors the original while loop body
 run_test() {
     local job_id=$1
     local q_value=$2
@@ -82,7 +81,7 @@ run_test() {
         return 0
     fi
     
-    # Create unique filenames for this job
+    # Create unique work directory for this job
     local work_dir="$temp_dir/job_$job_id"
     mkdir -p "$work_dir"
     cd "$work_dir"
@@ -97,13 +96,13 @@ run_test() {
         cp "$temp_dir/futhark.pkg" .
     fi
     
+    # Exact logic from original script
     if alpacc random &> /dev/null; then
         if alpacc futhark random.alp $type_flag -q $q_value -k $k_value &> /dev/null; then
             alpacc test generate random.alp $type_flag -q $q_value -k $k_value &> /dev/null
             futhark script -b random.fut 'test ($loadbytes "random.inputs")' | tail -c +16 > random.results
             if alpacc test compare random.alp random.inputs random.outputs random.results $type_flag &> /dev/null; then
-                # Atomic increment of counter - but only if we haven't reached the target yet
-                local should_print=false
+                # Success! Increment counter atomically
                 (
                     flock -x 200
                     count=$(cat "$counter_file")
@@ -112,49 +111,33 @@ run_test() {
                     if [ "$count" -lt "$target" ]; then
                         count=$((count + 1))
                         echo "$count" > "$counter_file"
-                        should_print=true
+                        echo "$count/$target completed"
                         
                         # Check if we've now reached the target
                         if [ "$count" -ge "$target" ]; then
                             touch "$done_file"
                         fi
                     fi
-                    
-                    echo "$should_print"
-                ) 200>"$counter_file.lock" | {
-                    read should_print
-                    if [ "$should_print" = "true" ]; then
-                        count=$(cat "$counter_file")
-                        echo "$count/$target completed"
-                    fi
-                }
-                return 0
+                ) 200>"$counter_file.lock"
             else
-                echo "========================================="
-                echo "Tests failed for job $job_id"
-                echo "========================================="
-                echo "Content of random.alp:"
-                echo "-----------------------------------------"
-                cat random.alp
-                echo "-----------------------------------------"
-                echo "Test comparison output:"
+                echo "Tests failed."
                 alpacc test compare random.alp random.inputs random.outputs random.results $type_flag
-                echo "========================================="
                 return 1
             fi
         else
-            return 0  # Skip this iteration silently - treat as success
+            : # alpacc futhark failed, skip silently
         fi
     else
         echo "alpacc random failed"
         return 1
     fi
+    
+    return 0
 }
 
 export -f run_test
 
 # Run tests in parallel until we reach the target
-# Use --no-notice to suppress GNU parallel notices
 seq 1 $((target * 10)) | parallel --no-notice -j "$parallel_jobs" --halt soon,fail=1 --line-buffer \
     "run_test {} $q_value $k_value '$type_flag' $temp_dir $counter_file $target $done_file"
 
