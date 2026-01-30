@@ -38,6 +38,7 @@ let pkg =
                 rustc
                 cargo
                 mkjson
+                parallel
               ]));
       };
 in pkg.overrideAttrs (attrs: {

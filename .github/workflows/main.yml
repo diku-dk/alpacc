@@ -59,19 +59,13 @@ jobs:
         with:
           version: 'nightly'
 
-      - name: Setup Futhark Packages
-        run: |
-          futhark pkg add github.com/diku-dk/containers
-          futhark pkg add github.com/diku-dk/sorts
-          futhark pkg sync
-
       - name: Run Futhark tests.
         run: |
-          bash tests/testfuthark.sh 0 0 10 --lexer
-          bash tests/testfuthark.sh 0 1 10 --parser
-          bash tests/testfuthark.sh 1 1 10 --parser
-          bash tests/testfuthark.sh 2 2 10 --parser
-          bash tests/testfuthark.sh 3 3 10 --parser
-          bash tests/testfuthark.sh 1 1 10
-          bash tests/testfuthark.sh 2 2 10
-          bash tests/testfuthark.sh 3 3 10
+          bash tests/testfuthark.sh 0 0 50 10 --lexer
+          bash tests/testfuthark.sh 0 1 50 10 --parser 
+          bash tests/testfuthark.sh 1 1 50 10 --parser 
+          bash tests/testfuthark.sh 2 2 50 10 --parser 
+          bash tests/testfuthark.sh 3 3 50 10 --parser 
+          bash tests/testfuthark.sh 1 1 50 10
+          bash tests/testfuthark.sh 2 2 50 10
+          bash tests/testfuthark.sh 3 3 50 10

@@ -79,11 +79,17 @@ module mk_lexer (L: lexer_context) : lexer with terminal = L.terminal_module.t =
     case #some t' -> t L.terminal_module.== t'
     case #none -> false
 
-  def lex_step [n]
+  def lex_step [m] [n]
                (offset: i64)
                (prev_endo: endomorphism)
                (prev_start: i64)
-               (str: [n]u8) : ([](terminal, (i64, i64)), endomorphism, i64) =
+               (prev_size: i64)
+               (dest: *[m](terminal, (i64, i64)))
+               (str: [n]u8) : ?[k].( [k](terminal, (i64, i64))
+                                   , endomorphism
+                                   , i64
+                                   , i64
+                                   ) =
     let endos = traverse prev_endo str
     let flags =
       tabulate n (\i ->
@@ -96,42 +102,64 @@ module mk_lexer (L: lexer_context) : lexer with terminal = L.terminal_module.t =
     let offsets = map2 (\f o -> if f then o - 1 else -1) flags is
     let starts =
       tabulate n (\i ->
-                    if is_produce endos[i] && (not <-< is_ignore <-< to_terminal) endos[i]
+                    if is_produce endos[i]
+                    && (not <-< is_ignore <-< to_terminal) endos[i]
                     then i
-                    else if i == 0 then take_right (prev_start - offset) i64.highest else i64.highest)
+                    else if i == 0
+                    then take_right (prev_start - offset) i64.highest
+                    else i64.highest)
       |> scan take_right i64.highest
     let ends = iota n
     let vs = zip (map to_terminal endos) (zip starts ends)
-    let dest = replicate n (L.terminal_module.u8 0, (0, 0))
+    let size = last is
+    let extra_size = prev_size + size + 1
+    let dest =
+      if m <= extra_size
+      then let new_dest =
+             replicate (2 * extra_size) (L.terminal_module.u8 0, (0, 0))
+           in scatter new_dest (indices dest) dest
+      else dest
     let result =
-      scatter dest offsets vs
+      scatter dest (map (+ prev_size) offsets) vs
       |> map (\(t, (s, e)) -> (t, (s + offset, 1 + e + offset)))
-    let size = is[n - 1]
-    let last_endo = endos[n - 1]
-    let last_start = starts[n - 1]
-    in ( result[0:size]
+    let last_endo = last endos
+    let last_start = last starts
+    in ( result
        , last_endo
-       , if last_start != i64.highest then offset + last_start else prev_start
+       , if last_start != i64.highest
+         then offset + last_start
+         else prev_start
+       , prev_size + size
        )
 
   def lex [n]
           (chunk_size: i32)
           (str: [n]u8) : opt ([](terminal, (i64, i64))) =
-    let chunk_size' = i64.i32 chunk_size
-    let (res, final_endo, final_start) =
-      loop (res'', init_endo, init_start) = ([], L.identity_endomorphism, 0)
-      for offset in 0..chunk_size'..<n do
-        let m = i64.min (offset + chunk_size' + 1) n
-        let (res', last_endo, last_start) = lex_step offset init_endo init_start str[offset:m]
-        in (res'' ++ res', last_endo, last_start)
-    let last_terminal = to_terminal final_endo
-    let last =
+    let chunk_size = i64.i32 chunk_size
+    let (result, endo, start, size) =
+      loop (dest, endo, start, size) =
+             ( [(L.terminal_module.u8 0, (0, 0))]
+             , L.identity_endomorphism
+             , 0
+             , 0
+             )
+      for offset in 0..chunk_size..<n do
+        let m = i64.min (offset + chunk_size + 1) n
+        let s = copy str[offset:m]
+        let (dest, last_endo, last_start, size) =
+          lex_step offset endo start size dest s
+        in (dest, copy last_endo, last_start, size)
+    let last_terminal = to_terminal endo
+    let (result, size) =
       if is_ignore last_terminal
-      then []
-      else [(to_terminal final_endo, (final_start, n))]
-    let result = some (res ++ last)
-    in if is_accept final_endo
-       then result
+      then (result, size)
+      else ( result with [size] = ( to_terminal endo
+                                  , (start, n)
+                                  )
+           , size + 1
+           )
+    in if is_accept endo
+       then some (take size result)
        else #none
 }
 
