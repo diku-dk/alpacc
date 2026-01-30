@@ -663,7 +663,7 @@ instance Functor (CST i m) where
   fmap f (CSTTerminal m t) = CSTTerminal m (f t)
 
 llpParseTree ::
-  (Ord nt, Show nt, Show t, Ord t, Show t', Ord t', NFData t', NFData t, NFData nt) =>
+  (Ord nt, Show nt, Show t, Ord t, Show t', Ord t', NFData t', NFData t, NFData nt, Show m) =>
   Grammar
     (AugmentedNonterminal (Symbol nt t))
     (AugmentedTerminal t') ->
@@ -697,6 +697,10 @@ llpParseTree grammar q k table str_meta = do
           (CSTTerminal m t, tms, ds)
       | Just (Production (AugmentedNonterminal (Nonterminal _)) syms) <- toProd d =
           let (nodes, new_ms, new_ds) = foldl' auxiliary ([], ms, ds) syms
+           in (CSTProduction (fromIntegral d :: Word64) nodes, new_ms, new_ds)
+    mkTree [] (d : ds)
+      | Just (Production (AugmentedNonterminal (Nonterminal _)) syms) <- toProd d =
+          let (nodes, new_ms, new_ds) = foldl' auxiliary ([], [], ds) syms
            in (CSTProduction (fromIntegral d :: Word64) nodes, new_ms, new_ds)
     mkTree _ _ = error "An internal error occurred."
 
