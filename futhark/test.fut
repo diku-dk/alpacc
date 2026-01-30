@@ -83,6 +83,7 @@ module parser_test
   type terminal = P.terminal
   type production = P.production
 
+  #[inline]
   def encode_productions [n] (ts: opt ([n]production)) : []u8 =
     match ts
     case #some ts' ->
@@ -130,6 +131,7 @@ module lexer_parser_test
   type production = P.production
   type node 't 'p = P.node t p
 
+  #[inline]
   def encode_node (p: i64) (n: node terminal production) : []u8 =
     match n
     case #production t ->
@@ -145,6 +147,7 @@ module lexer_parser_test
       ++ ((encode_u64 <-< u64.i64) i)
       ++ ((encode_u64 <-< u64.i64) j)
 
+  #[inline]
   def encode_tree [n] (ns: opt ([n](i64, P.node terminal production))) : []u8 =
     match ns
     case #some ns' ->
