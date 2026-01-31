@@ -3,8 +3,6 @@
 -- The generic LLP parsing machine, expressed as a parameterised
 -- module.
 
-import "lib/github.com/diku-dk/sorts/radix_sort"
-import "lib/github.com/diku-dk/sorts/merge_sort"
 import "lib/github.com/diku-dk/containers/opt"
 import "lib/github.com/diku-dk/segmented/segmented"
 
@@ -43,6 +41,51 @@ module mk_parser (P: parser_context) = {
   def is_left (s: bracket) : bool =
     bracket_module.get_bit (bracket_module.num_bits - 1) s
     |> bool.i32
+
+  def is_right (s: bracket) : bool =
+    is_left s
+    |> not
+
+  def size (h: i64) : i64 =
+    (1 << h) - 1
+
+  def mk_tree [n] 't (op: t -> t -> t) (ne: t) (arr: [n]t) =
+    let temp = i64.num_bits - i64.clz n
+    let h = i64.i32 <| if i64.popc n == 1 then temp else temp + 1
+    let tree_size = size h
+    let offset = size (h - 1)
+    let offsets = iota n |> map (+ offset)
+    let tree = scatter (replicate tree_size ne) offsets arr
+    let arr = copy tree[offset:]
+    let (tree, _, _) =
+      loop (tree, arr, level) = (tree, arr, h - 2)
+      while level >= 0 do
+        let new_size = length arr / 2
+        let new_arr =
+          tabulate new_size (\i -> arr[2 * i] `op` arr[2 * i + 1])
+        let offset = size level
+        let offsets = iota new_size |> map (+ offset)
+        let new_tree = scatter tree offsets new_arr
+        in (new_tree, new_arr, level - 1)
+    in tree
+
+  def find_previous [n] 't
+                    (op: t -> t -> bool)
+                    (tree: [n]t)
+                    (idx: i64) : i64 =
+    let sibling i = i - i64.bool (i % 2 == 0) + i64.bool (i % 2 == 1)
+    let parent i = (i - 1) / 2
+    let is_left i = i % 2 == 1
+    let h = i64.i32 <| i64.num_bits - i64.clz n
+    let offset = size (h - 1)
+    let start = offset + idx
+    let v = tree[start]
+    let ascent i = i != 0 && (is_left i || !(tree[sibling i] `op` v))
+    let descent i = 2 * i + 1 + i64.bool (tree[2 * i + 2] `op` v)
+    let index = iterate_while ascent parent start
+    in if index != 0
+       then iterate_while (< offset) descent (sibling index) - offset
+       else -1
 
   def hash [n] (arr: [n]terminal) : u64 =
     foldl (\h a ->
@@ -102,11 +145,6 @@ module mk_parser (P: parser_context) = {
        then #none
        else #some result
 
-  def grade [n] (xs: [n]i64) : [n]i64 =
-    zip xs (indices xs)
-    |> blocked_radix_sort_int_by_key 256 (.0) i64.num_bits i64.get_bit
-    |> map (.1)
-
   def even_indices 'a [n] (_: [n]a) : [n / 2]i64 =
     iota (n / 2) |> map (2 *)
 
@@ -118,10 +156,13 @@ module mk_parser (P: parser_context) = {
 
   def brackets_matches [n] (brackets: [n]bracket) : bool =
     match depths brackets
-    case #some depths' ->
-      let grade' = grade depths'
-      in even_indices grade'
-         |> map (\i -> eq_no_bracket brackets[grade'[i]] brackets[grade'[i + 1]])
+    case #some ds ->
+      let tree = mk_tree i64.min i64.highest ds
+      in tabulate n (\i ->
+                       if is_left brackets[i]
+                       then true
+                       else let j = find_previous (<=) tree i
+                            in eq_no_bracket brackets[i] brackets[j])
          |> and
     case #none -> false
 
@@ -210,47 +251,6 @@ module mk_parser (P: parser_context) = {
   def production_to_arity (p: production) : i64 =
     copy P.production_to_arity[production_module.to_i64 p]
 
-  def size (h: i64) : i64 =
-    (1 << h) - 1
-
-  def mk_tree [n] 't (op: t -> t -> t) (ne: t) (arr: [n]t) =
-    let temp = i64.num_bits - i64.clz n
-    let h = i64.i32 <| if i64.popc n == 1 then temp else temp + 1
-    let tree_size = size h
-    let offset = size (h - 1)
-    let offsets = iota n |> map (+ offset)
-    let tree = scatter (replicate tree_size ne) offsets arr
-    let arr = copy tree[offset:]
-    let (tree, _, _) =
-      loop (tree, arr, level) = (tree, arr, h - 2)
-      while level >= 0 do
-        let new_size = length arr / 2
-        let new_arr =
-          tabulate new_size (\i -> arr[2 * i] `op` arr[2 * i + 1])
-        let offset = size level
-        let offsets = iota new_size |> map (+ offset)
-        let new_tree = scatter tree offsets new_arr
-        in (new_tree, new_arr, level - 1)
-    in tree
-
-  def find_previous [n] 't
-                    (op: t -> t -> bool)
-                    (tree: [n]t)
-                    (idx: i64) : i64 =
-    let sibling i = i - i64.bool (i % 2 == 0) + i64.bool (i % 2 == 1)
-    let parent i = (i - 1) / 2
-    let is_left i = i % 2 == 1
-    let h = i64.i32 <| i64.num_bits - i64.clz n
-    let offset = size (h - 1)
-    let start = offset + idx
-    let v = tree[start]
-    let ascent i = i != 0 && (is_left i || !(tree[sibling i] `op` v))
-    let descent i = 2 * i + 1 + i64.bool (tree[2 * i + 2] `op` v)
-    let index = iterate_while ascent parent start
-    in if index != 0
-       then iterate_while (< offset) descent (sibling index) - offset
-       else -1
-
   def parents [n] (ps: [n]production) : [n]i64 =
     let tree =
       map production_to_arity ps
@@ -262,21 +262,6 @@ module mk_parser (P: parser_context) = {
     in if n == 0
        then parents'
        else let parents'[0] = 0 in parents'
-
-  def backwards_linear_search [n] 't
-                              (op: t -> t -> bool)
-                              (arr: [n]t)
-                              (i: i64) : i64 =
-    loop j = i - 1
-    while j != -1 && not (arr[j] `op` arr[i]) do
-      j - 1
-
-  def test_previous_equal_or_smaller [n] (arr: [n]i32) : bool =
-    let expected = map (backwards_linear_search (<=) arr) (iota n)
-    let tree = mk_tree i32.min i32.highest arr
-    let result = map (find_previous (<=) tree) (iota n)
-    in zip expected result
-       |> all (uncurry (==))
 
   type node 't 'p = #terminal t (i64, i64) | #production p
 
