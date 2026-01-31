@@ -42,10 +42,6 @@ module mk_parser (P: parser_context) = {
     bracket_module.get_bit (bracket_module.num_bits - 1) s
     |> bool.i32
 
-  def is_right (s: bracket) : bool =
-    is_left s
-    |> not
-
   def size (h: i64) : i64 =
     (1 << h) - 1
 
@@ -144,9 +140,6 @@ module mk_parser (P: parser_context) = {
     in if any (< 0) bracket_scan || (n != 0 && last bracket_scan != 0)
        then #none
        else #some result
-
-  def even_indices 'a [n] (_: [n]a) : [n / 2]i64 =
-    iota (n / 2) |> map (2 *)
 
   def unpack_bracket (b: bracket) : bracket =
     bracket_module.set_bit (bracket_module.num_bits - 1) b 0
