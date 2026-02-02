@@ -18,9 +18,9 @@ generateParser :: UInt -> Parser -> Text
 generateParser terminal_type parser =
   (Text.strip . Text.pack)
     [i|
-      #{cudafy terminal_type}
-      #{q}
-      #{k}
+using token_t = #{cudafy terminal_type};
+const size_t Q = #{q}
+const size_t K = #{k}
 |]
     <> cudaParser
   where
