@@ -21,6 +21,7 @@ module Alpacc.Encode
     llpHashTable,
     LLPTable (..),
     printTerminals,
+    printProductions,
   )
 where
 
@@ -61,7 +62,7 @@ newtype TerminalEncoder t
   { terminalEncoder :: Map (Unused t) Integer
   }
 
-printTerminals :: (Show t) => TerminalEncoder t -> [Text]
+printTerminals :: (Pretty t) => TerminalEncoder t -> [Text]
 printTerminals =
   ("Terminal Encoding: " :)
     . map snd
@@ -70,8 +71,24 @@ printTerminals =
     . Map.toList
     . terminalEncoder
   where
-    auxiliary (Used t, i) = Just (i, Text.pack (show t) <> ": " <> Text.pack (show i))
+    auxiliary (Used t, i) = Just (i, pretty t <> ": " <> Text.pack (show i))
     auxiliary (Unused, _) = Nothing
+
+printProductions :: (Pretty nt, Pretty t) => ParsingGrammar nt t -> [Text]
+printProductions =
+  ("Production Encoding: " :)
+    . catMaybes
+    . zipWith auxiliary [0 :: Int ..]
+    . productions
+    . getGrammar
+  where
+    auxiliary i p
+      | isInternal p = Nothing
+      | otherwise = Just $ pretty p <> ": " <> Text.pack (show i)
+
+    isInternal (Production (AugmentedNonterminal (Terminal _)) _) = True
+    isInternal (Production Start _) = True
+    isInternal _ = False
 
 fromSymbolToTerminalEncoder :: (Ord t) => SymbolEncoder nt t -> TerminalEncoder t
 fromSymbolToTerminalEncoder =

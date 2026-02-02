@@ -9,6 +9,7 @@ module Alpacc.Grammar
     Unused (..),
     ParsingGrammar,
     ParsingTerminals,
+    Pretty (..),
     getTerminals,
     parsingTerminals,
     augmentGrammar,
@@ -53,6 +54,9 @@ import Test.QuickCheck
     vectorOf,
   )
 
+class Pretty a where
+  pretty :: a -> Text
+
 -- | Used in augmenting terminals for the augmented grammar.
 data AugmentedTerminal t
   = AugmentedTerminal t
@@ -62,6 +66,11 @@ data AugmentedTerminal t
 
 instance (NFData t) => NFData (AugmentedTerminal t)
 
+instance (Pretty t) => Pretty (AugmentedTerminal t) where
+  pretty (AugmentedTerminal t) = pretty t
+  pretty RightTurnstile = "⊢"
+  pretty LeftTurnstile = "⊣"
+
 -- | Used in augmenting nonterminals for the augmented grammar.
 data AugmentedNonterminal nt
   = AugmentedNonterminal nt
@@ -70,15 +79,26 @@ data AugmentedNonterminal nt
 
 instance (NFData nt) => NFData (AugmentedNonterminal nt)
 
+instance (Pretty nt) => Pretty (AugmentedNonterminal nt) where
+  pretty (AugmentedNonterminal nt) = pretty nt
+  pretty Start = "⊤"
+
 -- | Structure used for terminals making it easier to print strings in a
 -- readable manner.
 data T = T Text | TLit Text deriving (Ord, Eq, Generic, Show)
+
+instance Pretty T where
+  pretty (T t) = t
+  pretty (TLit lit) = "\"" <> lit <> "\""
 
 instance NFData T
 
 -- | Structure used for nonterminals making it easier to print strings in a
 -- readable manner.
 newtype NT = NT Text deriving (Ord, Eq, Generic, Show)
+
+instance Pretty NT where
+  pretty (NT t) = t
 
 instance NFData NT
 
@@ -89,6 +109,10 @@ data Symbol nt t
   deriving (Ord, Eq, Read, Functor, Generic, Show)
 
 instance (NFData t, NFData nt) => NFData (Symbol nt t)
+
+instance (Pretty nt, Pretty t) => Pretty (Symbol nt t) where
+  pretty (Nonterminal nt) = pretty nt
+  pretty (Terminal t) = pretty t
 
 -- | Bifunctor for symbol where first is the Nonterminal and second is Terminal.
 instance Bifunctor Symbol where
@@ -102,6 +126,10 @@ data Production nt t = Production {prodLHS :: nt, prodRHS :: [Symbol nt t]}
   deriving (Ord, Eq, Read, Functor, Generic, Show)
 
 instance (NFData t, NFData nt) => NFData (Production nt t)
+
+instance (Pretty nt, Pretty t) => Pretty (Production nt t) where
+  pretty (Production nt syms) =
+    pretty nt <> " = " <> Text.intercalate " " (map pretty syms)
 
 -- | Bifunctor for production where first is the Nonterminal and second is
 -- Terminal.
@@ -293,6 +321,10 @@ data Unused t
   = Unused
   | Used t
   deriving (Show, Eq, Ord, Generic)
+
+instance (Pretty t) => Pretty (Unused t) where
+  pretty (Used t) = pretty t
+  pretty Unused = "⊥"
 
 instance (NFData t) => NFData (Unused t)
 

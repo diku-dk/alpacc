@@ -154,7 +154,7 @@ mkParser q k cfg = do
                 numberOfProductions = length $ productions $ getGrammar grammar
               },
         terminalType = terminal_type,
-        meta = printTerminals t_encoder
+        meta = printTerminals t_encoder <> [""] <> printProductions grammar
       }
 
 mkLexerParser :: Int -> Int -> CFG -> Either Text (Analyzer [Text])
@@ -204,5 +204,5 @@ mkLexerParser q k cfg = do
                 }
             ),
         terminalType = terminal_type,
-        meta = printTerminals t_encoder
+        meta = printTerminals t_encoder <> [""] <> printProductions grammar
       }
