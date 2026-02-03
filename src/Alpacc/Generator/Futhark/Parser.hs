@@ -7,9 +7,6 @@ import Alpacc.Encode
 import Alpacc.Generator.Analyzer
 import Alpacc.Generator.Futhark.Futharkify
 import Alpacc.HashTable
-import Alpacc.LLP
-  ( Bracket (..),
-  )
 import Alpacc.Types
 import Data.FileEmbed
 import Data.String.Interpolate (i)
@@ -18,10 +15,6 @@ import Data.Text qualified as Text
 
 futharkParser :: Text
 futharkParser = $(embedStringFile "futhark/parser.fut")
-
-futharkifyBracket :: (Futharkify a) => Bracket a -> RawString
-futharkifyBracket (LBracket a) = RawString . ("left " <>) $ futharkify a
-futharkifyBracket (RBracket a) = RawString . ("right " <>) $ futharkify a
 
 -- | Creates Futhark source code which contains a parallel parser that can
 -- create the productions list for a input which is indexes of terminals.
@@ -39,12 +32,6 @@ module bracket_module = #{futharkify bracket_type}
 type terminal = terminal_module.t
 type production = production_module.t
 type bracket = bracket_module.t
-
-def left (s : bracket) : bracket =
-  bracket_module.set_bit (bracket_module.num_bits - 1) s 1
-
-def right (s : bracket) : bracket =
-  bracket_module.set_bit (bracket_module.num_bits - 1) s 0
 
 def number_of_productions: i64 = #{number_of_productions} 
 def q: i64 = #{q}
@@ -81,7 +68,7 @@ def productions: [productions_size]production =
     empty_terminal = emptyTerminal parser
     hash_table = llpTable parser
     number_of_productions = numberOfProductions parser
-    stacks = futharkifyBracket <$> llpStacks hash_table
+    stacks = llpStacks hash_table
     productions = llpProductions hash_table
     stacks_size = length $ llpStacks hash_table
     productions_size = length $ llpProductions hash_table

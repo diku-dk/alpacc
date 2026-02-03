@@ -320,7 +320,7 @@ hash =
 
 data LLPTable
   = LLPTable
-  { llpStacks :: [Bracket Integer],
+  { llpStacks :: [Integer],
     llpProductions :: [Int],
     llpOATable :: OpenAddressing [Integer] ((Int, Int), (Int, Int))
   }
@@ -337,10 +337,15 @@ llpHashTable ::
 llpHashTable q k empty_terminal grammar encoder = do
   table <- llpParserTableWithStartsHomomorphisms q k $ getGrammar grammar
 
+  num_bits <- fromInteger . numBits <$> bracketIntType encoder
   let int_table =
         Map.mapKeys (uncurry (<>)) $
           padLLPTableKeys empty_terminal q k $
             toIntLLPTable encoder table
-      (stacks, prods, flat_int_table) = flattenTuple int_table
+      (stacks', prods, flat_int_table) = flattenTuple int_table
+      stacks = map (bracketEncode num_bits) stacks'
       oa = openAdressing hash flat_int_table
   pure $ LLPTable stacks prods oa
+  where
+    bracketEncode nbs (LBracket a) = a `setBit` (nbs - 1)
+    bracketEncode _ (RBracket a) = a
