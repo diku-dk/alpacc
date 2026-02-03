@@ -18,16 +18,16 @@ class Cudafy a where
   cudafy :: a -> Text
 
 instance Cudafy UInt where
-  cudafy U8 = "unsigned char"
-  cudafy U16 = "unsigned short"
-  cudafy U32 = "unsigned int"
-  cudafy U64 = "unsigned long long"
+  cudafy U8 = "uint8_t"
+  cudafy U16 = "uint16_t"
+  cudafy U32 = "uint32_t"
+  cudafy U64 = "uint64_t"
 
 instance Cudafy IInt where
-  cudafy I8 = "char"
-  cudafy I16 = "short"
-  cudafy I32 = "int"
-  cudafy I64 = "long long"
+  cudafy I8 = "int8_t"
+  cudafy I16 = "int16_t"
+  cudafy I32 = "int32_t"
+  cudafy I64 = "int64_t"
 
 instance Cudafy RawString where
   cudafy (RawString s) = s

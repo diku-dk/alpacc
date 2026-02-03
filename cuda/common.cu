@@ -1,6 +1,7 @@
 #include <iostream>
 #include <assert.h>
 #include <cuda_runtime.h>
+#include <stdint.h>
 #define gpuAssert(x) _gpuAssert(x, __FILE__, __LINE__)
 #define numBlocks(size, block_size, items_per_thread) std::max<size_t>(1, (size + block_size * items_per_thread - 1) / (block_size * items_per_thread))
 
@@ -33,8 +34,8 @@ void compute_descriptors(float* measurements, size_t size, size_t bytes) {
   printf("%.0lfGB/s\n", sample_gbps);
 }
 
-const unsigned char LG_WARP = 5;
-const unsigned char WARP = 1 << LG_WARP;
+const uint8_t LG_WARP = 5;
+const uint8_t WARP = 1 << LG_WARP;
 
 template<typename T, typename I, I ITEMS_PER_THREAD>
 __device__ inline void
@@ -90,11 +91,11 @@ template<typename T, typename I, typename OP>
 __device__ inline T
 scanWarp(volatile T* shmem,
          OP op,
-         const unsigned char lane) {
-  unsigned char h;
+         const uint8_t lane) {
+  uint8_t h;
 
 #pragma unroll
-  for (unsigned char d = 0; d < LG_WARP; d++)
+  for (uint8_t d = 0; d < LG_WARP; d++)
     if ((h = 1 << d) <= lane)
       shmem[threadIdx.x] = op(shmem[threadIdx.x - h], shmem[threadIdx.x]);
     
@@ -105,7 +106,7 @@ template<typename T, typename I, typename OP>
 __device__ inline void
 scanBlock(volatile T* shmem,
           OP op) {
-  const unsigned char lane = threadIdx.x & (WARP - 1);
+  const uint8_t lane = threadIdx.x & (WARP - 1);
   const I warpid = threadIdx.x >> LG_WARP;
 
   T res = scanWarp<T, I, OP>(shmem, op, lane);
@@ -156,17 +157,17 @@ scanBlock(volatile T* block,
   addAuxBlockScan<T, I, OP, ITEMS_PER_THREAD>(block, block_aux, op);
 }
 
-__device__ inline unsigned int dynamicIndex(volatile unsigned int* dyn_idx_ptr) {
-  volatile __shared__ unsigned int dyn_idx;
+__device__ inline uint32_t dynamicIndex(volatile uint32_t* dyn_idx_ptr) {
+  volatile __shared__ uint32_t dyn_idx;
     
   if (threadIdx.x == 0)
-    dyn_idx = atomicAdd(const_cast<unsigned int*>(dyn_idx_ptr), 1);
+    dyn_idx = atomicAdd(const_cast<uint32_t*>(dyn_idx_ptr), 1);
     
   __syncthreads();
   return dyn_idx;
 }
 
-enum Status: unsigned char {
+enum Status: uint8_t {
   Invalid = 0,
   Aggregate = 1,
   Prefix = 2,
@@ -208,12 +209,12 @@ __device__ inline void
 scanWarp(volatile T* values,
          volatile Status* statuses,
          OP op,
-         const unsigned char lane) {
-  unsigned char h;
+         const uint8_t lane) {
+  uint8_t h;
   const I tid = threadIdx.x;
 
 #pragma unroll
-  for (unsigned char d = 0; d < LG_WARP; d++) {
+  for (uint8_t d = 0; d < LG_WARP; d++) {
     if ((h = 1 << d) <= lane) {
       bool is_not_aggregate = statuses[tid] != Aggregate;
       values[tid] = is_not_aggregate ? values[tid] : op(values[tid - h], values[tid]);
@@ -228,12 +229,12 @@ decoupledLookbackScan(volatile States<I, T> states,
                       volatile T* shmem,
                       OP op,
                       T ne,
-                      unsigned int dyn_idx,
+                      uint32_t dyn_idx,
                       bool write_back = true) {
   volatile __shared__ T values[WARP];
   volatile __shared__ Status statuses[WARP];
   volatile __shared__ T shmem_prefix;
-  const unsigned char lane = threadIdx.x & (WARP - 1);
+  const uint8_t lane = threadIdx.x & (WARP - 1);
   const bool is_first = threadIdx.x == 0;
 
   if (is_first) {
@@ -320,7 +321,7 @@ scan(volatile T* block,
      volatile States<I, T> states,
      OP op,
      T ne,
-     unsigned int dyn_idx,
+     uint32_t dyn_idx,
      bool write_back = true) {
     
   scanBlock<T, I, OP, ITEMS_PER_THREAD>(block, block_aux, op);
