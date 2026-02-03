@@ -18,8 +18,8 @@ futharkLexer = $(embedStringFile "futhark/lexer.fut")
 compositionsArray :: (Futharkify i, Integral i) => UInt -> ParallelLexer Word8 i -> Text
 compositionsArray int parallel_lexer =
   Text.pack
-    [i|def compositions : [endomorphism_size * endomorphism_size]endomorphism =
-  #{ps} :> [endomorphism_size * endomorphism_size]endomorphism
+    [i|def compositions : [state_size * state_size]state =
+  #{ps} :> [state_size * state_size]state
 |]
   where
     ps = futharkify $ p <$> listCompositions parallel_lexer
@@ -32,27 +32,27 @@ generateLexer terminal_type lex =
       [i|
 module lexer = mk_lexer {
   module terminal_module = #{futharkify terminal_type}
-  module endomorphism_module = #{futharkify state_type}
+  module state_module = #{futharkify state_type}
 
-  type endomorphism = endomorphism_module.t
+  type state = state_module.t
   type terminal = terminal_module.t
   
-  def identity_endomorphism: endomorphism = #{iden}
+  def identity_state: state = #{iden}
   def dead_terminal: terminal = #{dead_token}
   def ignore_terminal: opt terminal = #{futharkify ignore_token}
-  def endo_mask: endomorphism = #{index_mask}
-  def endo_offset: endomorphism = #{index_offset}
-  def terminal_mask: endomorphism = #{token_mask}
-  def terminal_offset: endomorphism = #{token_offset}
-  def produce_mask: endomorphism = #{produce_mask}
-  def produce_offset: endomorphism = #{produce_offset}
+  def state_mask: state = #{index_mask}
+  def state_offset: state = #{index_offset}
+  def terminal_mask: state = #{token_mask}
+  def terminal_offset: state = #{token_offset}
+  def produce_mask: state = #{produce_mask}
+  def produce_offset: state = #{produce_offset}
   
-  def endomorphism_size: i64 = #{endomorphisms_size}
+  def state_size: i64 = #{states_size}
   
-  def accept_array: [endomorphism_size]bool =
-    sized endomorphism_size #{futharkify accept_array}
+  def accept_array: [state_size]bool =
+    sized state_size #{futharkify accept_array}
 
-  def transitions_to_endomorphisms : [256]endomorphism =
+  def transitions_to_states : [256]state =
     sized 256 #{transitions}
 
   #{compositions_table}
@@ -71,7 +71,7 @@ module lexer = mk_lexer {
     dead_token = deadToken lex
     ignore_token = ignoreToken lex
     parallel_lexer = parLexer int_parallel_lexer
-    endomorphisms_size = endomorphismsSize parallel_lexer
+    states_size = endomorphismsSize parallel_lexer
     iden = identity parallel_lexer
     accept_array = acceptArray parallel_lexer
     state_type = stateType lex

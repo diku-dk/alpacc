@@ -19,27 +19,27 @@ generateLexer :: UInt -> Lexer -> Text
 generateLexer terminal_type lex =
   (Text.strip . Text.pack)
     [i|
-using token_t = #{cudafy terminal_type};
+using terminal_t = #{cudafy terminal_type};
 using state_t = #{cudafy state_type};
 
-const unsigned int NUM_STATES = #{cudafy $ endomorphismsSize parallel_lexer};
-const unsigned int NUM_TRANS = 256;
+const size_t NUM_STATES = #{cudafy $ endomorphismsSize parallel_lexer};
+const size_t NUM_TRANS = 256;
 #{ignore_token}
 const state_t ENDO_MASK = #{cudafy index_mask};
 const state_t ENDO_OFFSET = #{cudafy index_offset};
-const state_t TOKEN_MASK = #{cudafy token_mask};
-const state_t TOKEN_OFFSET = #{cudafy token_offset};
+const state_t TERMINAL_MASK = #{cudafy token_mask};
+const state_t TERMINAL_OFFSET = #{cudafy token_offset};
 const state_t PRODUCE_MASK = #{cudafy produce_mask};
 const state_t PRODUCE_OFFSET = #{cudafy produce_offset};
 const state_t IDENTITY = #{cudafy iden};
 
-state_t h_to_state[NUM_TRANS] =
+const state_t h_to_state[NUM_TRANS] =
   #{cudafy $ Map.elems $ endomorphisms parallel_lexer};
 
-state_t h_compose[NUM_STATES * NUM_STATES] =
+const state_t h_compose[NUM_STATES * NUM_STATES] =
   #{cudafy $ listCompositions parallel_lexer};
 
-bool h_accept[NUM_STATES] =
+const bool h_accept[NUM_STATES] =
   #{cudafy $ accept_array};
 |]
     <> cudaLexer
