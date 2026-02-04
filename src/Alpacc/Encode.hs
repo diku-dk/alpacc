@@ -62,8 +62,8 @@ newtype TerminalEncoder t
   { terminalEncoder :: Map (Unused t) Integer
   }
 
-printTerminals :: (Pretty t) => TerminalEncoder t -> [Text]
-printTerminals =
+printTerminals :: (Eq t, Pretty t) => t -> TerminalEncoder t -> [Text]
+printTerminals ignore =
   ("Terminal Encoding: " :)
     . map snd
     . sortOn fst
@@ -71,7 +71,10 @@ printTerminals =
     . Map.toList
     . terminalEncoder
   where
-    auxiliary (Used t, i) = Just (i, pretty t <> ": " <> Text.pack (show i))
+    auxiliary (Used t, i) =
+      if t == ignore
+        then Nothing
+        else Just (i, pretty t <> ": " <> Text.pack (show i))
     auxiliary (Unused, _) = Nothing
 
 printProductions :: (Pretty nt, Pretty t) => ParsingGrammar nt t -> [Text]

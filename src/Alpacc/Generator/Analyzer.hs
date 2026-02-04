@@ -112,7 +112,7 @@ mkLexer cfg = do
                 ignoreToken = terminalLookup ignore encoder
               },
         terminalType = terminal_type,
-        meta = printTerminals encoder
+        meta = printTerminals ignore encoder
       }
 
 mkArities :: ParsingGrammar nt t -> [Integer]
@@ -154,7 +154,10 @@ mkParser q k cfg = do
                 numberOfProductions = length $ productions $ getGrammar grammar
               },
         terminalType = terminal_type,
-        meta = printTerminals t_encoder <> [""] <> printProductions grammar
+        meta =
+          printTerminals ignore t_encoder
+            <> [""]
+            <> printProductions grammar
       }
 
 mkLexerParser :: Int -> Int -> CFG -> Either Text (Analyzer [Text])
@@ -204,5 +207,8 @@ mkLexerParser q k cfg = do
                 }
             ),
         terminalType = terminal_type,
-        meta = printTerminals t_encoder <> [""] <> printProductions grammar
+        meta =
+          printTerminals ignore t_encoder
+            <> [""]
+            <> printProductions grammar
       }
