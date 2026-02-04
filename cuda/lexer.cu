@@ -1,3 +1,52 @@
+// Calculate fixed overhead (independent of ITEMS_PER_THREAD)
+template<typename I, typename state_t, uint32_t BLOCK_SIZE>
+constexpr size_t calculate_lexer_fixed_overhead() {
+  return sizeof(I) * BLOCK_SIZE +           // indices_aux
+          sizeof(state_t) +                  // next_block_first_state
+          sizeof(I) +                        // last_start
+          sizeof(I) * WARP +                 // values
+          sizeof(Status) * WARP +            // statuses
+          sizeof(I);                         // shmem_prefix
+}
+
+// Calculate memory cost dependent on ITEMS_PER_THREAD (runtime parameter version)
+template<typename I, typename state_t, uint32_t BLOCK_SIZE>
+constexpr size_t calculate_lexer_variable_cost(uint32_t items_per_thread) {
+  size_t states_bytes = sizeof(state_t) * items_per_thread * BLOCK_SIZE;
+  size_t indices_bytes = sizeof(I) * items_per_thread * BLOCK_SIZE;
+  size_t states_aux_bytes = sizeof(state_t) * BLOCK_SIZE;
+  size_t buffer_bytes = (indices_bytes > states_aux_bytes) ? indices_bytes : states_aux_bytes;
+  
+  return states_bytes + buffer_bytes;
+}
+
+// Total shared memory usage
+template<typename I, typename state_t, uint32_t BLOCK_SIZE, uint32_t ITEMS_PER_THREAD>
+constexpr size_t calculate_lexer_shared_memory_usage() {
+  return calculate_lexer_fixed_overhead<I, state_t, BLOCK_SIZE>() +
+         calculate_lexer_variable_cost<I, state_t, BLOCK_SIZE>(ITEMS_PER_THREAD);
+}
+
+// Compile-time calculation of maximum ITEMS_PER_THREAD
+template<typename I, typename state_t, uint32_t BLOCK_SIZE, uint32_t SHARED_MEMORY>
+constexpr uint32_t calculate_lexer_max_items_per_thread() {
+  constexpr size_t usable_shmem = static_cast<size_t>(SHARED_MEMORY * 0.9);
+  constexpr size_t fixed_overhead = calculate_lexer_fixed_overhead<I, state_t, BLOCK_SIZE>();
+  
+  uint32_t max_items = 1;
+  for (uint32_t items = 1; items <= 1024; items++) {
+    size_t total = fixed_overhead + calculate_lexer_variable_cost<I, state_t, BLOCK_SIZE>(items);
+    
+    if (total <= usable_shmem) {
+      max_items = items;
+    } else {
+      break;
+    }
+  }
+  
+  return max_items;
+}
+
 __device__ __host__ __forceinline__
 state_t get_index(state_t state) {
   return (state & ENDO_MASK) >> ENDO_OFFSET;
@@ -13,6 +62,7 @@ bool is_produce(state_t state) {
   return (state & PRODUCE_MASK) >> PRODUCE_OFFSET;
 }
 
+// CPU-only versions (if you still need them separately)
 state_t get_index_cpu(state_t state) {
   return (state & ENDO_MASK) >> ENDO_OFFSET;
 }
@@ -202,11 +252,15 @@ public:
 template<typename I, typename J, I BLOCK_SIZE, I ITEMS_PER_THREAD>
 __global__ void
 lexer(LexerCtx<I, J> ctx, uint8_t* d_string, terminal_t* d_terminals, J* d_starts, J* d_ends, const I size, const bool is_last_chunk) {
+  constexpr size_t indices_bytes = ITEMS_PER_THREAD * BLOCK_SIZE * sizeof(I);
+  constexpr size_t states_aux_bytes = BLOCK_SIZE * sizeof(state_t);
+  constexpr size_t max_bytes = (indices_bytes > states_aux_bytes) ? indices_bytes : states_aux_bytes;
   volatile __shared__ state_t states[ITEMS_PER_THREAD * BLOCK_SIZE];
-  volatile __shared__ I indices[ITEMS_PER_THREAD * BLOCK_SIZE];
   volatile __shared__ I indices_aux[BLOCK_SIZE];
+  volatile __shared__ uint8_t shared_buffer[max_bytes];
+  volatile I* indices = (volatile I*) shared_buffer;
+  volatile state_t* states_aux = (volatile state_t*) shared_buffer;
   __shared__ state_t next_block_first_state;
-  volatile state_t* states_aux = (volatile state_t*) indices;
   const I REG_MEM = 1 + ITEMS_PER_THREAD / sizeof(uint64_t);
   uint64_t copy_reg[REG_MEM];
   uint8_t *chars_reg = (uint8_t*) copy_reg;
@@ -395,32 +449,40 @@ bool read_chunk(FILE* file, uint8_t* buffer, size_t chunk_size, size_t* bytes_re
     return is_not_done;
 }
 
-template<typename PRINT>
+template<typename PRINT, uint32_t CHUNK_SIZE, uint32_t BLOCK_SIZE, uint32_t ITEMS_PER_THREAD>
 int lexer_stream(PRINT print, bool timeit = false) {
-  const uint32_t chunk_size = 64; // 100 * (1 << 20); // 100MiB
   
-  uint8_t* h_string = (uint8_t*) malloc(chunk_size * sizeof(uint8_t));
-  terminal_t* h_terminals = (terminal_t*) malloc(chunk_size * sizeof(terminal_t));
-  size_t* h_starts = (size_t*) malloc(chunk_size * sizeof(size_t));
-  size_t* h_ends = (size_t*) malloc(chunk_size * sizeof(size_t));
+  uint8_t* h_string = (uint8_t*) malloc(CHUNK_SIZE * sizeof(uint8_t));
+  terminal_t* h_terminals = (terminal_t*) malloc(CHUNK_SIZE * sizeof(terminal_t));
+  size_t* h_starts = (size_t*) malloc(CHUNK_SIZE * sizeof(size_t));
+  size_t* h_ends = (size_t*) malloc(CHUNK_SIZE * sizeof(size_t));
   assert(h_string != NULL);
   assert(h_terminals != NULL);
   assert(h_starts != NULL);
   assert(h_ends != NULL);
 
+  constexpr size_t required_shmem = 
+      calculate_lexer_shared_memory_usage<uint32_t, state_t, BLOCK_SIZE, ITEMS_PER_THREAD>();
+  
+  int device;
+  cudaGetDevice(&device);
+  cudaDeviceProp prop;
+  cudaGetDeviceProperties(&prop, device);
+  
+  assert(required_shmem <= prop.sharedMemPerBlock && 
+          "Kernel requires more shared memory than available on device!");
+
   uint8_t* d_string;
   terminal_t* d_terminals;
   size_t* d_starts;
   size_t* d_ends;
-  gpuAssert(cudaMalloc((void**)&d_string, chunk_size * sizeof(uint8_t)));
-  gpuAssert(cudaMalloc((void**)&d_terminals, chunk_size * sizeof(terminal_t)));
-  gpuAssert(cudaMalloc((void**)&d_starts, chunk_size * sizeof(size_t)));
-  gpuAssert(cudaMalloc((void**)&d_ends, chunk_size * sizeof(size_t)));
+  gpuAssert(cudaMalloc((void**)&d_string, CHUNK_SIZE * sizeof(uint8_t)));
+  gpuAssert(cudaMalloc((void**)&d_terminals, CHUNK_SIZE * sizeof(terminal_t)));
+  gpuAssert(cudaMalloc((void**)&d_starts, CHUNK_SIZE * sizeof(size_t)));
+  gpuAssert(cudaMalloc((void**)&d_ends, CHUNK_SIZE * sizeof(size_t)));
 
-  const uint32_t BLOCK_SIZE = 32;
   assert(WARP <= BLOCK_SIZE);
-  const uint32_t ITEMS_PER_THREAD = 1;
-  LexerCtx ctx = LexerCtx<uint32_t, size_t>(chunk_size, BLOCK_SIZE, ITEMS_PER_THREAD);
+  LexerCtx ctx = LexerCtx<uint32_t, size_t>(CHUNK_SIZE, BLOCK_SIZE, ITEMS_PER_THREAD);
 
   size_t new_size = 0;
   size_t final_size = 0;
@@ -432,7 +494,7 @@ int lexer_stream(PRINT print, bool timeit = false) {
   bool is_not_done = true;
   while (is_not_done) {
     size_t bytes;
-    is_not_done = read_chunk(stdin, h_string, chunk_size, &bytes);
+    is_not_done = read_chunk(stdin, h_string, CHUNK_SIZE, &bytes);
     final_size += bytes;
 
     gpuAssert(cudaMemcpy(d_string, h_string, bytes, cudaMemcpyHostToDevice));
@@ -480,17 +542,15 @@ int lexer_stream(PRINT print, bool timeit = false) {
   return success;
 }
 
-template<uint32_t BLOCK_SIZE, uint32_t ITEMS_PER_THREAD>
+template<uint32_t CHUNK_SIZE, uint32_t BLOCK_SIZE, uint32_t ITEMS_PER_THREAD>
 bool lexer_full(
   LexerCtx<uint32_t, size_t> ctx, 
   uint8_t* d_string,
   terminal_t* d_terminals,
   size_t* d_starts,
   size_t* d_ends,
-  size_t chunk_size, 
   size_t size,
   size_t* new_size) {
-  assert(chunk_size <= size);
   assert(size != 0);
   assert(d_string != NULL);
   assert(d_terminals == NULL);
@@ -499,24 +559,35 @@ bool lexer_full(
   assert(WARP <= BLOCK_SIZE);
   assert(ITEMS_PER_THREAD > 1);
 
-  cudaMalloc((void**)&d_terminals, chunk_size * sizeof(terminal_t));
-  cudaMalloc((void**)&d_starts, chunk_size * sizeof(size_t));
-  cudaMalloc((void**)&d_ends, chunk_size * sizeof(size_t));
+  constexpr size_t required_shmem = 
+      calculate_lexer_shared_memory_usage<uint32_t, state_t, BLOCK_SIZE, ITEMS_PER_THREAD>();
+  
+  int device;
+  cudaGetDevice(&device);
+  cudaDeviceProp prop;
+  cudaGetDeviceProperties(&prop, device);
+  
+  assert(required_shmem <= prop.sharedMemPerBlock && 
+          "Kernel requires more shared memory than available on device!");
+
+  cudaMalloc((void**)&d_terminals, CHUNK_SIZE * sizeof(terminal_t));
+  cudaMalloc((void**)&d_starts, CHUNK_SIZE * sizeof(size_t));
+  cudaMalloc((void**)&d_ends, CHUNK_SIZE * sizeof(size_t));
 
   size_t prev_index = 0;
   size_t temp_new_size = 0;
-  size_t alloc_size = chunk_size;
+  size_t alloc_size = CHUNK_SIZE;
   float time = 0;
   cudaEvent_t start, stop;
   cudaEventCreate(&start);
   cudaEventCreate(&stop);
 
-  for (size_t offset = 0; offset < size; offset+=chunk_size) {
-    uint32_t bytes = min(chunk_size, size - offset);
+  for (size_t offset = 0; offset < size; offset+=CHUNK_SIZE) {
+    uint32_t bytes = min((size_t) CHUNK_SIZE, size - offset);
 
     const uint32_t NUM_BLOCKS = numBlocks(bytes, BLOCK_SIZE, ITEMS_PER_THREAD);
     cudaEventRecord(start, 0);
-    lexer<uint32_t, size_t, BLOCK_SIZE, ITEMS_PER_THREAD><<<NUM_BLOCKS, BLOCK_SIZE>>>(ctx, d_string, d_terminals, d_starts, d_ends, bytes, offset < size - chunk_size);
+    lexer<uint32_t, size_t, BLOCK_SIZE, ITEMS_PER_THREAD><<<NUM_BLOCKS, BLOCK_SIZE>>>(ctx, d_string, d_terminals, d_starts, d_ends, bytes, offset < size - CHUNK_SIZE);
     gpuAssert(cudaDeviceSynchronize());
     cudaEventRecord(stop, 0);
     cudaEventSynchronize(stop);
@@ -527,8 +598,8 @@ bool lexer_full(
 
     temp_new_size += ctx.terminalsSize();
 
-    if (alloc_size < temp_new_size + chunk_size) {
-      while (alloc_size < temp_new_size + chunk_size) {
+    if (alloc_size < temp_new_size + CHUNK_SIZE) {
+      while (alloc_size < temp_new_size + CHUNK_SIZE) {
         alloc_size *= 2;
       }
       cudaMalloc((void**)&d_terminals, alloc_size * sizeof(terminal_t));

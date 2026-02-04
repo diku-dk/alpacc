@@ -25,7 +25,20 @@ auxiliary analyzer =
           Text.pack
             [i|
 int main(int32_t argc, char *argv[]) {
-  return lexer_stream<WriteAscii>(WriteAscii());
+  constexpr uint32_t SHARED_MEMORY = 49152;
+  
+  #ifdef DEBUG
+    constexpr uint32_t BLOCK_SIZE = 32;
+    constexpr uint32_t CHUNK_SIZE = 64;
+    constexpr uint32_t ITEMS_PER_THREAD = 2;
+  #else
+    constexpr uint32_t BLOCK_SIZE = 256;
+    constexpr uint32_t CHUNK_SIZE = 100 * (1 << 20); // 100 MiB
+    constexpr uint32_t ITEMS_PER_THREAD = 
+        calculate_lexer_max_items_per_thread<uint32_t, state_t, BLOCK_SIZE, SHARED_MEMORY>();
+  #endif
+  
+  return lexer_stream<WriteAscii, CHUNK_SIZE, BLOCK_SIZE, ITEMS_PER_THREAD>(WriteAscii());
 }|]
         ]
     Parse parser ->
@@ -35,9 +48,7 @@ int main(int32_t argc, char *argv[]) {
           Parser.generateParser terminal_type parser,
           Text.pack
             [i|
-int main(int32_t argc, char *argv[]) {
-  return lexer_stream<WriteAscii>(WriteAscii());
-}|]
+|]
         ]
     Both lexer parser ->
       Text.unlines
@@ -47,9 +58,7 @@ int main(int32_t argc, char *argv[]) {
           Parser.generateParser terminal_type parser,
           Text.pack
             [i|
-int main(int32_t argc, char *argv[]) {
-  return lexer_stream<WriteAscii>(WriteAscii());
-}|]
+|]
         ]
   where
     terminal_type = terminalType analyzer
