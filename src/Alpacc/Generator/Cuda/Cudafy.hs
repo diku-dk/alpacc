@@ -8,6 +8,7 @@ import Alpacc.Types
 import Data.Array as Array hiding (Array)
 import Data.Array.IArray as IArray
 import Data.Array.Unboxed (UArray)
+import Data.String.Interpolate (i)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Numeric.Natural
@@ -56,3 +57,6 @@ instance (Cudafy a) => Cudafy (Array i a) where
 
 instance (Cudafy a, IArray UArray a, Ix i) => Cudafy (UArray i a) where
   cudafy = cudafy . IArray.elems
+
+instance (Cudafy a, Cudafy b) => Cudafy (a, b) where
+  cudafy (a, b) = Text.pack [i|{#{cudafy a}, #{cudafy b}}|]
