@@ -5,6 +5,7 @@
 #define gpuAssert(x) _gpuAssert(x, __FILE__, __LINE__)
 #define numBlocks(size, block_size, items_per_thread) std::max<size_t>(1, (size + block_size * items_per_thread - 1) / (block_size * items_per_thread))
 
+
 int _gpuAssert(cudaError_t code, const char *fname, int lineno) {
   if(code != cudaSuccess) {
     printf("GPU Error: %s, File: %s, Line: %i\n", cudaGetErrorString(code), fname, lineno);
