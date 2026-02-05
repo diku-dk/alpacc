@@ -21,6 +21,7 @@ import Alpacc.Types
 import Data.Either.Extra
 import Data.Map qualified as Map
 import Data.Text (Text)
+import Data.Text qualified as Text hiding (Text)
 import Data.Word
 
 data Generator a
@@ -59,7 +60,8 @@ data Parser
     llpTable :: LLPTable,
     arities :: [Integer],
     productionToTerminal :: [Maybe Integer],
-    numberOfProductions :: Int
+    numberOfProductions :: Int,
+    productionToName :: [Text]
   }
   deriving (Show)
 
@@ -122,6 +124,15 @@ mkArities = fmap arity . productions . getGrammar
     isNt (Nonterminal _) = 1 :: Integer
     isNt _ = 0
 
+nameProduction :: Int -> AugmentedNonterminal (Symbol NT T) -> Text
+nameProduction int Start = "start_" <> Text.pack (show int)
+nameProduction int (AugmentedNonterminal (Nonterminal (NT nt))) =
+  nt <> "_" <> Text.pack (show int)
+nameProduction int (AugmentedNonterminal (Terminal (T t))) =
+  t <> "_" <> Text.pack (show int)
+nameProduction int (AugmentedNonterminal (Terminal (TLit _))) =
+  "literal_" <> Text.pack (show int)
+
 mkParser :: Int -> Int -> CFG -> Either Text (Analyzer [Text])
 mkParser q k cfg = do
   grammar <- cfgToGrammar cfg
@@ -132,6 +143,7 @@ mkParser q k cfg = do
       start_terminal = symbolStartTerminal s_encoder
       end_terminal = symbolEndTerminal s_encoder
       empty_terminal = symbolDead s_encoder
+      production_to_names = productionNames nameProduction grammar
   terminal_type <- symbolTerminalIntType s_encoder
   bracket_type <- bracketIntType s_encoder
   production_type <- productionIntType grammar
@@ -151,13 +163,14 @@ mkParser q k cfg = do
                 productionToTerminal = production_to_terminal,
                 llpTable = hash_table,
                 arities = mkArities grammar,
-                numberOfProductions = length $ productions $ getGrammar grammar
+                numberOfProductions = length $ productions $ getGrammar grammar,
+                productionToName = production_to_names
               },
         terminalType = terminal_type,
         meta =
           printTerminals ignore t_encoder
             <> [""]
-            <> printProductions grammar
+            <> printProductions production_to_names grammar
       }
 
 mkLexerParser :: Int -> Int -> CFG -> Either Text (Analyzer [Text])
@@ -173,6 +186,7 @@ mkLexerParser q k cfg = do
       empty_terminal = symbolDead s_encoder
       dead_token = empty_terminal
       dfa = lexerDFA (0 :: Integer) $ dfaCharToWord8 spec
+      production_to_names = productionNames nameProduction grammar
   terminal_type <- symbolTerminalIntType s_encoder
   bracket_type <- bracketIntType s_encoder
   production_type <- productionIntType grammar
@@ -203,12 +217,13 @@ mkLexerParser q k cfg = do
                   numberOfProductions = length $ productions $ getGrammar grammar,
                   productionToTerminal = production_to_terminal,
                   llpTable = hash_table,
-                  arities = mkArities grammar
+                  arities = mkArities grammar,
+                  productionToName = production_to_names
                 }
             ),
         terminalType = terminal_type,
         meta =
           printTerminals ignore t_encoder
             <> [""]
-            <> printProductions grammar
+            <> printProductions production_to_names grammar
       }

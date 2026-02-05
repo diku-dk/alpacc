@@ -16,11 +16,14 @@ where
 import Alpacc.Grammar
 import Alpacc.Lexer.DFA
 import Alpacc.Lexer.RegularExpression
-import Data.Char (isAlphaNum, isLower, isPrint, isUpper)
+import Control.Monad
+import Data.Char (isAsciiLower, isAsciiUpper, isDigit, isPrint)
 import Data.Foldable
+import Data.IntMap qualified as IntMap hiding (IntMap)
 import Data.List qualified as List
 import Data.List.NonEmpty qualified as NonEmpty hiding (NonEmpty)
 import Data.Map qualified as Map hiding (Map)
+import Data.Maybe
 import Data.Set (Set)
 import Data.Set qualified as Set hiding (Set)
 import Data.String.Interpolate (i)
@@ -48,7 +51,8 @@ data TRule = TRule
 -- | Nonterminal formation rule.
 data NTRule = NTRule
   { ruleNT :: NT,
-    ruleProductions :: [[Symbol NT T]]
+    ruleName :: Maybe Text,
+    ruleProductions :: [Symbol NT T]
   }
   deriving (Show)
 
@@ -63,15 +67,23 @@ symbolTerminal (Terminal t) = Set.singleton t
 symbolTerminal (Nonterminal _) = mempty
 
 ruleTerminals :: NTRule -> Set T
-ruleTerminals = foldMap (foldMap symbolTerminal) . ruleProductions
+ruleTerminals = foldMap symbolTerminal . ruleProductions
 
 cfgToGrammar ::
   CFG ->
   Either Text (ParsingGrammar NT T)
 cfgToGrammar (CFG {ntRules = []}) = Left "CFG has no production rules."
 cfgToGrammar (CFG {tRules, ntRules}) = do
-  let productions = concatMap ruleProds ntRules
-      nonterminals = map ruleNT ntRules
+  let productions = ruleProds <$> ntRules
+      production_names =
+        IntMap.fromList
+          . catMaybes
+          $ zipWith (liftA2 (,)) (pure <$> [0 :: Int ..])
+          $ map ruleName ntRules
+      nonterminals = List.nub $ map ruleNT ntRules
+  when
+    (IntMap.size production_names /= (length . List.nub . IntMap.elems) production_names)
+    (Left "CFG has duplicate production rule names.")
   start <-
     case List.uncons ntRules of
       Just (a, _) -> Right $ ruleNT a
@@ -81,10 +93,10 @@ cfgToGrammar (CFG {tRules, ntRules}) = do
    in case grammarError grammar of
         Just err -> Left err
         Nothing ->
-          Right $ parsingGrammar grammar
+          Right $ parsingGrammar production_names grammar
   where
     ruleProds NTRule {ruleNT, ruleProductions} =
-      map (Production ruleNT) ruleProductions
+      Production ruleNT ruleProductions
 
 everyTRule :: CFG -> Either Text [TRule]
 everyTRule cfg@(CFG {tRules}) = do
@@ -124,10 +136,17 @@ lexeme :: Parser a -> Parser a
 lexeme = Lexer.lexeme space
 
 pNT :: Parser NT
-pNT = lexeme (NT . Text.pack <$> p) <?> "nonterminal"
+pNT = NT <$> p <?> "nonterminal"
   where
-    p = (:) <$> satisfy isUpper <*> many (satisfy ok)
-    ok c = isAlphaNum c || c `elem` ['\'', '*', '_', '"']
+    p = lexeme $ Text.cons <$> satisfy isAsciiUpper <*> takeWhileP Nothing ok
+    ok c = c == '_' || isAsciiLower c || isAsciiUpper c || isDigit c
+
+pName :: Parser Text
+pName = lexeme $ char '[' *> p <* char ']'
+  where
+    p = lexeme $ Text.cons <$> satisfy okFirst <*> takeWhileP Nothing okRest
+    okFirst c = c == '_' || isAsciiLower c || isAsciiUpper c
+    okRest c = okFirst c || isDigit c
 
 pStringLit :: Parser Text
 pStringLit = lexeme $ char '"' *> takeWhile1P Nothing ok <* char '"'
@@ -137,7 +156,8 @@ pStringLit = lexeme $ char '"' *> takeWhile1P Nothing ok <* char '"'
 pT :: Parser T
 pT = T <$> p <?> "terminal"
   where
-    p = lexeme $ takeWhile1P Nothing isLower
+    p = lexeme $ Text.cons <$> satisfy isAsciiLower <*> takeWhileP Nothing ok
+    ok c = c == '_' || isAsciiLower c || isAsciiUpper c || isDigit c
 
 pTSym :: Parser T
 pTSym =
@@ -153,13 +173,13 @@ pTRule =
 
 pNTRule :: Parser NTRule
 pNTRule =
-  NTRule <$> pNT <* lexeme "=" <*> (pRHS `sepBy` lexeme "|") <* lexeme ";"
+  NTRule <$> pNT <*> optional pName <*> (lexeme "->" *> pRHS <* lexeme ";")
     <?> "nonterminal rule"
   where
     pRHS = many pSymbol
 
 pCFG :: Parser CFG
-pCFG = CFG <$> many pTRule <*> many pNTRule
+pCFG = CFG <$> many (try pTRule) <*> many pNTRule
 
 cfgFromText :: FilePath -> Text -> Either Text CFG
 cfgFromText fname s =

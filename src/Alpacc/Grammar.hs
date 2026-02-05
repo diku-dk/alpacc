@@ -28,6 +28,7 @@ module Alpacc.Grammar
     grammarError,
     parsingGrammar,
     getGrammar,
+    getNames,
     genNonterminals,
     genGrammar,
   )
@@ -37,6 +38,7 @@ import Alpacc.Util
 import Control.DeepSeq
 import Data.Bifunctor (Bifunctor (bimap, first, second))
 import Data.Char
+import Data.IntMap (IntMap)
 import Data.List qualified as List
 import Data.Map (Map)
 import Data.Map qualified as Map hiding (Map)
@@ -375,18 +377,22 @@ extendByTerminals grammar = new_grammar
           productions = nts_prods ++ ts_prods
         }
 
-newtype ParsingGrammar nt t
+data ParsingGrammar nt t
   = ParsingGrammar
-  { pGrammar :: Grammar (AugmentedNonterminal (Symbol nt t)) (AugmentedTerminal (Unused t))
+  { pProductionNames :: IntMap Text,
+    pGrammar :: Grammar (AugmentedNonterminal (Symbol nt t)) (AugmentedTerminal (Unused t))
   }
   deriving (Show, Eq, Ord)
+
+getNames :: ParsingGrammar nt t -> IntMap Text
+getNames = pProductionNames
 
 getGrammar :: ParsingGrammar nt t -> Grammar (AugmentedNonterminal (Symbol nt t)) (AugmentedTerminal (Unused t))
 getGrammar = pGrammar
 
-parsingGrammar :: Grammar nt t -> ParsingGrammar nt t
-parsingGrammar =
-  ParsingGrammar
+parsingGrammar :: IntMap Text -> Grammar nt t -> ParsingGrammar nt t
+parsingGrammar production_names =
+  ParsingGrammar production_names
     . augmentGrammar
     . addUnusedTerminal
     . extendByTerminals

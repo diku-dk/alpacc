@@ -22,6 +22,7 @@ module Alpacc.Encode
     LLPTable (..),
     printTerminals,
     printProductions,
+    productionNames,
   )
 where
 
@@ -36,6 +37,7 @@ import Control.DeepSeq
 import Data.Bifunctor qualified as BI
 import Data.Bits
 import Data.Either.Extra
+import Data.IntMap qualified as IntMap
 import Data.List (foldl', sortOn)
 import Data.List qualified as List
 import Data.Map (Map)
@@ -77,17 +79,19 @@ printTerminals ignore =
         else Just (i, pretty t <> ": " <> Text.pack (show i))
     auxiliary (Unused, _) = Nothing
 
-printProductions :: (Pretty nt, Pretty t) => ParsingGrammar nt t -> [Text]
-printProductions =
+printProductions :: (Pretty nt, Pretty t) => [Text] -> ParsingGrammar nt t -> [Text]
+printProductions names =
   ("Production Encoding: " :)
     . catMaybes
-    . zipWith auxiliary [0 :: Int ..]
+    . zipWith3 auxiliary [0 :: Int ..] names
     . productions
     . getGrammar
   where
-    auxiliary i p
+    prettyProd n (Production nt syms) = pretty nt <> " [" <> n <> "] = " <> Text.intercalate " " (map pretty syms)
+
+    auxiliary i n p
       | isInternal p = Nothing
-      | otherwise = Just $ pretty p <> ": " <> Text.pack (show i)
+      | otherwise = Just $ prettyProd n p <> ": " <> Text.pack (show i)
 
     isInternal (Production (AugmentedNonterminal (Terminal _)) _) = True
     isInternal (Production Start _) = True
@@ -328,6 +332,15 @@ data LLPTable
     llpOATable :: OpenAddressing [Integer] ((Int, Int), (Int, Int))
   }
   deriving (Show, Ord, Eq)
+
+productionNames :: (Int -> AugmentedNonterminal (Symbol nt t) -> Text) -> ParsingGrammar nt t -> [Text]
+productionNames toName grammar =
+  zipWith auxiliary [0 ..] nts
+  where
+    auxiliary i nt =
+      fromMaybe (toName i nt) $ i `IntMap.lookup` production_names
+    production_names = getNames grammar
+    nts = map nonterminal $ productions $ getGrammar grammar
 
 llpHashTable ::
   (Show nt, Show t, Ord nt, Ord t, NFData nt, NFData t) =>

@@ -7,8 +7,9 @@ import "lib/github.com/diku-dk/containers/opt"
 import "lib/github.com/diku-dk/segmented/segmented"
 
 module type parser_context = {
+  type production
   module terminal_module: integral
-  module production_module: integral
+  module production_int_module: integral
   module bracket_module: integral
   val empty_terminal : terminal_module.t
   val q : i64
@@ -24,16 +25,18 @@ module type parser_context = {
   val stacks_size : i64
   val hash_table : [hash_table_size](bool, [q + k]terminal_module.t, ((i64, i64), (i64, i64)))
   val stacks : [stacks_size]bracket_module.t
-  val productions : [productions_size]production_module.t
+  val productions : [productions_size]production_int_module.t
+  val production_int_to_name : [number_of_productions]production
 }
 
 module mk_parser (P: parser_context) = {
   module terminal_module = P.terminal_module
-  module production_module = P.production_module
+  module production_int_module = P.production_int_module
   module bracket_module = P.bracket_module
 
   type terminal = terminal_module.t
-  type production = production_module.t
+  type production = P.production
+  type production_int = production_int_module.t
   type bracket = bracket_module.t
 
   def empty_terminal = P.empty_terminal
@@ -215,7 +218,7 @@ module mk_parser (P: parser_context) = {
        then some idxs
        else #none
 
-  def to_productions [n] (ks: [n]((i64, i64), (i64, i64))) : opt ([]production) =
+  def to_productions [n] (ks: [n]((i64, i64), (i64, i64))) : opt ([]production_int) =
     let (stack_spans, productions_spans) = unzip ks
     let stacks = construct_stacks stack_spans
     let is_valid = brackets_matches stacks
@@ -227,7 +230,7 @@ module mk_parser (P: parser_context) = {
        then #some prods
        else #none
 
-  def pre_productions [n] (arr: [n]terminal) : opt ([]production) =
+  def pre_production_ints [n] (arr: [n]terminal) : opt ([]production_int) =
     let ks' = to_keys arr
     let ks =
       match ks'
@@ -238,13 +241,13 @@ module mk_parser (P: parser_context) = {
        then prods
        else #none
 
-  def production_to_terminal (p: production) : opt terminal =
-    copy P.production_to_terminal[production_module.to_i64 p]
+  def production_to_terminal (p: production_int) : opt terminal =
+    copy P.production_to_terminal[production_int_module.to_i64 p]
 
-  def production_to_arity (p: production) : i64 =
-    copy P.production_to_arity[production_module.to_i64 p]
+  def production_to_arity (p: production_int) : i64 =
+    copy P.production_to_arity[production_int_module.to_i64 p]
 
-  def parents [n] (ps: [n]production) : [n]i64 =
+  def parents [n] (ps: [n]production_int) : [n]i64 =
     let tree =
       map production_to_arity ps
       |> map (+ -1)
@@ -265,7 +268,7 @@ module mk_parser (P: parser_context) = {
 
   def terminal_offsets [n] [m]
                        (spans: [m](i64, i64))
-                       (ts: [n](opt terminal)) : [](i64, node terminal production) =
+                       (ts: [n](opt terminal)) : [](i64, node terminal production_int) =
     map (is_some) ts
     |> zip3 (iota n) (ts)
     |> filter (\(_, _, b) -> b)
@@ -274,9 +277,9 @@ module mk_parser (P: parser_context) = {
               from_opt empty_terminal t
               |> (\t' -> (i, #terminal t' s)))
 
-  def parse [n] (arr: [n](terminal, (i64, i64))) : opt ([](i64, node terminal production)) =
+  def parse_int_flag [n] (arr: [n](terminal, (i64, i64))) : (bool, [](i64, node terminal production_int)) =
     let (ters, spans) = unzip arr
-    let prods' = ters |> pre_productions
+    let prods' = ters |> pre_production_ints
     let result =
       match prods'
       case #some prods ->
@@ -286,11 +289,29 @@ module mk_parser (P: parser_context) = {
         let prods =
           map (\p -> #production p)
               prods
-          :> [](node terminal production)
+          :> [](node terminal production_int)
         in scatter prods offsets tprods
            |> zip parent_vector
       case _ -> []
-    in if is_some prods' then some result else #none
+    in if is_some prods' then (true, result) else (false, [])
+
+  def parse_int [n] (arr: [n](terminal, (i64, i64))) : opt ([](i64, node terminal production_int)) =
+    let (is_valid, prods) = parse_int_flag arr
+    in if is_valid then #some prods else #none
+
+  def parse [n] (arr: [n](terminal, (i64, i64))) : opt ([](i64, node terminal production)) =
+    let (is_valid, prods) = parse_int_flag arr
+    let result =
+      map (\(i, n) ->
+             match n
+             case #terminal t s ->
+               ((i, #terminal t s) :> (i64, node terminal P.production))
+             case #production p ->
+               ((i, #production (copy P.production_int_to_name[production_int_module.to_i64 p])) :> (i64, node terminal production)))
+          prods
+    in if is_valid
+       then some result
+       else #none
 }
 
 -- End of parser.fut
