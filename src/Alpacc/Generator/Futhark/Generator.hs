@@ -32,11 +32,22 @@ entry parse s =
      then cst
      else #none
 
+entry parse_int s =
+  let tokens' = lexer.lex 16777216 s
+  let tokens =
+    match tokens'
+    case #some t -> t
+    case #none -> []
+  let cst = parser.parse_int tokens
+  in if is_some tokens'
+     then cst
+     else #none
+
 module tester = lexer_parser_test {
   type terminal = parser.terminal
-  type production = parser.production
+  type production = parser.production_int
   type node 't 'p = parser.node t p
-  def parse = parse
+  def parse = parse_int
 } #{futharkify terminal_type} #{futharkify production_type}
 
 entry test [n] (s: [n]u8) : []u8 = tester.test s

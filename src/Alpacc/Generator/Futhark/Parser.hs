@@ -16,6 +16,10 @@ import Data.Text qualified as Text
 futharkParser :: Text
 futharkParser = $(embedStringFile "futhark/parser.fut")
 
+productionNameType :: [Text] -> Text
+productionNameType names =
+  "type production = " <> Text.intercalate " | " names
+
 -- | Creates Futhark source code which contains a parallel parser that can
 -- create the productions list for a input which is indexes of terminals.
 generateParser :: UInt -> Parser -> Text
@@ -26,12 +30,13 @@ generateParser terminal_type parser =
 module parser = mk_parser {
 
 module terminal_module = #{futharkify terminal_type}
-module production_module = #{futharkify production_type}
+module production_int_module = #{futharkify production_type}
 module bracket_module = #{futharkify bracket_type}
 
 type terminal = terminal_module.t
-type production = production_module.t
+type production_int = production_int_module.t
 type bracket = bracket_module.t
+#{productionNameType production_names}
 
 def number_of_productions: i64 = #{number_of_productions} 
 def q: i64 = #{q}
@@ -54,8 +59,11 @@ def hash_table: [hash_table_size](bool, [q+k]terminal, ((i64, i64), (i64, i64)))
 def stacks: [stacks_size]bracket =
   #{futharkify stacks} :> [stacks_size]bracket
 
-def productions: [productions_size]production =
-  #{futharkify productions} :> [productions_size]production
+def productions: [productions_size]production_int =
+  #{futharkify productions} :> [productions_size]production_int
+
+def production_int_to_name: [number_of_productions]production =
+  #{futharkify $ map RawString production_names} :> [number_of_productions]production
 }
 |]
   where
@@ -75,3 +83,4 @@ def productions: [productions_size]production =
     oa = llpOATable hash_table
     production_to_terminal = futharkify $ productionToTerminal parser
     ari = futharkify $ arities parser
+    production_names = ("#" <>) <$> productionToName parser
