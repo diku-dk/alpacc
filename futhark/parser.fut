@@ -7,39 +7,60 @@ import "lib/github.com/diku-dk/containers/opt"
 import "lib/github.com/diku-dk/segmented/segmented"
 
 module type parser_context = {
+  type terminal
   type production
-  module terminal_module: integral
+  module terminal_int_module: integral
   module production_int_module: integral
   module bracket_module: integral
-  val empty_terminal : terminal_module.t
+  val empty_terminal : terminal_int_module.t
   val q : i64
   val k : i64
   val number_of_productions : i64
-  val production_to_terminal : [number_of_productions](opt terminal_module.t)
+  val production_to_terminal : [number_of_productions](opt terminal_int_module.t)
   val production_to_arity : [number_of_productions]i64
-  val start_terminal : terminal_module.t
-  val end_terminal : terminal_module.t
+  val start_terminal : terminal_int_module.t
+  val end_terminal : terminal_int_module.t
   val hash_table_size : i64
   val max_iters : i64
   val productions_size : i64
   val stacks_size : i64
-  val hash_table : [hash_table_size](bool, [q + k]terminal_module.t, ((i64, i64), (i64, i64)))
+  val hash_table : [hash_table_size](bool, [q + k]terminal_int_module.t, ((i64, i64), (i64, i64)))
   val stacks : [stacks_size]bracket_module.t
   val productions : [productions_size]production_int_module.t
   val production_int_to_name : [number_of_productions]production
+  val number_of_terminals : i64
+  val terminal_int_to_name : [number_of_terminals]terminal
 }
 
-module mk_parser (P: parser_context) = {
-  module terminal_module = P.terminal_module
+module type parser = {
+  type terminal_int
+  type terminal
+  type production_int
+  type production
+  type node 't 'p = #terminal t (i64, i64) | #production p
+  val parse_int [n] : [n](terminal_int, (i64, i64)) -> opt ([](i64, node terminal_int production_int))
+  val parse [n] : [n](terminal_int, (i64, i64)) -> opt ([](i64, node terminal production))
+  val pre_productions_int [n] : [n]terminal_int -> opt ([]production_int)
+  val pre_productions [n] : [n]terminal_int -> opt ([]production)
+}
+
+module mk_parser (P: parser_context)
+  : parser
+    with terminal_int = P.terminal_int_module.t
+    with terminal = P.terminal
+    with production_int = P.production_int_module.t
+    with production = P.production = {
+  module terminal_int_module = P.terminal_int_module
   module production_int_module = P.production_int_module
   module bracket_module = P.bracket_module
 
-  type terminal = terminal_module.t
-  type production = P.production
+  type terminal_int = terminal_int_module.t
+  type terminal = P.terminal
   type production_int = production_int_module.t
+  type production = P.production
   type bracket = bracket_module.t
 
-  def empty_terminal = P.empty_terminal
+  def empty_terminal : terminal_int = P.empty_terminal
 
   def is_left (s: bracket) : bool =
     bracket_module.get_bit (bracket_module.num_bits - 1) s
@@ -86,14 +107,14 @@ module mk_parser (P: parser_context) = {
        then iterate_while (< offset) descent (sibling index) - offset
        else -1
 
-  def hash [n] (arr: [n]terminal) : u64 =
+  def hash [n] (arr: [n]terminal_int) : u64 =
     foldl (\h a ->
-             let h' = h ^ u64.i64 (terminal_module.to_i64 a)
+             let h' = h ^ u64.i64 (terminal_int_module.to_i64 a)
              in h' * 1099511628211)
           14695981039346656037
           arr
 
-  def get_key [n] (arr: [n]terminal) (i: i64) : [P.q + P.k]terminal =
+  def get_key [n] (arr: [n]terminal_int) (i: i64) : [P.q + P.k]terminal_int =
     #[inline]
     #[sequential]
     tabulate (P.q + P.k)
@@ -106,13 +127,13 @@ module mk_parser (P: parser_context) = {
     map2 eq as bs
     |> and
 
-  def lookup (k: [P.q + P.k]terminal) : ((i64, i64), (i64, i64)) =
+  def lookup (k: [P.q + P.k]terminal_int) : ((i64, i64), (i64, i64)) =
     let h = (hash k) %% u64.i64 P.hash_table_size
     let (_, _, _, v) =
       loop (is_found, i, h, v) = (false, 0, h, ((-1, -1), (-1, -1)))
       while is_found || i < P.max_iters do
         let (t, k', v') = P.hash_table[i64.u64 h]
-        let is_valid = t && (array_equal (terminal_module.==) k' k)
+        let is_valid = t && (array_equal (terminal_int_module.==) k' k)
         in ( is_valid
            , i + 1
            , (h + 1) %% u64.i64 P.hash_table_size
@@ -120,7 +141,7 @@ module mk_parser (P: parser_context) = {
            )
     in v
 
-  def keys [n] (arr: [n]terminal) : [n]((i64, i64), (i64, i64)) =
+  def keys [n] (arr: [n]terminal_int) : [n]((i64, i64), (i64, i64)) =
     tabulate n
              (\i ->
                 let key = get_key arr i
@@ -230,18 +251,33 @@ module mk_parser (P: parser_context) = {
        then #some prods
        else #none
 
-  def pre_production_ints [n] (arr: [n]terminal) : opt ([]production_int) =
+  def pre_productions_int_flag [n] (arr: [n]terminal_int) : (bool, []production_int) =
     let ks' = to_keys arr
+    let is_valid = is_some ks'
     let ks =
       match ks'
       case #some k -> k
       case #none -> []
     let prods = to_productions ks
-    in if is_some ks'
-       then prods
+    let is_valid = is_valid && is_some prods
+    let result =
+      match prods
+      case #some ps -> ps
+      case #none -> []
+    in (is_valid, result)
+
+  def pre_productions_int [n] (arr: [n]terminal_int) : opt ([]production_int) =
+    let (is_valid, prods) = pre_productions_int_flag arr
+    in if is_valid then some prods else #none
+
+  def pre_productions [n] (arr: [n]terminal_int) : opt ([]production) =
+    let (is_valid, prods) = pre_productions_int_flag arr
+    in if is_valid
+       then some
+            <| map (\p -> copy P.production_int_to_name[production_int_module.to_i64 p]) prods
        else #none
 
-  def production_to_terminal (p: production_int) : opt terminal =
+  def production_to_terminal (p: production_int) : opt terminal_int =
     copy P.production_to_terminal[production_int_module.to_i64 p]
 
   def production_to_arity (p: production_int) : i64 =
@@ -268,7 +304,7 @@ module mk_parser (P: parser_context) = {
 
   def terminal_offsets [n] [m]
                        (spans: [m](i64, i64))
-                       (ts: [n](opt terminal)) : [](i64, node terminal production_int) =
+                       (ts: [n](opt terminal_int)) : [](i64, node terminal_int production_int) =
     map (is_some) ts
     |> zip3 (iota n) (ts)
     |> filter (\(_, _, b) -> b)
@@ -277,9 +313,9 @@ module mk_parser (P: parser_context) = {
               from_opt empty_terminal t
               |> (\t' -> (i, #terminal t' s)))
 
-  def parse_int_flag [n] (arr: [n](terminal, (i64, i64))) : (bool, [](i64, node terminal production_int)) =
+  def parse_int_flag [n] (arr: [n](terminal_int, (i64, i64))) : (bool, [](i64, node terminal_int production_int)) =
     let (ters, spans) = unzip arr
-    let prods' = ters |> pre_production_ints
+    let prods' = ters |> pre_productions_int
     let result =
       match prods'
       case #some prods ->
@@ -289,23 +325,23 @@ module mk_parser (P: parser_context) = {
         let prods =
           map (\p -> #production p)
               prods
-          :> [](node terminal production_int)
+          :> [](node terminal_int production_int)
         in scatter prods offsets tprods
            |> zip parent_vector
       case _ -> []
     in if is_some prods' then (true, result) else (false, [])
 
-  def parse_int [n] (arr: [n](terminal, (i64, i64))) : opt ([](i64, node terminal production_int)) =
+  def parse_int [n] (arr: [n](terminal_int, (i64, i64))) : opt ([](i64, node terminal_int production_int)) =
     let (is_valid, prods) = parse_int_flag arr
     in if is_valid then #some prods else #none
 
-  def parse [n] (arr: [n](terminal, (i64, i64))) : opt ([](i64, node terminal production)) =
+  def parse [n] (arr: [n](terminal_int, (i64, i64))) : opt ([](i64, node terminal production)) =
     let (is_valid, prods) = parse_int_flag arr
     let result =
       map (\(i, n) ->
              match n
              case #terminal t s ->
-               ((i, #terminal t s) :> (i64, node terminal P.production))
+               ((i, #terminal (copy P.terminal_int_to_name[terminal_int_module.to_i64 t]) s) :> (i64, node terminal P.production))
              case #production p ->
                ((i, #production (copy P.production_int_to_name[production_int_module.to_i64 p])) :> (i64, node terminal production)))
           prods

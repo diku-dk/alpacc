@@ -30,11 +30,11 @@ def decode_u64 (a: [8]u8) : u64 =
 
 module lexer_test
   (L: {
-    type terminal
-    val lex [n] : i32 -> [n]u8 -> opt ([](terminal, (i64, i64)))
+    type terminal_int
+    val lex_int [n] : i32 -> [n]u8 -> opt ([](terminal_int, (i64, i64)))
   })
-  (T: integral with t = L.terminal) = {
-  type terminal = L.terminal
+  (T: integral with t = L.terminal_int) = {
+  type terminal = L.terminal_int
 
   #[inline]
   def encode_terminal ((t, (i, j)): (terminal, (i64, i64))) : [24]u8 =
@@ -61,7 +61,7 @@ module lexer_test
         let inputs' = drop 8 inputs
         let input = take input_size inputs'
         let inputs'' = drop input_size inputs'
-        let output = L.lex chunk_size input |> encode_terminals
+        let output = L.lex_int chunk_size input |> encode_terminals
         let new_size = size + length output
         let result =
           if length result <= new_size
@@ -74,14 +74,14 @@ module lexer_test
 
 module parser_test
   (P: {
-    type terminal
-    type production
-    val pre_productions [n] : [n]terminal -> opt ([]production)
+    type terminal_int
+    type production_int
+    val pre_productions_int [n] : [n]terminal_int -> opt ([]production_int)
   })
-  (T: integral with t = P.terminal)
-  (Q: integral with t = P.production) = {
-  type terminal = P.terminal
-  type production = P.production
+  (T: integral with t = P.terminal_int)
+  (Q: integral with t = P.production_int) = {
+  type terminal = P.terminal_int
+  type production = P.production_int
 
   #[inline]
   def encode_productions [n] (ts: opt ([n]production)) : []u8 =
@@ -106,7 +106,7 @@ module parser_test
           |> map (T.u64 <-< decode_u64)
         let inputs'' = drop (input_size * 8) inputs'
         let output =
-          P.pre_productions input
+          P.pre_productions_int input
           |> encode_productions
         let new_size = size + length output
         let result =
@@ -120,15 +120,15 @@ module parser_test
 
 module lexer_parser_test
   (P: {
-    type terminal
-    type production
+    type terminal_int
+    type production_int
     type node 't 'p = #terminal t (i64, i64) | #production p
-    val parse [n] : [n]u8 -> opt ([](i64, node terminal production))
+    val parse_int [n] : [n]u8 -> opt ([](i64, node terminal_int production_int))
   })
-  (T: integral with t = P.terminal)
-  (Q: integral with t = P.production) = {
-  type terminal = P.terminal
-  type production = P.production
+  (T: integral with t = P.terminal_int)
+  (Q: integral with t = P.production_int) = {
+  type terminal = P.terminal_int
+  type production = P.production_int
   type node 't 'p = P.node t p
 
   #[inline]
@@ -167,7 +167,7 @@ module lexer_parser_test
         let input = take input_size inputs'
         let inputs'' = drop input_size inputs'
         let output =
-          P.parse input
+          P.parse_int input
           |> encode_tree
         let new_size = size + length output
         let result =

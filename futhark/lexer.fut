@@ -6,8 +6,9 @@
 import "lib/github.com/diku-dk/containers/opt"
 
 module type lexer_context = {
+  type terminal
   module state_module: integral
-  module terminal_module: integral
+  module terminal_int_module: integral
   val identity_state : state_module.t
   val state_size : i64
   val state_mask : state_module.t
@@ -16,21 +17,29 @@ module type lexer_context = {
   val state_offset : state_module.t
   val terminal_offset : state_module.t
   val produce_offset : state_module.t
-  val ignore_terminal : opt terminal_module.t
+  val ignore_terminal : opt terminal_int_module.t
   val transitions_to_states : [256]state_module.t
   val compositions : [state_size * state_size]state_module.t
-  val dead_terminal : terminal_module.t
+  val dead_terminal : terminal_int_module.t
   val accept_array : [state_size]bool
+  val number_of_terminals : i64
+  val terminal_int_to_name : [number_of_terminals]terminal
 }
 
 module type lexer = {
+  type terminal_int
   type terminal
+  val lex_int [n] : i32 -> [n]u8 -> opt ([](terminal_int, (i64, i64)))
   val lex [n] : i32 -> [n]u8 -> opt ([](terminal, (i64, i64)))
 }
 
-module mk_lexer (L: lexer_context) : lexer with terminal = L.terminal_module.t = {
+module mk_lexer (L: lexer_context)
+  : lexer
+    with terminal_int = L.terminal_int_module.t
+    with terminal = L.terminal = {
+  type terminal = L.terminal
   type state = L.state_module.t
-  type terminal = L.terminal_module.t
+  type terminal_int = L.terminal_int_module.t
 
   def get_value (mask: state)
                 (offset: state)
@@ -43,10 +52,10 @@ module mk_lexer (L: lexer_context) : lexer with terminal = L.terminal_module.t =
     |> L.state_module.to_i64
     |> bool.i64
 
-  def to_terminal (a: state) : terminal =
+  def to_terminal (a: state) : terminal_int =
     get_value L.terminal_mask L.terminal_offset a
     |> L.state_module.to_i64
-    |> L.terminal_module.i64
+    |> L.terminal_int_module.i64
 
   def to_index (a: state) : i64 =
     get_value L.state_mask L.state_offset a
@@ -76,7 +85,7 @@ module mk_lexer (L: lexer_context) : lexer with terminal = L.terminal_module.t =
 
   def is_ignore t =
     match L.ignore_terminal
-    case #some t' -> t L.terminal_module.== t'
+    case #some t' -> t L.terminal_int_module.== t'
     case #none -> false
 
   def lex_step [m] [n]
@@ -84,8 +93,8 @@ module mk_lexer (L: lexer_context) : lexer with terminal = L.terminal_module.t =
                (prev_state: state)
                (prev_start: i64)
                (prev_size: i64)
-               (dest: *[m](terminal, (i64, i64)))
-               (str: [n]u8) : ?[k].( [k](terminal, (i64, i64))
+               (dest: *[m](terminal_int, (i64, i64)))
+               (str: [n]u8) : ?[k].( [k](terminal_int, (i64, i64))
                                    , state
                                    , i64
                                    , i64
@@ -116,7 +125,7 @@ module mk_lexer (L: lexer_context) : lexer with terminal = L.terminal_module.t =
     let dest =
       if m <= extra_size
       then let new_dest =
-             replicate (2 * extra_size) (L.terminal_module.u8 0, (0, 0))
+             replicate (2 * extra_size) (L.terminal_int_module.u8 0, (0, 0))
            in scatter new_dest (indices dest) dest
       else dest
     let result =
@@ -132,13 +141,13 @@ module mk_lexer (L: lexer_context) : lexer with terminal = L.terminal_module.t =
        , prev_size + size
        )
 
-  def lex [n]
-          (chunk_size: i32)
-          (str: [n]u8) : opt ([](terminal, (i64, i64))) =
+  def lex_int_flag [n]
+                   (chunk_size: i32)
+                   (str: [n]u8) : (bool, [](terminal_int, (i64, i64))) =
     let chunk_size = i64.i32 chunk_size
     let (result, state, start, size) =
       loop (dest, state, start, size) =
-             ( [(L.terminal_module.u8 0, (0, 0))]
+             ( [(L.terminal_int_module.u8 0, (0, 0))]
              , L.identity_state
              , 0
              , 0
@@ -159,7 +168,26 @@ module mk_lexer (L: lexer_context) : lexer with terminal = L.terminal_module.t =
            , size + 1
            )
     in if is_accept state
-       then some (take size result)
+       then (true, take size result)
+       else (false, [])
+
+  def lex_int [n]
+              (chunk_size: i32)
+              (str: [n]u8) : opt ([](terminal_int, (i64, i64))) =
+    let (is_valid, result) = lex_int_flag chunk_size str
+    in if is_valid then some result else #none
+
+  def lex [n]
+          (chunk_size: i32)
+          (str: [n]u8) : opt ([](terminal, (i64, i64))) =
+    let (is_valid, result) = lex_int_flag chunk_size str
+    in if is_valid
+       then some
+            <| map (\(t, s) ->
+                      ( copy L.terminal_int_to_name[L.terminal_int_module.to_i64 t]
+                      , s
+                      ))
+                   result
        else #none
 }
 

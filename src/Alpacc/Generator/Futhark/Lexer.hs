@@ -31,15 +31,18 @@ generateLexer terminal_type lex =
     <> (Text.strip . Text.pack)
       [i|
 module lexer = mk_lexer {
-  module terminal_module = #{futharkify terminal_type}
+  module terminal_int_module = #{futharkify terminal_type}
   module state_module = #{futharkify state_type}
 
   type state = state_module.t
-  type terminal = terminal_module.t
-  
+  type terminal_int = terminal_int_module.t
+  type terminal = terminal
+
+  def number_of_terminals = number_of_terminals
+  def terminal_int_to_name = terminal_int_to_name :> [number_of_terminals]terminal
   def identity_state: state = #{iden}
-  def dead_terminal: terminal = #{dead_token}
-  def ignore_terminal: opt terminal = #{futharkify ignore_token}
+  def dead_terminal: terminal_int = #{dead_token}
+  def ignore_terminal: opt terminal_int = #{futharkify ignore_token}
   def state_mask: state = #{index_mask}
   def state_offset: state = #{index_offset}
   def terminal_mask: state = #{token_mask}

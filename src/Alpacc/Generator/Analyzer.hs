@@ -74,6 +74,7 @@ data AnalyzerKind
 data Analyzer a
   = Analyzer
   { terminalType :: UInt,
+    terminalToName :: [Text],
     analyzerKind :: AnalyzerKind,
     meta :: a
   }
@@ -92,12 +93,22 @@ mkProductionToTerminal encoder grammar =
         x = terminalLookup t encoder
     p _ = Nothing
 
+nameTerminals :: TerminalEncoder T -> [Text]
+nameTerminals =
+  zipWith toText [0 :: Int ..]
+    . toTerminals
+  where
+    toText _ (Used (T t)) = t
+    toText int (Used (TLit _)) = "literal_" <> Text.pack (show int)
+    toText int Unused = "empty_" <> Text.pack (show int)
+
 mkLexer :: CFG -> Either Text (Analyzer [Text])
 mkLexer cfg = do
   spec <- cfgToDFALexerSpec cfg
   let ignore = T "ignore"
       encoder = encodeTerminals ignore $ parsingTerminals $ dfaTerminals spec
       dfa = lexerDFA (0 :: Integer) $ dfaCharToWord8 spec
+      terminal_to_name = nameTerminals encoder
   terminal_type <- terminalIntType encoder
   parallel_lexer <- intDfaParallelLexer encoder dfa
   state_type <- stateIntType (parLexer parallel_lexer) encoder
@@ -113,6 +124,7 @@ mkLexer cfg = do
                 transitionToState = transition_to_state,
                 ignoreToken = terminalLookup ignore encoder
               },
+        terminalToName = terminal_to_name,
         terminalType = terminal_type,
         meta = printTerminals ignore encoder
       }
@@ -131,7 +143,7 @@ nameProduction int (AugmentedNonterminal (Nonterminal (NT nt))) =
 nameProduction int (AugmentedNonterminal (Terminal (T t))) =
   t <> "_" <> Text.pack (show int)
 nameProduction int (AugmentedNonterminal (Terminal (TLit _))) =
-  "literal_" <> Text.pack (show int)
+  "Literal_" <> Text.pack (show int)
 
 mkParser :: Int -> Int -> CFG -> Either Text (Analyzer [Text])
 mkParser q k cfg = do
@@ -144,6 +156,7 @@ mkParser q k cfg = do
       end_terminal = symbolEndTerminal s_encoder
       empty_terminal = symbolDead s_encoder
       production_to_names = productionNames nameProduction grammar
+      terminal_to_name = nameTerminals t_encoder
   terminal_type <- symbolTerminalIntType s_encoder
   bracket_type <- bracketIntType s_encoder
   production_type <- productionIntType grammar
@@ -166,6 +179,7 @@ mkParser q k cfg = do
                 numberOfProductions = length $ productions $ getGrammar grammar,
                 productionToName = production_to_names
               },
+        terminalToName = terminal_to_name,
         terminalType = terminal_type,
         meta =
           printTerminals ignore t_encoder
@@ -187,6 +201,7 @@ mkLexerParser q k cfg = do
       dead_token = empty_terminal
       dfa = lexerDFA (0 :: Integer) $ dfaCharToWord8 spec
       production_to_names = productionNames nameProduction grammar
+      terminal_to_name = nameTerminals t_encoder
   terminal_type <- symbolTerminalIntType s_encoder
   bracket_type <- bracketIntType s_encoder
   production_type <- productionIntType grammar
@@ -221,6 +236,7 @@ mkLexerParser q k cfg = do
                   productionToName = production_to_names
                 }
             ),
+        terminalToName = terminal_to_name,
         terminalType = terminal_type,
         meta =
           printTerminals ignore t_encoder

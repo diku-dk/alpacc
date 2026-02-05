@@ -22,7 +22,7 @@ bothFunction terminal_type production_type =
     Text.pack
       [i|
 entry parse s =
-  let tokens' = lexer.lex 16777216 s
+  let tokens' = lexer.lex_int 16777216 s
   let tokens =
     match tokens'
     case #some t -> t
@@ -33,7 +33,7 @@ entry parse s =
      else #none
 
 entry parse_int s =
-  let tokens' = lexer.lex 16777216 s
+  let tokens' = lexer.lex_int 16777216 s
   let tokens =
     match tokens'
     case #some t -> t
@@ -44,10 +44,10 @@ entry parse_int s =
      else #none
 
 module tester = lexer_parser_test {
-  type terminal = parser.terminal
-  type production = parser.production_int
+  type terminal_int = parser.terminal_int
+  type production_int = parser.production_int
   type node 't 'p = parser.node t p
-  def parse = parse_int
+  def parse_int = parse_int
 } #{futharkify terminal_type} #{futharkify production_type}
 
 entry test [n] (s: [n]u8) : []u8 = tester.test s
@@ -67,6 +67,14 @@ entry lex s =
                   in (tokens, starts, ends)
   case #none -> ([], [], [])
 
+entry lex_int s =
+  match lexer.lex_int 16777216 s
+  case #some r -> let (tokens, spans) = unzip r
+                  let (starts, ends) = unzip spans
+                  in (tokens, starts, ends)
+  case #none -> ([], [], [])
+
+
 entry test [n] (s: [n]u8) : []u8 = tester.test 16777216 s
 |]
 
@@ -79,8 +87,32 @@ module tester = parser_test parser #{futharkify terminal_type} #{futharkify prod
 
 entry parse = parser.parse
 
+entry parse_int = parser.parse_int
+
 entry test [n] (s: [n]u8) : []u8 = tester.test s
 |]
+
+terminalNameType :: [Text] -> Text
+terminalNameType names =
+  "type terminal = " <> Text.intercalate " | " names
+
+numberOfterminals :: [Text] -> Text
+numberOfterminals names =
+  "def number_of_terminals : i64 = " <> futharkify (length names)
+
+terminalIntToName :: [Text] -> Text
+terminalIntToName names =
+  "def terminal_int_to_name : [number_of_terminals]terminal = "
+    <> futharkify (map RawString names)
+    <> " :> [number_of_terminals]terminal"
+
+terminalDefinitions :: [Text] -> Text
+terminalDefinitions names =
+  Text.unlines
+    [ terminalNameType names,
+      numberOfterminals names,
+      terminalIntToName names
+    ]
 
 auxiliary :: Analyzer [Text] -> Text
 auxiliary analyzer =
@@ -88,6 +120,7 @@ auxiliary analyzer =
     Lex lexer ->
       Text.unlines
         [ Text.unlines (("-- " <>) <$> meta analyzer),
+          terminalDefinitions terminal_names,
           Lexer.generateLexer terminal_type lexer,
           futharkTest,
           lexerFunction terminal_type
@@ -95,6 +128,7 @@ auxiliary analyzer =
     Parse parser ->
       Text.unlines
         [ Text.unlines (("-- " <>) <$> meta analyzer),
+          terminalDefinitions terminal_names,
           Parser.generateParser terminal_type parser,
           futharkTest,
           parserFunction terminal_type (productionType parser)
@@ -102,6 +136,7 @@ auxiliary analyzer =
     Both lexer parser ->
       Text.unlines
         [ Text.unlines (("-- " <>) <$> meta analyzer),
+          terminalDefinitions terminal_names,
           Lexer.generateLexer terminal_type lexer,
           Parser.generateParser terminal_type parser,
           futharkTest,
@@ -109,6 +144,7 @@ auxiliary analyzer =
         ]
   where
     terminal_type = terminalType analyzer
+    terminal_names = ("#" <>) <$> terminalToName analyzer
 
 generator :: Generator [Text]
 generator =

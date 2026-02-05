@@ -81,9 +81,6 @@ cfgToGrammar (CFG {tRules, ntRules}) = do
           $ zipWith (liftA2 (,)) (pure <$> [0 :: Int ..])
           $ map ruleName ntRules
       nonterminals = List.nub $ map ruleNT ntRules
-  when
-    (IntMap.size production_names /= (length . List.nub . IntMap.elems) production_names)
-    (Left "CFG has duplicate production rule names.")
   start <-
     case List.uncons ntRules of
       Just (a, _) -> Right $ ruleNT a
@@ -136,17 +133,16 @@ lexeme :: Parser a -> Parser a
 lexeme = Lexer.lexeme space
 
 pNT :: Parser NT
-pNT = NT <$> p <?> "nonterminal"
+pNT = NT <$> p <?> "nonterminal (first letter must be uppercase)"
   where
     p = lexeme $ Text.cons <$> satisfy isAsciiUpper <*> takeWhileP Nothing ok
     ok c = c == '_' || isAsciiLower c || isAsciiUpper c || isDigit c
 
 pName :: Parser Text
-pName = lexeme $ char '[' *> p <* char ']'
+pName = lexeme $ char '[' *> (p <?> "production name (first letter must be uppercase)") <* char ']'
   where
-    p = lexeme $ Text.cons <$> satisfy okFirst <*> takeWhileP Nothing okRest
-    okFirst c = c == '_' || isAsciiLower c || isAsciiUpper c
-    okRest c = okFirst c || isDigit c
+    p = lexeme $ Text.cons <$> satisfy isAsciiUpper <*> takeWhileP Nothing ok
+    ok c = c == '_' || isAsciiLower c || isAsciiUpper c || isDigit c
 
 pStringLit :: Parser Text
 pStringLit = lexeme $ char '"' *> takeWhile1P Nothing ok <* char '"'
@@ -154,7 +150,7 @@ pStringLit = lexeme $ char '"' *> takeWhile1P Nothing ok <* char '"'
     ok c = isPrint c && c /= '"'
 
 pT :: Parser T
-pT = T <$> p <?> "terminal"
+pT = T <$> p <?> "terminal (first letter must be lowercase)"
   where
     p = lexeme $ Text.cons <$> satisfy isAsciiLower <*> takeWhileP Nothing ok
     ok c = c == '_' || isAsciiLower c || isAsciiUpper c || isDigit c
