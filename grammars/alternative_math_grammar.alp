@@ -1,15 +1,15 @@
 num = [0-9]+;
 ignore = \s|\n|\t|\r;
 
-Exp [test] -> Exp2 Exp_;
-Exp2 -> Exp3 Exp2_;
-Exp3 -> num;
-Exp3 -> "(" Exp ")";
+Exp [Continue] -> Exp2 Exp_;
+Exp_ [Add] -> "+" Exp2 Exp_;
+Exp_ [Sub] -> "-" Exp2 Exp_;
+Exp_ [Empty] -> ;
 
-Exp_ -> "+" Exp2 Exp_;
-Exp_ -> "-" Exp2 Exp_;
-Exp_ -> ;
+Exp2 [Continue] -> Exp3 Exp2_;
+Exp2_ [Mul] -> "*" Exp3 Exp2_;
+Exp2_ [Div] -> "/" Exp3 Exp2_;
+Exp2_ [Empty] -> ;
 
-Exp2_ -> "*" Exp3 Exp2_;
-Exp2_ -> "/" Exp3 Exp2_;
-Exp2_ -> ;
+Exp3 [Parentheses] -> "(" Exp ")";
+Exp3 [Num] -> num;

@@ -23,6 +23,7 @@ module Alpacc.Encode
     printTerminals,
     printProductions,
     productionNames,
+    toTerminals,
   )
 where
 
@@ -63,6 +64,13 @@ newtype TerminalEncoder t
   = TerminalEncoder
   { terminalEncoder :: Map (Unused t) Integer
   }
+
+toTerminals :: TerminalEncoder t -> [Unused t]
+toTerminals =
+  map fst
+    . sortOn snd
+    . Map.toList
+    . terminalEncoder
 
 printTerminals :: (Eq t, Pretty t) => t -> TerminalEncoder t -> [Text]
 printTerminals ignore =
