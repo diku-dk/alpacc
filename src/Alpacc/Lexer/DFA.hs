@@ -10,12 +10,12 @@ module Alpacc.Lexer.DFA
     DFALexerSpec (..),
     dfaTerminals,
     tokenize,
-    dfaCharToWord8,
     regExEquivalence,
     dfaLexerSpecEquivalence,
     genDfaLexerSpec,
     Lexeme (..),
     mapTokens,
+    mapSymbols,
   )
 where
 
@@ -151,20 +151,17 @@ fromNFAtoDFA = evalState fromNFAtoDFAState
 fromRegExToDFA :: (Ord s, Ord t, Enum s) => s -> RegEx (NonEmpty t) -> DFA t (Set s)
 fromRegExToDFA s = fromNFAtoDFA . fromRegExToNFA s
 
-isMatch :: (Ord s) => DFA Char s -> Text -> Bool
+isMatch :: (Ord s) => DFA Word8 s -> [Word8] -> Bool
 isMatch dfa = runDFA' start_state
   where
     start_state = initial dfa
     trans = transitions' dfa
-    runDFA' s str' =
-      if Text.null str'
-        then s `Set.member` accepting dfa
-        else case maybe_state of
-          Just state' -> runDFA' state' xs
-          Nothing -> False
+    runDFA' s [] = s `Set.member` accepting dfa
+    runDFA' s (x : xs) =
+      case maybe_state of
+        Just state' -> runDFA' state' xs
+        Nothing -> False
       where
-        x = Text.head str'
-        xs = Text.tail str'
         maybe_state = Map.lookup (s, x) trans
 
 invertSetMap :: (Ord t, Ord s) => Map t (Set s) -> Map s (Set t)
@@ -317,6 +314,10 @@ data DFALexerSpec t o k
   }
   deriving (Show, Ord, Eq)
 
+mapSymbols :: (t -> t') -> DFALexerSpec t o k -> DFALexerSpec t' o k
+mapSymbols f spec =
+  spec {regexMap = fmap f <$> regexMap spec}
+
 dfaTerminals :: DFALexerSpec t o k -> [k]
 dfaTerminals = Map.keys . orderMap
 
@@ -450,10 +451,6 @@ mapTokens f dfa@(Lexer {tokenMap = token_map}) = do
   token_map' <- mapM f token_map
   pure $ dfa {tokenMap = token_map'}
 
-dfaCharToWord8 :: DFALexerSpec Char o t -> DFALexerSpec (NonEmpty Word8) o t
-dfaCharToWord8 spec@(DFALexerSpec {regexMap = regmap}) =
-  spec {regexMap = toWord8 <$> regmap}
-
 shrinkSpec :: (Ord o, Ord k, Arbitrary t, Enum o) => DFALexerSpec t o k -> [DFALexerSpec t o k]
 shrinkSpec (DFALexerSpec order_map regex_map) =
   removed_specs ++ shrinked_terminals
@@ -487,7 +484,7 @@ shrinkSpec (DFALexerSpec order_map regex_map) =
 
     toRegexMap ts = Map.fromList [(t, regex_map Map.! t) | t <- ts]
 
-instance Arbitrary (DFALexerSpec Char Int T) where
+instance Arbitrary (DFALexerSpec Bytes Int T) where
   arbitrary =
     sized $ \i -> do
       k <- choose (1, max 1 i)
@@ -495,11 +492,13 @@ instance Arbitrary (DFALexerSpec Char Int T) where
       genDfaLexerSpec k vec
   shrink = shrinkSpec
 
-genDfaLexerSpec :: Int -> [Char] -> Gen (DFALexerSpec Char Int T)
+genDfaLexerSpec :: Int -> [Char] -> Gen (DFALexerSpec Bytes Int T)
 genDfaLexerSpec i cs = do
-  dfaLexerSpec 0
-    . zipWith (\j -> (T $ intToAlpha j,)) [0 .. i]
-    <$> replicateM i auxiliary
+  spec <-
+    dfaLexerSpec 0
+      . zipWith (\j -> (T $ intToAlpha j,)) [0 .. i]
+      <$> replicateM i auxiliary
+  pure spec {regexMap = fmap charToBytes <$> regexMap spec}
   where
     auxiliary = do
       x <- genRegEx cs i :: Gen (RegEx Char)
@@ -515,7 +514,7 @@ intToAlpha n =
   where
     a = chr (ord 'a' + (n `mod` 26))
 
-regExEquivalence :: (Ord s, Ord t, Enum s) => s -> RegEx (NonEmpty t) -> RegEx (NonEmpty t) -> Bool
+regExEquivalence :: (Ord s, Ord t, Enum s, Show s, Show t) => s -> RegEx (NonEmpty t) -> RegEx (NonEmpty t) -> Bool
 regExEquivalence s r r' = minimizedDFAEquivalence dfa dfa'
   where
     pipeline =
@@ -526,7 +525,7 @@ regExEquivalence s r r' = minimizedDFAEquivalence dfa dfa'
     dfa = pipeline r
     dfa' = pipeline r'
 
-minimizedDFAEquivalence :: (Ord s, Ord t) => DFA t s -> DFA t s -> Bool
+minimizedDFAEquivalence :: (Ord s, Ord t, Show s, Show t) => DFA t s -> DFA t s -> Bool
 minimizedDFAEquivalence dfa dfa' =
   equiv Map.empty Map.empty [(initial dfa, initial dfa')]
   where
@@ -552,7 +551,7 @@ minimizedDFAEquivalence dfa dfa' =
         qs' = qs <> [(edges Map.! k, edges' Map.! k) | k <- Set.toList keys]
 
 dfaLexerSpecEquivalence ::
-  (Eq o, Ord k, Ord s, Ord t, Enum s) =>
+  (Eq o, Ord k, Ord s, Ord t, Enum s, Show s, Show t) =>
   s ->
   DFALexerSpec (NonEmpty t) o k ->
   DFALexerSpec (NonEmpty t) o k ->

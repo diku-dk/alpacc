@@ -11,6 +11,7 @@ import Alpacc.Grammar
 import Alpacc.LLP
 import Alpacc.Lexer.DFA
 import Alpacc.Lexer.FSA
+import Alpacc.Lexer.RegularExpression
 import Alpacc.Util
 import Codec.Binary.UTF8.String (encodeChar)
 import Control.Monad
@@ -121,7 +122,7 @@ instance Binary Outputs where
 
 parse :: CFG -> Int -> Int -> Text -> Either Text (Maybe [FlatNode Word64 (Word64, Word64) Word64])
 parse cfg q k str = do
-  spec <- dfaCharToWord8 <$> cfgToDFALexerSpec cfg
+  spec <- cfgToDFALexerSpec cfg
   grammar <- cfgToGrammar cfg
   table <- llpParserTableWithStarts q k $ getGrammar grammar
   let regex_map = regexMap spec
@@ -129,7 +130,7 @@ parse cfg q k str = do
       ters = Map.keys regex_map
       encoder = encodeTerminals (T "ignore") $ parsingTerminals ters
       maybe_ignore = if ignore `Map.member` regex_map then Just ignore else Nothing
-      dfa = lexerDFA (0 :: Integer) spec
+      dfa = lexerDFA (0 :: Integer) $ mapSymbols unBytes spec
       bytes = concatMap encodeChar $ Text.unpack str
       ts = fmap toTuple <$> tokenize dfa maybe_ignore bytes
   case ts of
@@ -140,30 +141,32 @@ parse cfg q k str = do
   where
     toTuple (Lexeme t m) = (t, m)
 
-lexerParserTests :: CFG -> Int -> Int -> Int -> Either Text (ByteString, ByteString)
-lexerParserTests cfg q k n = do
-  spec <- dfaCharToWord8 <$> cfgToDFALexerSpec cfg
+lexerParserTests :: CFG -> Int -> Either Text (ByteString, ByteString)
+lexerParserTests cfg n = do
+  let q = paramsLookback $ cfgParams cfg
+      k = paramsLookahead $ cfgParams cfg
+  spec <- cfgToDFALexerSpec cfg
   grammar <- cfgToGrammar cfg
   table <- llpParserTableWithStarts q k $ getGrammar grammar
   let regex_map = regexMap spec
       ts = Map.keys regex_map
       encoder = encodeTerminals (T "ignore") $ parsingTerminals ts
-      dfa = lexerDFA (0 :: Integer) spec
+      dfa = lexerDFA (0 :: Integer) $ mapSymbols unBytes spec
       ignore = T "ignore"
       alpha = alphabet $ fsa dfa
       comb = listProducts n $ Set.toList alpha
       inputs = toInputs comb
       maybe_ignore = if ignore `Map.member` regex_map then Just ignore else Nothing
-      outputs = toOutputs encoder dfa maybe_ignore (getGrammar grammar) table comb
+      outputs = toOutputs q k encoder dfa maybe_ignore (getGrammar grammar) table comb
   pure
     ( ByteString.toStrict $ encode inputs,
       ByteString.toStrict $ encode outputs
     )
   where
-    toOutputs encoder dfa ignore grammar table =
-      Outputs . fmap (toOutput encoder dfa ignore grammar table)
+    toOutputs q k encoder dfa ignore grammar table =
+      Outputs . fmap (toOutput q k encoder dfa ignore grammar table)
     toInputs = Inputs . fmap (Input . ByteString.pack)
-    toOutput encoder dfa ignore grammar table str = Output $ do
+    toOutput q k encoder dfa ignore grammar table str = Output $ do
       ts <- fmap toTuple <$> tokenize dfa ignore str
       tree <- llpParseFlatTree grammar q k table (first Used <$> ts)
       pure $ fmap (fromIntegral . fromJust . (`terminalLookup` encoder)) <$> tree
@@ -172,7 +175,7 @@ lexerParserTests cfg q k n = do
 
 lexerParserTestsCompare :: CFG -> ByteString -> ByteString -> ByteString -> Either Text ()
 lexerParserTestsCompare cfg input expected result = do
-  spec <- dfaCharToWord8 <$> cfgToDFALexerSpec cfg
+  spec <- cfgToDFALexerSpec cfg
 
   let ts = Map.keys $ regexMap spec
       encoder = encodeTerminals (T "ignore") $ parsingTerminals ts

@@ -2,24 +2,24 @@ module Alpacc.Lexer.RegularExpression
   ( regExFromText,
     pRegEx,
     RegEx (..),
-    toWord8,
     producesEpsilon,
-    printRegEx,
     genRegEx,
+    Bytes (..),
+    bytesToText,
+    charToBytes,
   )
 where
 
 import Codec.Binary.UTF8.String (encodeChar)
 import Control.Monad (liftM2)
-import Data.Char (chr, isDigit, isPrint, isSpace, ord)
-import Data.List qualified as List
+import Data.Char (chr, digitToInt, isAlphaNum, isHexDigit, isPrint, isSpace)
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Text (Text)
 import Data.Text qualified as Text
-import Data.Tuple
 import Data.Void
 import Data.Word (Word8)
+import Numeric (readHex)
 import Test.QuickCheck
   ( Arbitrary (arbitrary, shrink),
     Gen,
@@ -31,6 +31,7 @@ import Test.QuickCheck
 import Text.Megaparsec hiding (State)
 import Text.Megaparsec.Char (char, space1, string)
 import Text.Megaparsec.Char.Lexer qualified as Lexer
+import Text.Printf (printf)
 
 type Parser = Parsec Void Text
 
@@ -59,6 +60,24 @@ producesEpsilon (Star _) = True
 producesEpsilon (Alter a b) = producesEpsilon a || producesEpsilon b
 producesEpsilon (Concat a b) = producesEpsilon a && producesEpsilon b
 
+newtype Bytes = Bytes {unBytes :: NonEmpty Word8}
+  deriving (Eq, Ord, Show)
+
+instance Arbitrary Bytes where
+  arbitrary = sized $ \i -> do
+    s <- arbitrary
+    vec <- vectorOf i arbitrary
+    pure $ Bytes $ NonEmpty.fromList $ s : vec
+  shrink =
+    fmap (Bytes . NonEmpty.fromList)
+      . filter (not . null)
+      . shrink
+      . NonEmpty.toList
+      . unBytes
+
+charToBytes :: Char -> Bytes
+charToBytes = Bytes . NonEmpty.fromList . encodeChar
+
 space :: Parser ()
 space = Lexer.space space1 empty empty
 
@@ -68,14 +87,13 @@ lexeme = Lexer.lexeme space
 escapeChars :: [(Text, Char)]
 escapeChars =
   [ ("\\", '\\'),
-    (";", ';'),
+    ("/", '/'),
     ("[", '['),
     ("]", ']'),
     ("(", '('),
     (")", ')'),
     ("*", '*'),
     ("+", '+'),
-    ("-", '-'),
     ("|", '|'),
     ("s", ' '),
     ("t", '\t'),
@@ -84,39 +102,52 @@ escapeChars =
     ("?", '?')
   ]
 
-pEscapeChar :: Text -> Char -> Parser Char
+pEscapeChar :: Text -> Char -> Parser Bytes
 pEscapeChar a b = do
   _ <- string a
-  return b
+  return $ charToBytes b
 
-pEscapeCharList :: [Parser Char]
+pEscapeCharList :: [Parser Bytes]
 pEscapeCharList = map (uncurry pEscapeChar) escapeChars
 
-pEscapeChars :: Parser Char
+pEscapeChars :: Parser Bytes
 pEscapeChars = lexeme $ do
   _ <- char '\\'
   choice pEscapeCharList
 
-pUnicode :: Parser Char
-pUnicode = fmap (chr . read . Text.unpack) . lexeme $ do
-  _ <- char '\\'
-  takeWhile1P Nothing isDigit
+pUnicode :: Parser Bytes
+pUnicode = lexeme $ do
+  _ <- char '\\' <* char 'u'
+  digits <- Text.unpack <$> takeWhile1P Nothing isHexDigit
+  let (n, _) NonEmpty.:| _ = NonEmpty.fromList $ readHex digits
+  return $ charToBytes $ chr n
+
+pByte :: Parser Word8
+pByte = lexeme $ do
+  _ <- char '\\' <* char 'x'
+  d1 <- satisfy isHexDigit
+  d2 <- satisfy isHexDigit
+  return $ fromIntegral (digitToInt d1 * 16 + digitToInt d2)
 
 isPrint' :: Char -> Bool
-isPrint' c = c `notElem` [';', '\\', '[', ']', '(', ')', '*', '|', '+', '-', '#', '?'] && isPrint c && not (isSpace c)
+isPrint' c =
+  c `notElem` ['\\', '/', '[', ']', '(', ')', '*', '|', '+', '?']
+    && isPrint c
+    && not (isSpace c)
 
-pIsPrint :: Parser Char
-pIsPrint = lexeme $ satisfy isPrint'
+pIsPrint :: Parser Bytes
+pIsPrint = lexeme $ charToBytes <$> satisfy isPrint'
 
-pChar :: Parser Char
+pChar :: Parser Bytes
 pChar =
   choice
     [ try pEscapeChars,
       try pUnicode,
+      Bytes . NonEmpty.singleton <$> try pByte,
       pIsPrint
     ]
 
-pLiteral :: Parser (RegEx Char)
+pLiteral :: Parser (RegEx Bytes)
 pLiteral = Literal <$> lexeme pChar
 
 many1 :: Parser a -> Parser [a]
@@ -132,31 +163,40 @@ chainl1 p op = p >>= rest
         rest (f x y)
         <|> return x
 
-pConcat :: Parser (RegEx Char)
+pConcat :: Parser (RegEx Bytes)
 pConcat = foldl Concat Epsilon <$> many pTerm
 
-pAlter :: Parser (RegEx Char)
+pAlter :: Parser (RegEx Bytes)
 pAlter = pConcat `chainl1` (lexeme (string "|") >> return Alter)
 
-pRegEx :: Parser (RegEx Char)
+pRegEx :: Parser (RegEx Bytes)
 pRegEx = pAlter
 
-pRange :: Parser (RegEx Char)
+pRange :: Parser (RegEx Bytes)
 pRange =
   between (lexeme "[") (lexeme "]") $
     Range . NonEmpty.fromList . concat
       <$> many1
         ( choice
             [ try $
-                (\a b -> [a .. b])
-                  <$> pChar
+                (\a b -> charToBytes <$> [a .. b])
+                  <$> pAlphaNum
                   <* lexeme "-"
-                  <*> pChar,
-              (: []) <$> pChar
+                  <*> pAlphaNum,
+              try $
+                (\a b -> Bytes . NonEmpty.singleton <$> [a .. b])
+                  <$> pByte
+                  <* lexeme "-"
+                  <*> pByte,
+              try $
+                (: []) . Bytes . NonEmpty.singleton <$> pByte,
+              (: []) . charToBytes <$> pAlphaNum
             ]
         )
+  where
+    pAlphaNum = lexeme (satisfy isAlphaNum)
 
-pTerm :: Parser (RegEx Char)
+pTerm :: Parser (RegEx Bytes)
 pTerm = do
   term <-
     choice
@@ -174,38 +214,13 @@ pTerm = do
           pure term
         ]
 
-regExFromText :: FilePath -> Text -> Either String (RegEx Char)
+regExFromText :: FilePath -> Text -> Either String (RegEx Bytes)
 regExFromText fname s =
   either (Left . errorBundlePretty) Right $
     parse (pRegEx <* eof) fname s
 
-toWord8 :: RegEx Char -> RegEx (NonEmpty Word8)
-toWord8 = fmap (NonEmpty.fromList . encodeChar)
-
-charToText :: Char -> Text
-charToText c =
-  case List.lookup c rev_escape of
-    Just x -> "\\" <> x
-    Nothing ->
-      if isPrint' c
-        then Text.pack [c]
-        else ("\\" <>) $ Text.pack $ show $ ord c
-  where
-    rev_escape = swap <$> escapeChars
-
-printRegEx :: RegEx Char -> Text
-printRegEx Epsilon = ""
-printRegEx (Literal c) = charToText c
-printRegEx (Range cs) =
-  ("[" <>) $
-    (<> "]") $
-      Text.intercalate " " $
-        charToText <$> NonEmpty.toList cs
-printRegEx (Star r) = "(" <> printRegEx r <> ")*"
-printRegEx (Concat r1 r2) =
-  "(" <> printRegEx r1 <> " " <> printRegEx r2 <> ")"
-printRegEx (Alter r1 r2) =
-  "(" <> printRegEx r1 <> "|" <> printRegEx r2 <> ")"
+bytesToText :: Bytes -> Text
+bytesToText = foldMap (Text.pack . printf "\\x%02x") . unBytes
 
 pickN :: Int -> [a] -> Gen [a]
 pickN n xs = do

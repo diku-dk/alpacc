@@ -82,8 +82,10 @@ instance Binary Outputs where
     results <- mapM (const get) [1 .. i]
     pure $ Outputs results
 
-parserTests :: CFG -> Int -> Int -> Int -> Either Text (ByteString, ByteString)
-parserTests cfg q k n = do
+parserTests :: CFG -> Int -> Either Text (ByteString, ByteString)
+parserTests cfg n = do
+  let q = paramsLookback $ cfgParams cfg
+      k = paramsLookahead $ cfgParams cfg
   grammar <- cfgToGrammar cfg
   table <- llpParserTableWithStarts q k $ getGrammar grammar
   let s_encoder = encodeSymbols (T "ignore") grammar

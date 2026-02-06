@@ -99,13 +99,24 @@ run_test() {
             return 1
         fi
         
+        # Prepend params block to random.alp
+        cat > random.alp.tmp << EOF
+params {
+  lookback=$q_value;
+  lookahead=$k_value;
+}
+
+EOF
+        cat random.alp >> random.alp.tmp
+        mv random.alp.tmp random.alp
+        
         # Try to convert to Futhark - keep retrying if it fails
-        if ! alpacc futhark random.alp $type_flag -q $q_value -k $k_value &> /dev/null; then
+        if ! alpacc futhark random.alp $type_flag &> /dev/null; then
             continue  # Try a new random grammar
         fi
         
         # Now we have a valid Futhark conversion, run the test
-        alpacc test generate random.alp $type_flag -q $q_value -k $k_value &> /dev/null
+        alpacc test generate random.alp $type_flag &> /dev/null
         futhark script -b random.fut 'test ($loadbytes "random.inputs")' | tail -c +16 > random.results
         
         if alpacc test compare random.alp random.inputs random.outputs random.results $type_flag &> /dev/null; then

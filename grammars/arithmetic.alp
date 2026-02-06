@@ -1,22 +1,25 @@
 # Arithmetic with variables, signed integers, addition, subtraction,
 # multiplication, division, and parentheses.
-#
-# Compile with:
-#
-#   alpacc futhark --lookback 1 --lookahead 1 grammars/arithmetic.alp
 
-num = \-?[0-9]+;
-var = [a-z]+;
-ignore = \s|\n|\t|\r;
+params {
+  lookback = 1;
+  lookahead = 1;
+}
 
-E0 = E1 E0';
-E0' = "+" E1 E0'
-    | "-" E1 E0'
-    | ;
-E1 = E2 E1';
-E1' = "*" E2 E1'
-    | "/" E2 E1'
-    | ;
-E2 = "(" E0 ")"
-   | num
-   | var;
+num = /-?[a-z]+/;
+var = /[a-z]+/;
+ignore = /\s|\n|\t|\r/;
+
+E0 = E1 E0_;
+E0_ [Add] = "+" E1 E0_;
+E0_ [Sub] = "-" E1 E0_;
+E0_ [Empty] = ;
+
+E1 = E2 E1_;
+E1_ [Mul] = "*" E2 E1_;
+E1_ [Div] = "/" E2 E1_;
+E1_ [Empty] = ;
+
+E2 [Parentheses] = "(" E0 ")";
+E2 [Num] = num;
+E2 [Var] = var;
