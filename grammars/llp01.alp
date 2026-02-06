@@ -1,4 +1,8 @@
-lp = \[;
-rp = \];
+# Example of a LLP(0, 1) grammar.
 
-S = lp S rp S | ;
+params {
+  lookback = 0;
+  lookahead = 1;
+}
+
+S = "[" S "]" S | ;
