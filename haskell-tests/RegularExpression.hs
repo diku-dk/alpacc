@@ -3,14 +3,20 @@ module RegularExpression (tests) where
 import Alpacc.Lexer.DFA
 import Alpacc.Lexer.FSA
 import Alpacc.Lexer.RegularExpression
+import Codec.Binary.UTF8.String (encodeChar)
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.String.Interpolate (i)
 import Data.Text (Text)
+import Data.Text qualified as Text
+import Data.Word
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit (assertBool, assertFailure, testCase, (@?=))
 
+textToWord8List :: Text -> [Word8]
+textToWord8List = concatMap encodeChar . Text.unpack
+
 regularExpressionMatchCase ::
-  (DFA Char Integer -> Text -> Bool) ->
+  (DFA Word8 Integer -> [Word8] -> Bool) ->
   Text ->
   [Text] ->
   [Text] ->
@@ -20,12 +26,12 @@ regularExpressionMatchCase isMatch' regex valid invalid =
   where
     valid_test =
       testCase [i|Valid RegEx Strings for "#{regex}" test.|] $
-        all (isMatch' dfa) valid @?= True
+        all (isMatch' dfa . textToWord8List) valid @?= True
     invalid_test =
       testCase [i|Invalid RegEx Strings for "#{regex}" test.|] $
-        all (isNotMatch dfa) invalid @?= True
+        all (isNotMatch dfa . textToWord8List) invalid @?= True
     Right regex_tree = regExFromText "" regex
-    dfa = enumerateFSA 0 $ fromRegExToDFA 0 (NonEmpty.singleton <$> regex_tree)
+    dfa = enumerateFSA 0 $ fromRegExToDFA 0 (fmap unBytes regex_tree)
     isNotMatch dfa' = not . isMatch' dfa'
 
 regularExpressionMatchCase0 :: TestTree

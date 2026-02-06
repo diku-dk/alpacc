@@ -1,14 +1,27 @@
-string = "[a-zA-Z0-9_\-\s\(\):/@.]*";
-num = \-?[0-9]+(.[0-9]+)?;
-ignore = \s|\n|\t|\r;
+# JSON grammar supporting a subset of JSON.
 
-J = O | A | string | num | "null" | "true" | "false";
+params {
+  lookback = 1;
+  lookahead = 3;
+}
 
-O = "{" FS0 "}";
-FS0 = | F FS1;
-FS1 = | "," F FS1;
-F = string ":" J;
+string = /"([\x00-\x21\x23-\xFF]|\\")*"/;
+number = /-?[0-9]+(.[0-9]+)?/;
+ignore = /\s|\n|\t|\r/;
 
-A = "[" EL0 "]";
+J [Object] = O;
+J [Array] = A;
+J [String] = string;
+J [Number] = number;
+J [Null] = "null";
+J [True] = "true";
+J [False] = "false";
+
+O [Object] = "{" FS0 "}";
+FS0 [Object] = | F FS1;
+FS1 [Object] = | "," F FS1;
+F [Object] = string ":" J;
+
+A [Array] = "[" EL0 "]";
 EL0 = | J EL1;
 EL1 = | "," J EL1;

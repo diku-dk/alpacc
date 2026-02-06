@@ -5,23 +5,25 @@ module Alpacc.CFG
     CFG (..),
     TRule (..),
     NTRule (..),
+    Params (..),
     everyTRule,
     dfaFromCfgFile,
     printDfaSpec,
     properties,
     printGrammar,
+    printRandomSpec,
+    printExampleRandomSpec,
+    printSpecFromText,
   )
 where
 
 import Alpacc.Grammar
 import Alpacc.Lexer.DFA
 import Alpacc.Lexer.RegularExpression
-import Control.Monad
 import Data.Char (isAsciiLower, isAsciiUpper, isDigit, isPrint)
 import Data.Foldable
 import Data.IntMap qualified as IntMap hiding (IntMap)
 import Data.List qualified as List
-import Data.List.NonEmpty qualified as NonEmpty hiding (NonEmpty)
 import Data.Map qualified as Map hiding (Map)
 import Data.Maybe
 import Data.Set (Set)
@@ -35,6 +37,7 @@ import System.Exit (exitFailure)
 import System.IO (hPutStrLn, stderr)
 import Test.QuickCheck
   ( Property,
+    generate,
     property,
   )
 import Text.Megaparsec
@@ -44,7 +47,7 @@ import Text.Megaparsec.Char.Lexer qualified as Lexer
 -- | Terminal formation rule.
 data TRule = TRule
   { ruleT :: T,
-    ruleRegex :: RegEx Char
+    ruleRegex :: RegEx Bytes
   }
   deriving (Show)
 
@@ -56,11 +59,49 @@ data NTRule = NTRule
   }
   deriving (Show)
 
+data Params = Params
+  { paramsLookback :: Int,
+    paramsLookahead :: Int
+  }
+  deriving (Show)
+
+defaultParams :: Params
+defaultParams =
+  Params
+    { paramsLookback = 0,
+      paramsLookahead = 1
+    }
+
 data CFG = CFG
-  { tRules :: [TRule],
+  { cfgParams :: Params,
+    tRules :: [TRule],
     ntRules :: [NTRule]
   }
   deriving (Show)
+
+pParam :: Parser (Params -> Params)
+pParam = pLookback <|> pLookahead <?> "parameter assignment"
+  where
+    pParamInt name =
+      lexeme name
+        *> lexeme "="
+        *> lexeme Lexer.decimal
+        <* lexeme ";"
+
+    pLookback =
+      (\n p -> p {paramsLookback = n}) <$> pParamInt "lookback"
+
+    pLookahead =
+      (\n p -> p {paramsLookahead = n}) <$> pParamInt "lookahead"
+
+pParams :: Parser Params
+pParams =
+  lexeme "params"
+    *> lexeme "{"
+    *> ( foldl' (flip ($)) defaultParams
+           <$> many pParam
+       )
+    <* lexeme "}"
 
 symbolTerminal :: Symbol NT T -> Set T
 symbolTerminal (Terminal t) = Set.singleton t
@@ -107,13 +148,13 @@ implicitTRules (CFG {tRules, ntRules}) = mapM implicitLitToRegEx implicit
     implicit = filter (`notElem` declared) $ toList $ foldMap ruleTerminals ntRules
     implicitLitToRegEx t@(TLit s) = Right $ TRule {ruleT = t, ruleRegex = regex}
       where
-        regex = foldl1 Concat $ fmap Literal (Text.unpack s)
+        regex = foldl1 Concat $ fmap (Literal . charToBytes) (Text.unpack s)
     implicitLitToRegEx (T s) = Left $ "Can not create literal from: " <> s
 
-tRuleToTuple :: TRule -> (T, RegEx Char)
+tRuleToTuple :: TRule -> (T, RegEx Bytes)
 tRuleToTuple (TRule {ruleT = t, ruleRegex = regex}) = (t, regex)
 
-cfgToDFALexerSpec :: CFG -> Either Text (DFALexerSpec Char Int T)
+cfgToDFALexerSpec :: CFG -> Either Text (DFALexerSpec Bytes Int T)
 cfgToDFALexerSpec (CFG {tRules = []}) = Left "CFG has no lexical rules."
 cfgToDFALexerSpec cfg@(CFG {tRules}) = do
   implicit_t_rules <- implicitTRules cfg
@@ -164,18 +205,26 @@ pSymbol = Terminal <$> pTSym <|> Nonterminal <$> pNT
 
 pTRule :: Parser TRule
 pTRule =
-  TRule <$> pT <* lexeme "=" <*> pRegEx <* lexeme ";"
+  TRule
+    <$> pT
+    <* lexeme "="
+    <*> (lexeme "/" *> pRegEx <* lexeme "/")
+    <* lexeme ";"
     <?> "terminal rule"
 
-pNTRule :: Parser NTRule
-pNTRule =
-  NTRule <$> pNT <*> optional pName <*> (lexeme "->" *> pRHS <* lexeme ";")
-    <?> "nonterminal rule"
+pNTRule :: Parser [NTRule]
+pNTRule = map <$> pDef <*> (pRHS `sepBy` lexeme "|") <* lexeme ";"
   where
+    pDef :: Parser ([Symbol NT T] -> NTRule)
+    pDef = NTRule <$> pNT <*> optional pName <* lexeme "="
     pRHS = many pSymbol
 
 pCFG :: Parser CFG
-pCFG = CFG <$> many (try pTRule) <*> many pNTRule
+pCFG =
+  CFG
+    <$> try (fromMaybe defaultParams <$> optional pParams)
+    <*> many (try pTRule)
+    <*> (concat <$> many pNTRule)
 
 cfgFromText :: FilePath -> Text -> Either Text CFG
 cfgFromText fname s =
@@ -191,61 +240,117 @@ dfaFromCfgFile :: FilePath -> IO (DFALexer Word8 Integer T)
 dfaFromCfgFile path = do
   content <- Text.pack <$> readFile path
   cfg <- eitherToIO $ cfgFromText path content
-  spec <- fmap dfaCharToWord8 . eitherToIO $ cfgToDFALexerSpec cfg
-  pure $ lexerDFA (0 :: Integer) spec
+  spec <- eitherToIO $ cfgToDFALexerSpec cfg
+  pure $ lexerDFA (0 :: Integer) $ mapSymbols unBytes spec
 
-printDfaSpec :: DFALexerSpec Char Int T -> Text
+printRegEx :: RegEx Bytes -> Text
+printRegEx Epsilon = ""
+printRegEx (Literal c) = bytesToText c
+printRegEx (Range cs) =
+  printRegEx $ foldr1 Alter (fmap Literal cs)
+printRegEx (Star r) = "(" <> printRegEx r <> ")*"
+printRegEx (Concat r1 r2) =
+  "(" <> printRegEx r1 <> " " <> printRegEx r2 <> ")"
+printRegEx (Alter r1 r2) =
+  "(" <> printRegEx r1 <> "|" <> printRegEx r2 <> ")"
+
+printDfaSpec :: DFALexerSpec Bytes Int T -> Text
 printDfaSpec spec =
-  Text.intercalate "\n" $
-    fmap (printTuple . snd) $
-      List.sortOn fst $
-        toTuple <$> keys
+  Text.intercalate "\n"
+    . fmap (printTuple . snd)
+    . List.sortOn fst
+    $ toTuple <$> keys
   where
     ordmap = orderMap spec
     regmap = regexMap spec
     keys = Map.keys ordmap
     toTuple t = (ordmap Map.! t, (t, regmap Map.! t))
-    printTuple (T t, r) = t <> " = " <> printRegEx r <> ";"
+    printTuple (T t, r) = t <> " = " <> "/" <> printRegEx r <> "/" <> ";"
     printTuple (TLit _, _) = error "Error: Cannot print a literal terminal rule."
 
 printGrammar :: Grammar NT T -> Text
 printGrammar grammar =
-  printProductions as <> printProductions bs
+  Text.unlines $ printProduction <$> prods
   where
-    prods = toProductionsMap $ productions grammar
-    s = start grammar
-    (as, bs) = Map.partitionWithKey (\k _ -> k == s) prods
+    prods = productions grammar
     printSymbol (Terminal (T t)) = t
     printSymbol (Terminal (TLit t)) = t
     printSymbol (Nonterminal (NT nt)) = nt
 
     printSymbols = Text.unwords . fmap printSymbol
 
-    printProductions =
-      Text.unlines
-        . fmap printProduction
-        . Map.toList
+    printProduction (Production (NT nt) syms) =
+      nt <> " = " <> printSymbols syms <> ";"
 
-    printProduction (NT k, v) =
-      k
-        <> " = "
-        <> Text.intercalate " | " (fmap printSymbols v)
-        <> ";"
-
-parsePrinted :: DFALexerSpec Char Int T -> Bool
+parsePrinted :: DFALexerSpec Bytes Int T -> Bool
 parsePrinted spec =
   case result of
     Left _ -> False
     Right b -> b
   where
-    expected = spec {regexMap = fmap NonEmpty.singleton <$> regexMap spec}
+    expected = mapSymbols unBytes spec
     result = do
       cfg <- cfgFromText "" $ printDfaSpec spec
       spec' <- cfgToDFALexerSpec cfg
-      let spec'' = spec' {regexMap = fmap NonEmpty.singleton <$> regexMap spec'}
+      let spec'' = mapSymbols unBytes spec'
       pure $ dfaLexerSpecEquivalence (0 :: Integer) expected spec''
 
 properties :: [(String, Property)]
 properties =
-  [ ("CFG properties", property parsePrinted)
-  ]
+  [("CFG properties", property parsePrinted)]
+
+printExampleRandomSpec :: IO ()
+printExampleRandomSpec = printRandomSpec 3 3
+
+printSpecFromText :: String -> IO ()
+printSpecFromText input = do
+  let grammarText = Text.pack input
+
+  putStrLn "Input:"
+  putStrLn input
+
+  putStrLn "\nParsed:"
+  case cfgFromText "input" grammarText of
+    Left err -> putStrLn $ "Error: " <> Text.unpack err
+    Right cfg -> case cfgToDFALexerSpec cfg of
+      Left err -> putStrLn $ "Error: " <> Text.unpack err
+      Right parsedSpec -> do
+        let printed = printDfaSpec parsedSpec
+        putStrLn $ Text.unpack printed
+
+        putStrLn "\nEquivalent:"
+        case cfgFromText "reparsed" printed of
+          Left err -> putStrLn $ "Error: " <> Text.unpack err
+          Right cfg' -> case cfgToDFALexerSpec cfg' of
+            Left err -> putStrLn $ "Error: " <> Text.unpack err
+            Right reparsedSpec ->
+              print $
+                dfaLexerSpecEquivalence
+                  (0 :: Integer)
+                  (mapSymbols unBytes parsedSpec)
+                  (mapSymbols unBytes reparsedSpec)
+
+printRandomSpec :: Int -> Int -> IO ()
+printRandomSpec num_chars num_terminals = do
+  spec <- generate (genDfaLexerSpec num_terminals chrs)
+  let grammarText = printDfaSpec spec
+
+  putStrLn "Generated:"
+  putStrLn $ Text.unpack grammarText
+
+  putStrLn "\nParsed:"
+  case cfgFromText "generated" grammarText of
+    Left err -> putStrLn $ "Error: " <> Text.unpack err
+    Right cfg -> case cfgToDFALexerSpec cfg of
+      Left err -> putStrLn $ "Error: " <> Text.unpack err
+      Right parsedSpec -> do
+        putStrLn $ Text.unpack $ printDfaSpec parsedSpec
+        putStrLn "\nEquivalent:"
+        print $
+          dfaLexerSpecEquivalence
+            (0 :: Integer)
+            (mapSymbols unBytes spec)
+            (mapSymbols unBytes parsedSpec)
+  where
+    chrs = chars num_chars
+    chars n = take n ['a' .. 'z']

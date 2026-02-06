@@ -1,6 +1,7 @@
 module Main where
 
 import Alpacc.CFG
+import Alpacc.Debug
 import Alpacc.Generator.Analyzer
   ( Generator (..),
     mkLexer,
@@ -59,8 +60,6 @@ _ `combine` _ = GenBoth
 data GeneratorParameters = GeneratorParameters
   { generatorInput :: !Input,
     generatorOutput :: !(Maybe String),
-    generatorLookback :: !Int,
-    generatorLookahead :: !Int,
     generatorGenerator :: !Gen,
     generatorBackend :: !Backend
   }
@@ -78,8 +77,6 @@ data RandomParameters = RandomParameters
 data TestGenerateParameters = TestGenerateParameters
   { testGenerateInput :: !Input,
     testGenerateOutput :: !(Maybe String),
-    testGenerateLookback :: !Int,
-    testGenerateLookahead :: !Int,
     testGenerateLength :: !Int,
     testGenerateGenerator :: !Gen
   }
@@ -235,8 +232,6 @@ generatorParameters backend =
     <$> ( GeneratorParameters
             <$> inputParameter
             <*> outputParameter
-            <*> lookbackParameter
-            <*> lookaheadParameter
             <*> generateParametar
             <*> pure backend
         )
@@ -258,8 +253,6 @@ testGenerateParameters =
     <$> ( TestGenerateParameters
             <$> inputParameter
             <*> outputParameter
-            <*> lookbackParameter
-            <*> lookaheadParameter
             <*> lengthParameter
             <*> generateParametar
         )
@@ -331,12 +324,12 @@ readContents input =
     StdInput -> TextIO.getContents
     FileInput path -> TextIO.readFile path
 
-generateProgram :: Backend -> Gen -> Int -> Int -> CFG -> Either Text Text
-generateProgram backend generator q k cfg =
+generateProgram :: Backend -> Gen -> CFG -> Either Text Text
+generateProgram backend generator cfg =
   case generator of
-    GenBoth -> generate gen <$> mkLexerParser q k cfg
+    GenBoth -> generate gen <$> mkLexerParser cfg
     GenLexer -> generate gen <$> mkLexer cfg
-    GenParser -> generate gen <$> mkParser q k cfg
+    GenParser -> generate gen <$> mkParser cfg
   where
     gen =
       case backend of
@@ -366,7 +359,7 @@ mainGenerator :: GeneratorParameters -> IO ()
 mainGenerator params = do
   let program_path = outputPath backend output input
   cfg <- readCfg input
-  let either_program = generateProgram backend gen q k cfg
+  let either_program = generateProgram backend gen cfg
 
   case either_program of
     Left e -> do
@@ -375,8 +368,6 @@ mainGenerator params = do
     Right program -> writeProgram program_path program
   where
     backend = generatorBackend params
-    q = generatorLookback params
-    k = generatorLookahead params
     output = generatorOutput params
     input = generatorInput params
     gen = generatorGenerator params
@@ -410,18 +401,16 @@ mainTestGenerate params = do
       ByteString.writeFile (name <> ".inputs") inputs
       ByteString.writeFile (name <> ".outputs") ouputs
     GenParser -> do
-      (inputs, ouputs) <- eitherToIO $ parserTests cfg q k len
+      (inputs, ouputs) <- eitherToIO $ parserTests cfg len
       ByteString.writeFile (name <> ".inputs") inputs
       ByteString.writeFile (name <> ".outputs") ouputs
     GenBoth -> do
-      (inputs, ouputs) <- eitherToIO $ lexerParserTests cfg q k len
+      (inputs, ouputs) <- eitherToIO $ lexerParserTests cfg len
       ByteString.writeFile (name <> ".inputs") inputs
       ByteString.writeFile (name <> ".outputs") ouputs
   where
     out = testGenerateOutput params
     input = testGenerateInput params
-    q = testGenerateLookback params
-    k = testGenerateLookahead params
     len = testGenerateLength params
 
 mainTestCompare :: TestCompareParameters -> IO ()

@@ -165,3 +165,4 @@ test-suite test-alpacc
     , tasty-quickcheck
     , tasty-hunit
     , text
+    , utf8-string

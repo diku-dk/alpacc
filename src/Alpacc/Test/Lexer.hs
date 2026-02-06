@@ -9,6 +9,7 @@ import Alpacc.Encode
 import Alpacc.Grammar
 import Alpacc.Lexer.DFA
 import Alpacc.Lexer.FSA
+import Alpacc.Lexer.RegularExpression
 import Alpacc.Util
 import Control.Monad
 import Data.Bifunctor
@@ -98,13 +99,14 @@ instance Binary Outputs where
 
 lexerTests :: CFG -> Int -> Either Text (ByteString, ByteString)
 lexerTests cfg k = do
-  spec <- dfaCharToWord8 <$> cfgToDFALexerSpec cfg
+  spec <- cfgToDFALexerSpec cfg
   let ts = Map.keys $ regexMap spec
       encoder = encodeTerminals (T "ignore") $ parsingTerminals ts
   dfa <-
     maybeToEither "Error: Could not encode tokens." $
       mapTokens (fmap fromIntegral . (`terminalLookup` encoder)) $
-        lexerDFA (0 :: Integer) spec
+        lexerDFA (0 :: Integer) $
+          mapSymbols unBytes spec
   let ignore = fromIntegral <$> terminalLookup (T "ignore") encoder
       alpha = alphabet $ fsa dfa
       comb = listProducts k $ Set.toList alpha
@@ -120,7 +122,7 @@ lexerTests cfg k = do
 
 lexerTestsCompare :: CFG -> ByteString -> ByteString -> ByteString -> Either Text ()
 lexerTestsCompare cfg input expected result = do
-  spec <- dfaCharToWord8 <$> cfgToDFALexerSpec cfg
+  spec <- cfgToDFALexerSpec cfg
 
   let ts = Map.keys $ regexMap spec
       encoder = encodeTerminals (T "ignore") $ parsingTerminals ts

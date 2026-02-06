@@ -17,6 +17,7 @@ import Alpacc.Lexer.DFA
 import Alpacc.Lexer.DFAParallelLexer
 import Alpacc.Lexer.Encode
 import Alpacc.Lexer.ParallelLexing
+import Alpacc.Lexer.RegularExpression
 import Alpacc.Types
 import Data.Either.Extra
 import Data.Map qualified as Map
@@ -107,7 +108,7 @@ mkLexer cfg = do
   spec <- cfgToDFALexerSpec cfg
   let ignore = T "ignore"
       encoder = encodeTerminals ignore $ parsingTerminals $ dfaTerminals spec
-      dfa = lexerDFA (0 :: Integer) $ dfaCharToWord8 spec
+      dfa = lexerDFA (0 :: Integer) $ mapSymbols unBytes spec
       terminal_to_name = nameTerminals encoder
   terminal_type <- terminalIntType encoder
   parallel_lexer <- intDfaParallelLexer encoder dfa
@@ -145,10 +146,12 @@ nameProduction int (AugmentedNonterminal (Terminal (T t))) =
 nameProduction int (AugmentedNonterminal (Terminal (TLit _))) =
   "Literal_" <> Text.pack (show int)
 
-mkParser :: Int -> Int -> CFG -> Either Text (Analyzer [Text])
-mkParser q k cfg = do
+mkParser :: CFG -> Either Text (Analyzer [Text])
+mkParser cfg = do
   grammar <- cfgToGrammar cfg
-  let ignore = T "ignore"
+  let q = paramsLookback $ cfgParams cfg
+      k = paramsLookahead $ cfgParams cfg
+      ignore = T "ignore"
       s_encoder = encodeSymbols ignore grammar
       t_encoder = fromSymbolToTerminalEncoder s_encoder
       production_to_terminal = mkProductionToTerminal t_encoder grammar
@@ -187,11 +190,13 @@ mkParser q k cfg = do
             <> printProductions production_to_names grammar
       }
 
-mkLexerParser :: Int -> Int -> CFG -> Either Text (Analyzer [Text])
-mkLexerParser q k cfg = do
+mkLexerParser :: CFG -> Either Text (Analyzer [Text])
+mkLexerParser cfg = do
   grammar <- cfgToGrammar cfg
   spec <- cfgToDFALexerSpec cfg
-  let ignore = T "ignore"
+  let q = paramsLookback $ cfgParams cfg
+      k = paramsLookahead $ cfgParams cfg
+      ignore = T "ignore"
       s_encoder = encodeSymbols ignore grammar
       t_encoder = fromSymbolToTerminalEncoder s_encoder
       production_to_terminal = mkProductionToTerminal t_encoder grammar
@@ -199,7 +204,7 @@ mkLexerParser q k cfg = do
       end_terminal = symbolEndTerminal s_encoder
       empty_terminal = symbolDead s_encoder
       dead_token = empty_terminal
-      dfa = lexerDFA (0 :: Integer) $ dfaCharToWord8 spec
+      dfa = lexerDFA (0 :: Integer) $ mapSymbols unBytes spec
       production_to_names = productionNames nameProduction grammar
       terminal_to_name = nameTerminals t_encoder
   terminal_type <- symbolTerminalIntType s_encoder
