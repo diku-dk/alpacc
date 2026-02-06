@@ -155,7 +155,6 @@ tRuleToTuple :: TRule -> (T, RegEx Bytes)
 tRuleToTuple (TRule {ruleT = t, ruleRegex = regex}) = (t, regex)
 
 cfgToDFALexerSpec :: CFG -> Either Text (DFALexerSpec Bytes Int T)
-cfgToDFALexerSpec (CFG {tRules = []}) = Left "CFG has no lexical rules."
 cfgToDFALexerSpec cfg@(CFG {tRules}) = do
   implicit_t_rules <- implicitTRules cfg
   let all_t_rules = implicit_t_rules ++ tRules
@@ -163,7 +162,10 @@ cfgToDFALexerSpec cfg@(CFG {tRules}) = do
       x = find (producesEpsilon . snd) t_rule_tuples
   case x of
     Just (t, _) -> Left $ Text.pack [i|Error: #{t} may not produce empty strings.|]
-    Nothing -> Right $ dfaLexerSpec 0 t_rule_tuples
+    Nothing ->
+      if null all_t_rules
+        then Left "CFG has no lexical rules."
+        else Right $ dfaLexerSpec 0 t_rule_tuples
 
 type Parser = Parsec Void Text
 

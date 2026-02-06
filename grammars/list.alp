@@ -1,4 +1,11 @@
-atom = a;
+# Grammar for expressing lists of "a".
+
+params {
+  lookback = 1;
+  lookahead = 1;
+}
+
+atom = /a/;
 
 V = "[" EL0 "]";
 EL0 = | atom EL1;

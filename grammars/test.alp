@@ -1,4 +1,0 @@
-lparen=a\(a;
-rparen=a\)a;
-atom=a+;
-ignore=\s|\n|\t|\r;

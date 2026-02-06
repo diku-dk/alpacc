@@ -1,0 +1,5 @@
+# Example of just defining a lexer.
+
+ignore = /\s+/;
+number = /[0-9]+/;
+string = /"([\x00-\x21\x23-\xFF]|\\")*"/;
