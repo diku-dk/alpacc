@@ -1,6 +1,11 @@
-a = [0-9]+;
-ignore = \s|\n|\t|\r;
+params {
+  lookback = 1;
+  lookahead = 1;
+}
 
-E = T E';
-E' = "+" T E' | ;
+a = /[0-9]+/;
+ignore = /\s|\n|\t|\r/;
+
+E = T E_;
+E_ = "+" T E_ | ;
 T = a | "[" E "]" ;
