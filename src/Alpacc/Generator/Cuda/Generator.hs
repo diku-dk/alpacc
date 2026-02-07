@@ -4,6 +4,7 @@ module Alpacc.Generator.Cuda.Generator
 where
 
 import Alpacc.Generator.Analyzer
+import Alpacc.Generator.Cuda.Cudafy
 import Alpacc.Generator.Cuda.Lexer qualified as Lexer
 import Alpacc.Generator.Cuda.Parser qualified as Parser
 import Data.FileEmbed
@@ -21,7 +22,8 @@ auxiliary analyzer =
       Text.unlines
         [ Text.unlines (("// " <>) <$> meta analyzer),
           common,
-          Lexer.generateLexer terminal_type lexer,
+          cudafyEnum "terminal_t" terminal_type terminal_names,
+          Lexer.generateLexer lexer,
           Text.pack
             [i|
 int main(int32_t argc, char *argv[]) {
@@ -45,7 +47,8 @@ int main(int32_t argc, char *argv[]) {
       Text.unlines
         [ Text.unlines (("// " <>) <$> meta analyzer),
           common,
-          Parser.generateParser terminal_type parser,
+          cudafyEnum "terminal_t" terminal_type terminal_names,
+          Parser.generateParser parser,
           Text.pack
             [i|
 |]
@@ -54,14 +57,16 @@ int main(int32_t argc, char *argv[]) {
       Text.unlines
         [ Text.unlines (("// " <>) <$> meta analyzer),
           common,
-          Lexer.generateLexer terminal_type lexer,
-          Parser.generateParser terminal_type parser,
+          cudafyEnum "terminal_t" terminal_type terminal_names,
+          Lexer.generateLexer lexer,
+          Parser.generateParser parser,
           Text.pack
             [i|
 |]
         ]
   where
     terminal_type = terminalType analyzer
+    terminal_names = terminalToName analyzer
 
 generator :: Generator [Text]
 generator =
