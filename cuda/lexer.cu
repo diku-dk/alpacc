@@ -54,7 +54,7 @@ state_t get_index(state_t state) {
 
 __device__ __host__ __forceinline__
 terminal_t get_terminal(state_t state) {
-  return (state & TERMINAL_MASK) >> TERMINAL_OFFSET;
+  return static_cast<terminal_t>((state & TERMINAL_MASK) >> TERMINAL_OFFSET);
 }
 
 __device__ __host__ __forceinline__
@@ -68,7 +68,7 @@ state_t get_index_cpu(state_t state) {
 }
 
 terminal_t get_terminal_cpu(state_t state) {
-  return (state & TERMINAL_MASK) >> TERMINAL_OFFSET;
+  return static_cast<terminal_t>((state & TERMINAL_MASK) >> TERMINAL_OFFSET);
 }
 
 bool is_produce_cpu(state_t state) {

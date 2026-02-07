@@ -4,7 +4,6 @@ import Alpacc.Generator.Analyzer
 import Alpacc.Generator.Cuda.Cudafy
 import Alpacc.Lexer.Encode
 import Alpacc.Lexer.ParallelLexing
-import Alpacc.Types
 import Data.FileEmbed
 import Data.Map qualified as Map
 import Data.String.Interpolate (i)
@@ -15,11 +14,10 @@ import Prelude hiding (lex)
 cudaLexer :: Text
 cudaLexer = $(embedStringFile "cuda/lexer.cu")
 
-generateLexer :: UInt -> Lexer -> Text
-generateLexer terminal_type lex =
+generateLexer :: Lexer -> Text
+generateLexer lex =
   (Text.strip . Text.pack)
     [i|
-using terminal_t = #{cudafy terminal_type};
 using state_t = #{cudafy state_type};
 
 const size_t NUM_STATES = #{cudafy $ endomorphismsSize parallel_lexer};

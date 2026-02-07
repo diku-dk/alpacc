@@ -7,7 +7,6 @@ import Alpacc.Encode
 import Alpacc.Generator.Analyzer
 import Alpacc.Generator.Cuda.Cudafy
 import Alpacc.HashTable
-import Alpacc.Types
 import Data.Array qualified as Array
 import Data.FileEmbed
 import Data.Maybe
@@ -18,11 +17,10 @@ import Data.Text qualified as Text
 cudaParser :: Text
 cudaParser = $(embedStringFile "cuda/parser.cu")
 
-generateParser :: UInt -> Parser -> Text
-generateParser terminal_type parser =
+generateParser :: Parser -> Text
+generateParser parser =
   (Text.strip . Text.pack)
     [i|
-using terminal_t = #{cudafy terminal_type};
 using production_t = #{cudafy production_type};
 using bracket_t = #{cudafy bracket_type};
 const size_t Q = #{cudafy q};

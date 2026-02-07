@@ -1,6 +1,7 @@
 module Alpacc.Generator.Cuda.Cudafy
   ( Cudafy (..),
     RawString (..),
+    cudafyEnum,
   )
 where
 
@@ -12,6 +13,16 @@ import Data.String.Interpolate (i)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Numeric.Natural
+
+cudafyEnum :: Text -> UInt -> [Text] -> Text
+cudafyEnum name t names =
+  "enum "
+    <> name
+    <> " : "
+    <> cudafy t
+    <> " {"
+    <> Text.intercalate "," names
+    <> "};"
 
 newtype RawString = RawString Text deriving (Show, Eq, Ord, Read)
 

@@ -1,7 +1,6 @@
 module Main where
 
 import Alpacc.CFG
-import Alpacc.Debug
 import Alpacc.Generator.Analyzer
   ( Generator (..),
     mkLexer,
