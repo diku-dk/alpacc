@@ -43,25 +43,25 @@ The following grammar is found in
 params {
   lookback = 1;
   lookahead = 1;
-}
+};
 
 num = /-?[0-9]+/;
 var = /[a-z]+/;
 ignore = /\s|\n|\t|\r/;
 
-E0 = E1 E0_;
-E0_ [Add] = "+" E1 E0_;
-E0_ [Sub] = "-" E1 E0_;
-E0_ [Empty] = ;
+E0 -> E1 E0_;
+E0_ [Add] -> "+" E1 E0_;
+E0_ [Sub] -> "-" E1 E0_;
+E0_ [Empty] -> ;
 
-E1 = E2 E1_;
-E1_ [Mul] = "*" E2 E1_;
-E1_ [Div] = "/" E2 E1_;
-E1_ [Empty] = ;
+E1 -> E2 E1_;
+E1_ [Mul] -> "*" E2 E1_;
+E1_ [Div] -> "/" E2 E1_;
+E1_ [Empty] -> ;
 
-E2 [Parentheses] = "(" E0 ")";
-E2 [Num] = num;
-E2 [Var] = var;
+E2 [Parentheses] -> "(" E0 ")";
+E2 [Num] -> num;
+E2 [Var] -> var;
 ```
 
 The grammar defines parameters which says the grammar needs a certain
@@ -112,7 +112,7 @@ tuple is the actual node. A node is either a production or a terminal,
 and the names are either given by the name in the grammar otherwise
 will `alpacc` try to give a reasonable name. So if we look at the
 first element then its parent is itself and the node is a production
-`#production (#E0_0)`. Which is the first production defined as `E0 =
+`#production (#E0_0)`. Which is the first production defined as `E0 ->
 E1 E0_` which is the starting production. If we look at the terminal
 `#terminal (#num) (0, 2)` then the terminal is `num` and `(0, 2)` is
 the span of the substring that token corresponds to in the input
