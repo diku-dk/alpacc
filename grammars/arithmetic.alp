@@ -6,7 +6,7 @@ params {
   lookahead = 1;
 }
 
-num = /-?[a-z]+/;
+num = /-?[0-9]+/;
 var = /[a-z]+/;
 ignore = /\s|\n|\t|\r/;
 
