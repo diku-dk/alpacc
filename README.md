@@ -112,8 +112,8 @@ tuple is the actual node. A node is either a production or a terminal,
 and the names are either given by the name in the grammar otherwise
 will `alpacc` try to give a reasonable name. So if we look at the
 first element then its parent is itself and the node is a production
-`#production (#E0_0)`. The first production defined is `E = T E_`
-which is the starting production. If we look at the terminal
+`#production (#E0_0)`. Which is the first production defined as `E0 =
+E1 E0_` which is the starting production. If we look at the terminal
 `#terminal (#num) (0, 2)` then the terminal is `num` and `(0, 2)` is
 the span of the substring that token corresponds to in the input
 string.
