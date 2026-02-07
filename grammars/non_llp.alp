@@ -1,5 +1,5 @@
 # Example of a grammar that is not LLP(q,k).
 
-S = "a" A | "b" B;
-A = "c" A "d" A | "f";
-B = "e" B "d" B | "f";
+S -> "a" A | "b" B;
+A -> "c" A "d" A | "f";
+B -> "e" B "d" B | "f";

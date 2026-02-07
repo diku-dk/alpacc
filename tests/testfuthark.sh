@@ -104,7 +104,7 @@ run_test() {
 params {
   lookback=$q_value;
   lookahead=$k_value;
-}
+};
 
 EOF
         cat random.alp >> random.alp.tmp

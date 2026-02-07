@@ -131,7 +131,7 @@ instance (NFData t, NFData nt) => NFData (Production nt t)
 
 instance (Pretty nt, Pretty t) => Pretty (Production nt t) where
   pretty (Production nt syms) =
-    pretty nt <> " = " <> Text.intercalate " " (map pretty syms)
+    pretty nt <> " -> " <> Text.intercalate " " (map pretty syms)
 
 -- | Bifunctor for production where first is the Nonterminal and second is
 -- Terminal.

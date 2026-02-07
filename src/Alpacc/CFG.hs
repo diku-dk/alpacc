@@ -96,12 +96,14 @@ pParam = pLookback <|> pLookahead <?> "parameter assignment"
 
 pParams :: Parser Params
 pParams =
-  lexeme "params"
-    *> lexeme "{"
-    *> ( foldl' (flip ($)) defaultParams
-           <$> many pParam
-       )
-    <* lexeme "}"
+  fmap (fromMaybe defaultParams)
+    . optional
+    $ lexeme "params"
+      *> lexeme "{"
+      *> ( foldl' (flip ($)) defaultParams
+             <$> many pParam
+         )
+      <* lexeme "};"
 
 symbolTerminal :: Symbol NT T -> Set T
 symbolTerminal (Terminal t) = Set.singleton t
@@ -218,13 +220,13 @@ pNTRule :: Parser [NTRule]
 pNTRule = map <$> pDef <*> (pRHS `sepBy` lexeme "|") <* lexeme ";"
   where
     pDef :: Parser ([Symbol NT T] -> NTRule)
-    pDef = NTRule <$> pNT <*> optional pName <* lexeme "="
+    pDef = NTRule <$> pNT <*> optional pName <* lexeme "->"
     pRHS = many pSymbol
 
 pCFG :: Parser CFG
 pCFG =
   CFG
-    <$> try (fromMaybe defaultParams <$> optional pParams)
+    <$> try pParams
     <*> many (try pTRule)
     <*> (concat <$> many pNTRule)
 
@@ -282,7 +284,7 @@ printGrammar grammar =
     printSymbols = Text.unwords . fmap printSymbol
 
     printProduction (Production (NT nt) syms) =
-      nt <> " = " <> printSymbols syms <> ";"
+      nt <> " -> " <> printSymbols syms <> ";"
 
 parsePrinted :: DFALexerSpec Bytes Int T -> Bool
 parsePrinted spec =

@@ -3,6 +3,6 @@
 params {
   lookback = 0;
   lookahead = 1;
-}
+};
 
-S = "[" S "]" S | ;
+S -> "[" S "]" S | ;

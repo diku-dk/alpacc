@@ -3,25 +3,25 @@
 params {
   lookback = 1;
   lookahead = 3;
-}
+};
 
 string = /"([\x00-\x21\x23-\xFF]|\\")*"/;
 number = /-?[0-9]+(.[0-9]+)?/;
 ignore = /\s|\n|\t|\r/;
 
-J [Object] = O;
-J [Array] = A;
-J [String] = string;
-J [Number] = number;
-J [Null] = "null";
-J [True] = "true";
-J [False] = "false";
+J [Object] -> O;
+J [Array] -> A;
+J [String] -> string;
+J [Number] -> number;
+J [Null] -> "null";
+J [True] -> "true";
+J [False] -> "false";
 
-O [Object] = "{" FS0 "}";
-FS0 [Object] = | F FS1;
-FS1 [Object] = | "," F FS1;
-F [Object] = string ":" J;
+O [Object] -> "{" FS0 "}";
+FS0 [Object] -> | F FS1;
+FS1 [Object] -> | "," F FS1;
+F [Object] -> string ":" J;
 
-A [Array] = "[" EL0 "]";
-EL0 = | J EL1;
-EL1 = | "," J EL1;
+A [Array] -> "[" EL0 "]";
+EL0 -> | J EL1;
+EL1 -> | "," J EL1;
