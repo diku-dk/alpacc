@@ -23,5 +23,5 @@ FS1 [Object] -> | "," F FS1;
 F [Object] -> string ":" J;
 
 A [Array] -> "[" EL0 "]";
-EL0 -> | J EL1;
-EL1 -> | "," J EL1;
+EL0 [Array] -> | J EL1;
+EL1 [Array] -> | "," J EL1;
