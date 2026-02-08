@@ -1,12 +1,12 @@
 # Grammar for expressing lists of "a".
 
 params {
-  lookback = 1;
-  lookahead = 1;
-};
+  lookback = 1.
+  lookahead = 1.
+}
 
-atom = /a/;
+atom = /a/.
 
-V -> "[" EL0 "]";
-EL0 -> | atom EL1;
-EL1 -> | "," atom EL1;
+V -> "[" EL0 "]".
+EL0 -> | atom EL1.
+EL1 -> | "," atom EL1.

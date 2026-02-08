@@ -102,9 +102,9 @@ run_test() {
         # Prepend params block to random.alp
         cat > random.alp.tmp << EOF
 params {
-  lookback=$q_value;
-  lookahead=$k_value;
-};
+  lookback=$q_value.
+  lookahead=$k_value.
+}
 
 EOF
         cat random.alp >> random.alp.tmp

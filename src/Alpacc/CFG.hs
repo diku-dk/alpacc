@@ -86,7 +86,7 @@ pParam = pLookback <|> pLookahead <?> "parameter assignment"
       lexeme name
         *> lexeme "="
         *> lexeme Lexer.decimal
-        <* lexeme ";"
+        <* lexeme "."
 
     pLookback =
       (\n p -> p {paramsLookback = n}) <$> pParamInt "lookback"
@@ -103,7 +103,7 @@ pParams =
       *> ( foldl' (flip ($)) defaultParams
              <$> many pParam
          )
-      <* lexeme "};"
+      <* lexeme "}"
 
 symbolTerminal :: Symbol NT T -> Set T
 symbolTerminal (Terminal t) = Set.singleton t
@@ -213,11 +213,11 @@ pTRule =
     <$> pT
     <* lexeme "="
     <*> (lexeme "/" *> pRegEx <* lexeme "/")
-    <* lexeme ";"
+    <* lexeme "."
     <?> "terminal rule"
 
 pNTRule :: Parser [NTRule]
-pNTRule = map <$> pDef <*> (pRHS `sepBy` lexeme "|") <* lexeme ";"
+pNTRule = map <$> pDef <*> (pRHS `sepBy` lexeme "|") <* lexeme "."
   where
     pDef :: Parser ([Symbol NT T] -> NTRule)
     pDef = NTRule <$> pNT <*> optional pName <* lexeme "->"
@@ -269,7 +269,7 @@ printDfaSpec spec =
     regmap = regexMap spec
     keys = Map.keys ordmap
     toTuple t = (ordmap Map.! t, (t, regmap Map.! t))
-    printTuple (T t, r) = t <> " = " <> "/" <> printRegEx r <> "/" <> ";"
+    printTuple (T t, r) = t <> " = " <> "/" <> printRegEx r <> "/" <> "."
     printTuple (TLit _, _) = error "Error: Cannot print a literal terminal rule."
 
 printGrammar :: Grammar NT T -> Text
@@ -284,7 +284,7 @@ printGrammar grammar =
     printSymbols = Text.unwords . fmap printSymbol
 
     printProduction (Production (NT nt) syms) =
-      nt <> " -> " <> printSymbols syms <> ";"
+      nt <> " -> " <> printSymbols syms <> "."
 
 parsePrinted :: DFALexerSpec Bytes Int T -> Bool
 parsePrinted spec =
