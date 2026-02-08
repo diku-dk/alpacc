@@ -41,27 +41,27 @@ The following grammar is found in
 [grammars/arithmetic.alp](grammars/arithmetic.alp).
 ```
 params {
-  lookback = 1;
-  lookahead = 1;
-};
+  lookback = 1.
+  lookahead = 1.
+}
 
-num = /-?[0-9]+/;
-var = /[a-z]+/;
-ignore = /\s|\n|\t|\r/;
+num = /-?[0-9]+/.
+var = /[a-z]+/.
+ignore = /\s|\n|\t|\r/.
 
-E0 -> E1 E0_;
-E0_ [Add] -> "+" E1 E0_;
-E0_ [Sub] -> "-" E1 E0_;
-E0_ [Empty] -> ;
+E0 -> E1 E0_.
+E0_ [Add] -> "+" E1 E0_.
+E0_ [Sub] -> "-" E1 E0_.
+E0_ [Empty] -> .
 
-E1 -> E2 E1_;
-E1_ [Mul] -> "*" E2 E1_;
-E1_ [Div] -> "/" E2 E1_;
-E1_ [Empty] -> ;
+E1 -> E2 E1_.
+E1_ [Mul] -> "*" E2 E1_.
+E1_ [Div] -> "/" E2 E1_.
+E1_ [Empty] -> .
 
-E2 [Parentheses] -> "(" E0 ")";
-E2 [Num] -> num;
-E2 [Var] -> var;
+E2 [Parentheses] -> "(" E0 ")".
+E2 [Num] -> num.
+E2 [Var] -> var.
 ```
 
 The grammar defines parameters which says the grammar needs a certain
