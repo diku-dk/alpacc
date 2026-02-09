@@ -7,13 +7,21 @@ import Alpacc.Generator.Analyzer
 import Alpacc.Generator.Cuda.Cudafy
 import Alpacc.Generator.Cuda.Lexer qualified as Lexer
 import Alpacc.Generator.Cuda.Parser qualified as Parser
+import Alpacc.Types
 import Data.FileEmbed
+import Data.List qualified as List
 import Data.String.Interpolate (i)
 import Data.Text (Text)
-import Data.Text qualified as Text
+import Data.Text qualified as Text hiding (Text)
 
 common :: Text
 common = $(embedStringFile "cuda/common.cu")
+
+generateTerminals :: UInt -> [Text] -> Text
+generateTerminals terminal_type terminal_names =
+  Text.unlines
+    [ cudafyEnum "terminal_t" terminal_type terminal_names
+    ]
 
 auxiliary :: Analyzer [Text] -> Text
 auxiliary analyzer =
@@ -22,7 +30,7 @@ auxiliary analyzer =
       Text.unlines
         [ Text.unlines (("// " <>) <$> meta analyzer),
           common,
-          cudafyEnum "terminal_t" terminal_type terminal_names,
+          generateTerminals terminal_type terminal_names,
           Lexer.generateLexer lexer,
           Text.pack
             [i|
@@ -47,7 +55,7 @@ int main(int32_t argc, char *argv[]) {
       Text.unlines
         [ Text.unlines (("// " <>) <$> meta analyzer),
           common,
-          cudafyEnum "terminal_t" terminal_type terminal_names,
+          generateTerminals terminal_type terminal_names,
           Parser.generateParser parser,
           Text.pack
             [i|
@@ -57,7 +65,7 @@ int main(int32_t argc, char *argv[]) {
       Text.unlines
         [ Text.unlines (("// " <>) <$> meta analyzer),
           common,
-          cudafyEnum "terminal_t" terminal_type terminal_names,
+          generateTerminals terminal_type terminal_names,
           Lexer.generateLexer lexer,
           Parser.generateParser parser,
           Text.pack
