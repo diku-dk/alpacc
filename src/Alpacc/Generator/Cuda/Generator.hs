@@ -9,7 +9,6 @@ import Alpacc.Generator.Cuda.Lexer qualified as Lexer
 import Alpacc.Generator.Cuda.Parser qualified as Parser
 import Alpacc.Types
 import Data.FileEmbed
-import Data.List qualified as List
 import Data.String.Interpolate (i)
 import Data.Text (Text)
 import Data.Text qualified as Text hiding (Text)
