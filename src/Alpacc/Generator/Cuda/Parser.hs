@@ -17,6 +17,10 @@ import Data.Text qualified as Text
 cudaParser :: Text
 cudaParser = $(embedStringFile "cuda/parser.cu")
 
+terminalCast :: (Cudafy a) => a -> RawString
+terminalCast a =
+  RawString $ "(terminal_t) " <> cudafy a
+
 generateParser :: Parser -> Text
 generateParser parser =
   (Text.strip . Text.pack)
@@ -25,10 +29,10 @@ using production_t = #{cudafy production_type};
 using bracket_t = #{cudafy bracket_type};
 const size_t Q = #{cudafy q};
 const size_t K = #{cudafy k};
-const terminal_t EMPTY_TERMINAL = #{cudafy empty_terminal};
+const terminal_t EMPTY_TERMINAL = #{cudafy $ terminalCast empty_terminal};
 const size_t NUMBER_OF_PRODUCTIONS = #{cudafy number_of_productions};
 const terminal_t PRODUCTION_TO_TERMINAL[NUMBER_OF_PRODUCTIONS] =
-  #{cudafy production_to_tertminal};
+  #{cudafy $ map terminalCast production_to_tertminal};
 const bool PRODUCTION_TO_TERMINAL_IS_VALID[NUMBER_OF_PRODUCTIONS] =
   #{cudafy production_to_tertminal_is_valid};
 const size_t PRODUCTION_TO_ARITY[NUMBER_OF_PRODUCTIONS] =
@@ -44,7 +48,7 @@ const size_t PRODUCTIONS[STACKS_SIZE] =
 const bool HASH_TABLE_IS_VALID[HASH_TABLE_SIZE] =
   #{cudafy hash_table_is_valid};
 const terminal_t HASH_TABLE_KEYS[HASH_TABLE_SIZE][Q + K] =
-  #{cudafy hash_table_keys};
+  #{cudafy $ map (map terminalCast) hash_table_keys};
 const size_t HASH_TABLE_STACKS_SPAN[HASH_TABLE_SIZE][2] =
   #{cudafy hash_table_stacks_span};
 const size_t HASH_TABLE_PRODUCTIONS_SPAN[HASH_TABLE_SIZE][2] =
