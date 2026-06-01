@@ -1,6 +1,7 @@
 module Alpacc.Test.Parser
   ( parserTests,
     parserTestsCompare,
+    generateParseableTokenSequence,
   )
 where
 
@@ -8,6 +9,7 @@ import Alpacc.CFG
 import Alpacc.Encode
 import Alpacc.Grammar
 import Alpacc.LLP
+import Alpacc.LL (derivableNLengths)
 import Alpacc.Test.Lexer (TestMode (..), randomSeed)
 import Alpacc.Util
 import Control.Monad
@@ -17,6 +19,7 @@ import Data.ByteString qualified as ByteString
 import Data.ByteString.Internal
 import Data.List (zip4)
 import Data.Maybe
+import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as Text
 import System.Random
@@ -84,6 +87,31 @@ instance Binary Outputs where
     results <- mapM (const get) [1 .. i]
     pure $ Outputs results
 
+-- | Generate a parseable token sequence using derivations from the grammar.
+-- Start with the start symbol and randomly choose productions until we
+-- derive a string of terminals of the desired length.
+generateParseableTokenSequence :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar (AugmentedNonterminal nt) (AugmentedTerminal t) -> [Unused t] -> [Unused t]
+generateParseableTokenSequence _ _ [] = []
+generateParseableTokenSequence len grammar terminals =
+  let gen = mkStdGen randomSeed
+      start_symbol = start grammar
+      production_map = toProductionsMap $ productions grammar
+      -- Get all derivations of length up to len from the start symbol
+      derivable = derivableNLengths (len + 1) grammar
+   in if Set.null derivable
+        then generateSingleLongTokenSequence len terminals
+        else
+          let derivableList = Set.toList derivable
+              validDerivations = filter ((== len) . length) derivableList
+           in if null validDerivations
+                then generateSingleLongTokenSequence len terminals
+                else
+                  let (idx, _) = randomR (0, length validDerivations - 1) gen
+                   in mapMaybe unaug $ validDerivations !! idx
+  where
+    unaug (AugmentedTerminal t) = Just t
+    unaug _ = Nothing
+
 -- | Generate a single random token sequence of given length.
 -- Returns an empty list if the terminals list is empty or length is 0.
 generateSingleLongTokenSequence :: Int -> [Unused T] -> [Unused T]
@@ -94,8 +122,8 @@ generateSingleLongTokenSequence len terminals =
       randomIndices = take len $ randomRs (0, numTerminals - 1) gen
    in map (terminals !!) randomIndices
 
-parserTests :: TestMode -> CFG -> Int -> Either Text (ByteString, ByteString)
-parserTests mode cfg n = do
+parserTests :: TestMode -> Bool -> CFG -> Int -> Either Text (ByteString, ByteString)
+parserTests mode parseable cfg n = do
   let q = paramsLookback $ cfgParams cfg
       k = paramsLookahead $ cfgParams cfg
   grammar <- cfgToGrammar cfg
@@ -118,7 +146,9 @@ parserTests mode cfg n = do
                 Outputs $ Output . fmap (fmap fromIntegral) . parse <$> comb
               )
         SingleLong ->
-          let singleSeq = generateSingleLongTokenSequence n validTerminals
+          let singleSeq = if parseable
+                            then generateParseableTokenSequence n (getGrammar grammar) validTerminals
+                            else generateSingleLongTokenSequence n validTerminals
               comb = [singleSeq]
            in ( Inputs $ Input . fmap (fromIntegral . encode' . AugmentedTerminal) <$> comb,
                 Outputs $ Output . fmap (fmap fromIntegral) . parse <$> comb

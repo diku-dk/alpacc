@@ -2,6 +2,7 @@ module Alpacc.Test.LexerParser
   ( lexerParserTests,
     parse,
     lexerParserTestsCompare,
+    generateParseableLexerParserInput,
   )
 where
 
@@ -9,6 +10,7 @@ import Alpacc.CFG
 import Alpacc.Encode
 import Alpacc.Grammar
 import Alpacc.LLP
+import Alpacc.LL (derivableNLengths)
 import Alpacc.Lexer.DFA
 import Alpacc.Lexer.FSA
 import Alpacc.Lexer.RegularExpression
@@ -143,6 +145,95 @@ parse cfg q k str = do
   where
     toTuple (Lexeme t m) = (t, m)
 
+-- | Generate a parseable lexer+parser input by simulating both together.
+-- This is trickier: we need to generate a string that both lexes correctly
+-- and parses correctly. Strategy: first generate a valid token sequence using
+-- grammar derivations, then generate byte sequences that lex to those tokens.
+generateParseableLexerParserInput ::
+  (Ord s, Ord nt, Ord t, Show nt, Show t) =>
+  Int ->
+  Set.Set Word8 ->
+  DFALexer Word8 (Set.Set s) T ->
+  Maybe T ->
+  Grammar (AugmentedNonterminal nt) (AugmentedTerminal t) ->
+  [Word8]
+generateParseableLexerParserInput len alpha dfa_lexer maybe_ignore grammar =
+  let gen = mkStdGen randomSeed
+      dfa = fsa dfa_lexer
+      trans = transitions' dfa
+      accept = accepting dfa
+      token_map_dfa = tokenMap dfa_lexer
+      produces_token_set = producesToken dfa_lexer
+      
+      -- Get terminals that can be produced by the lexer
+      lexer_terminals = Map.elems token_map_dfa
+      
+      -- Get valid terminals from the grammar
+      validGrammarTerminals =
+        mapMaybe unaug $
+          filter p $
+            terminals grammar
+      
+      p x = x /= AugmentedTerminal Unused && x /= LeftTurnstile && x /= RightTurnstile
+      unaug (AugmentedTerminal (Used t)) = Just t
+      unaug _ = Nothing
+      
+      -- Find terminals that are in both the lexer and the grammar
+      commonTerminals = filter (`elem` lexer_terminals) validGrammarTerminals
+      
+   in if null commonTerminals
+        then generateSingleLongLexerParserInput len alpha
+        else
+          -- Generate a sequence of tokens using grammar derivations
+          let derivable = derivableNLengths (len + 1) grammar
+              derivableList = Set.toList derivable
+              -- Filter to get derivations that use our common terminals
+              validDerivations = filter (\d -> all (`elem` map AugmentedTerminal commonTerminals) (take len d)) derivableList
+           in if null validDerivations
+                then generateSingleLongLexerParserInput len alpha
+                else
+                  -- Pick a random derivation
+                  let (idx, gen') = randomR (0, length validDerivations - 1) gen
+                      chosen = take len $ validDerivations !! idx
+                      tokens = mapMaybe unaug chosen
+                   in generateBytesForTokens gen' tokens
+  where
+    -- Generate byte sequences that will lex to the given token sequence
+    generateBytesForTokens _ [] = []
+    generateBytesForTokens g (tok:toks) =
+      let bytes = generateBytesForToken g tok
+       in bytes ++ generateBytesForTokens g toks
+    
+    -- Generate bytes that lex to a specific token
+    generateBytesForToken g target_token =
+      let dfa = fsa dfa_lexer
+          initial_state = initial dfa
+          trans = transitions' dfa
+          accept = accepting dfa
+          token_map_local = tokenMap dfa_lexer
+          produces_token_set = producesToken dfa_lexer
+          alphaList = Set.toList alpha
+       in simulateForToken g initial_state [] target_token
+      where
+        simulateForToken gen state acc target
+          | state `Set.member` accept,
+            Just tok <- Map.lookup state token_map_local,
+            tok == target = reverse acc
+          | otherwise =
+              let validSymbols = [sym | sym <- alphaList, Map.member (state, sym) trans]
+               in if null validSymbols
+                    then reverse acc
+                    else
+                      let (idx, gen') = randomR (0, length validSymbols - 1) gen
+                          nextSymbol = validSymbols !! idx
+                          nextState = trans Map.! (state, nextSymbol)
+                          -- Check if this transition produces our target token
+                          shouldStop = (nextState, nextSymbol) `Set.member` produces_token_set
+                                    && Map.lookup nextState token_map_local == Just target
+                       in if shouldStop
+                            then reverse (nextSymbol : acc)
+                            else simulateForToken gen' nextState (nextSymbol : acc) target
+
 -- | Generate a single random input of given length from the alphabet.
 -- Returns an empty list if the alphabet is empty or length is 0.
 generateSingleLongLexerParserInput :: Int -> Set.Set Word8 -> [Word8]
@@ -154,8 +245,8 @@ generateSingleLongLexerParserInput len alpha =
       randomIndices = take len $ randomRs (0, numChoices - 1) gen
    in map (alphaList !!) randomIndices
 
-lexerParserTests :: TestMode -> CFG -> Int -> Either Text (ByteString, ByteString)
-lexerParserTests mode cfg n = do
+lexerParserTests :: TestMode -> Bool -> CFG -> Int -> Either Text (ByteString, ByteString)
+lexerParserTests mode parseable cfg n = do
   let q = paramsLookback $ cfgParams cfg
       k = paramsLookahead $ cfgParams cfg
   spec <- cfgToDFALexerSpec cfg
@@ -173,7 +264,9 @@ lexerParserTests mode cfg n = do
           let comb = listProducts n $ Set.toList alpha
            in (toInputs comb, toOutputs q k encoder dfa maybe_ignore (getGrammar grammar) table comb)
         SingleLong ->
-          let singleInput = generateSingleLongLexerParserInput n alpha
+          let singleInput = if parseable
+                              then generateParseableLexerParserInput n alpha dfa maybe_ignore (getGrammar grammar)
+                              else generateSingleLongLexerParserInput n alpha
               comb = [singleInput]
            in (toInputs comb, toOutputs q k encoder dfa maybe_ignore (getGrammar grammar) table comb)
   pure

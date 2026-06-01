@@ -78,7 +78,8 @@ data TestGenerateParameters = TestGenerateParameters
     testGenerateOutput :: !(Maybe String),
     testGenerateLength :: !Int,
     testGenerateGenerator :: !Gen,
-    testGenerateMode :: !TestMode
+    testGenerateMode :: !TestMode,
+    testGenerateParseable :: !Bool
   }
   deriving (Show)
 
@@ -110,6 +111,13 @@ testModeParameter =
     SingleLong
     ( long "single-long"
         <> help "Generate a single long test instead of exhaustive tests."
+    )
+
+parseableParameter :: Parser Bool
+parseableParameter =
+  switch
+    ( long "parseable"
+        <> help "Generate a parseable string (only valid in single-long mode)."
     )
 
 lookbackParameter :: Parser Int
@@ -265,6 +273,7 @@ testGenerateParameters =
             <*> lengthParameter
             <*> generateParametar
             <*> testModeParameter
+            <*> parseableParameter
         )
 
 testCompareParameters :: Parser Command
@@ -407,15 +416,15 @@ mainTestGenerate params = do
 
   case testGenerateGenerator params of
     GenLexer -> do
-      (inputs, ouputs) <- eitherToIO $ lexerTests mode cfg len
+      (inputs, ouputs) <- eitherToIO $ lexerTests mode parseable cfg len
       ByteString.writeFile (name <> ".inputs") inputs
       ByteString.writeFile (name <> ".outputs") ouputs
     GenParser -> do
-      (inputs, ouputs) <- eitherToIO $ parserTests mode cfg len
+      (inputs, ouputs) <- eitherToIO $ parserTests mode parseable cfg len
       ByteString.writeFile (name <> ".inputs") inputs
       ByteString.writeFile (name <> ".outputs") ouputs
     GenBoth -> do
-      (inputs, ouputs) <- eitherToIO $ lexerParserTests mode cfg len
+      (inputs, ouputs) <- eitherToIO $ lexerParserTests mode parseable cfg len
       ByteString.writeFile (name <> ".inputs") inputs
       ByteString.writeFile (name <> ".outputs") ouputs
   where
@@ -423,6 +432,7 @@ mainTestGenerate params = do
     input = testGenerateInput params
     len = testGenerateLength params
     mode = testGenerateMode params
+    parseable = testGenerateParseable params
 
 mainTestCompare :: TestCompareParameters -> IO ()
 mainTestCompare params = do

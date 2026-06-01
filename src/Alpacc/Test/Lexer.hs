@@ -3,6 +3,7 @@ module Alpacc.Test.Lexer
     lexerTestsCompare,
     TestMode (..),
     randomSeed,
+    generateParseableInputFromDFA,
   )
 where
 
@@ -114,6 +115,32 @@ instance Binary Outputs where
     results <- mapM (const get) [1 .. i]
     pure $ Outputs results
 
+-- | Generate a parseable input by simulating the DFA.
+-- Starting from the initial state, randomly choose valid transitions
+-- until we reach the desired length and are in an accepting state.
+generateParseableInputFromDFA :: Ord s => Int -> Set.Set Word8 -> DFA Word8 (Set.Set s) -> [Word8]
+generateParseableInputFromDFA len alpha dfa =
+  let gen = mkStdGen randomSeed
+      initial_state = initial dfa
+      trans = transitions' dfa
+      accept = accepting dfa
+   in simulateDFA gen len initial_state []
+  where
+    simulateDFA _ 0 state acc
+      | state `Set.member` accept = reverse acc
+      | otherwise = reverse acc -- Best effort, return what we have
+    simulateDFA g n state acc =
+      let alphaList = Set.toList alpha
+          -- Get all valid next symbols from current state
+          validSymbols = [sym | sym <- alphaList, Map.member (state, sym) trans]
+       in if null validSymbols
+            then reverse acc -- Stuck, return what we have
+            else
+              let (idx, g') = randomR (0, length validSymbols - 1) g
+                  nextSymbol = validSymbols !! idx
+                  nextState = trans Map.! (state, nextSymbol)
+               in simulateDFA g' (n - 1) nextState (nextSymbol : acc)
+
 -- | Generate a single random input of given length from the alphabet.
 -- Returns an empty list if the alphabet is empty or length is 0.
 generateSingleLongInput :: Int -> Set.Set Word8 -> [Word8]
@@ -125,8 +152,8 @@ generateSingleLongInput len alpha =
       randomIndices = take len $ randomRs (0, numChoices - 1) gen
    in map (alphaList !!) randomIndices
 
-lexerTests :: TestMode -> CFG -> Int -> Either Text (ByteString, ByteString)
-lexerTests mode cfg k = do
+lexerTests :: TestMode -> Bool -> CFG -> Int -> Either Text (ByteString, ByteString)
+lexerTests mode parseable cfg k = do
   spec <- cfgToDFALexerSpec cfg
   let ts = Map.keys $ regexMap spec
       encoder = encodeTerminals (T "ignore") $ parsingTerminals ts
@@ -142,7 +169,9 @@ lexerTests mode cfg k = do
           let comb = listProducts k $ Set.toList alpha
            in (toInputs comb, toOutputs dfa ignore comb)
         SingleLong ->
-          let singleInput = generateSingleLongInput k alpha
+          let singleInput = if parseable
+                              then generateParseableInputFromDFA k alpha (fsa dfa)
+                              else generateSingleLongInput k alpha
            in (toInputs [singleInput], toOutputs dfa ignore [singleInput])
   pure
     ( ByteString.toStrict $ encode inputs,
