@@ -124,7 +124,7 @@ generateParseableTokenSequenceFast len grammar terminals =
       result = mapMaybe unaug derivedTerminals
    in if null result
         then generateSingleLongTokenSequence len terminals
-        else take len result ++ generateSingleLongTokenSequence (len - length result) terminals
+        else result
   where
     unaug (AugmentedTerminal t) = Just t
     unaug _ = Nothing
