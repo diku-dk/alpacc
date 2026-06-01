@@ -97,7 +97,7 @@ lengthParameter =
     auto
     ( long "length"
         <> short 'l'
-        <> help "The maximum length of the input(s)."
+        <> help "The maximum length of inputs (exhaustive mode) or exact length (single-long mode)."
         <> showDefault
         <> value 7
         <> metavar "INT"
