@@ -2,6 +2,7 @@ module Alpacc.Test.Lexer
   ( lexerTests,
     lexerTestsCompare,
     TestMode (..),
+    randomSeed,
   )
 where
 
@@ -24,6 +25,10 @@ import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as Text
 import System.Random
+
+-- | Seed used for reproducible random generation in test cases
+randomSeed :: Int
+randomSeed = 42
 
 -- | Test generation mode.
 -- 'Exhaustive' generates all possible input combinations up to the specified length.
@@ -114,8 +119,7 @@ instance Binary Outputs where
 generateSingleLongInput :: Int -> Set.Set Word8 -> [Word8]
 generateSingleLongInput _ alpha | Set.null alpha = []
 generateSingleLongInput len alpha =
-  let seed = 42  -- Fixed seed for reproducibility
-      gen = mkStdGen seed
+  let gen = mkStdGen randomSeed
       alphaList = Set.toList alpha
       numChoices = length alphaList
       randomIndices = take len $ randomRs (0, numChoices - 1) gen

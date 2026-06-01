@@ -12,7 +12,7 @@ import Alpacc.LLP
 import Alpacc.Lexer.DFA
 import Alpacc.Lexer.FSA
 import Alpacc.Lexer.RegularExpression
-import Alpacc.Test.Lexer (TestMode (..))
+import Alpacc.Test.Lexer (TestMode (..), randomSeed)
 import Alpacc.Util
 import Codec.Binary.UTF8.String (encodeChar)
 import Control.Monad
@@ -148,8 +148,7 @@ parse cfg q k str = do
 generateSingleLongLexerParserInput :: Int -> Set.Set Word8 -> [Word8]
 generateSingleLongLexerParserInput _ alpha | Set.null alpha = []
 generateSingleLongLexerParserInput len alpha =
-  let seed = 42  -- Fixed seed for reproducibility
-      gen = mkStdGen seed
+  let gen = mkStdGen randomSeed
       alphaList = Set.toList alpha
       numChoices = length alphaList
       randomIndices = take len $ randomRs (0, numChoices - 1) gen

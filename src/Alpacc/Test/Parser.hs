@@ -8,7 +8,7 @@ import Alpacc.CFG
 import Alpacc.Encode
 import Alpacc.Grammar
 import Alpacc.LLP
-import Alpacc.Test.Lexer (TestMode (..))
+import Alpacc.Test.Lexer (TestMode (..), randomSeed)
 import Alpacc.Util
 import Control.Monad
 import Data.Bifunctor
@@ -89,8 +89,7 @@ instance Binary Outputs where
 generateSingleLongTokenSequence :: Int -> [Unused T] -> [Unused T]
 generateSingleLongTokenSequence _ [] = []
 generateSingleLongTokenSequence len terminals =
-  let seed = 42  -- Fixed seed for reproducibility
-      gen = mkStdGen seed
+  let gen = mkStdGen randomSeed
       numTerminals = length terminals
       randomIndices = take len $ randomRs (0, numTerminals - 1) gen
    in map (terminals !!) randomIndices

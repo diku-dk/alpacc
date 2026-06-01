@@ -6,6 +6,7 @@ module Alpacc.Test
     parserTestsCompare,
     lexerParserTestsCompare,
     TestMode (..),
+    randomSeed,
   )
 where
 
