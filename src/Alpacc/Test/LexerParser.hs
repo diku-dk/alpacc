@@ -195,11 +195,19 @@ generateParseableLexerParserInput len alpha dfa_lexer maybe_ignore grammar =
                 then generateSingleLongLexerParserInput len alpha
                 else
                   -- Pick a random derivation
-                  let (idx, _) = randomR (0, length validDerivations - 1) gen
+                  let (idx, gen2) = randomR (0, length validDerivations - 1) gen
                       chosen = take len $ validDerivations !! idx
                       tokens = mapMaybe unaug chosen
-                      token_bytes_map = computeTokenBytesMap alpha dfa_lexer
-                   in concatMap (\tok -> Map.findWithDefault [] tok token_bytes_map) tokens
+                      maxExtra = max 1 (len `div` max 1 (length tokens))
+                      (_, bytesRev) =
+                        foldl
+                          ( \(g, acc) tok ->
+                              let (bs, g') = generateVariedTokenBytes g maxExtra tok alpha dfa_lexer
+                               in (g', bs : acc)
+                          )
+                          (gen2, [])
+                          tokens
+                   in concat (reverse bytesRev)
 
 
 -- | Compute the shortest byte sequence that lexes to each token in the DFA.
@@ -240,6 +248,64 @@ computeTokenBytesMap alpha dfa_lexer = go [(initial_state, [])] Set.empty Map.em
                 , not ((state, sym) `Set.member` produces)
                 ]
           in go (queue ++ neighbors) visited' result'
+
+-- | Generate a varied-length byte sequence that the DFA lexer will lex as the
+-- given token.  The minimum (shortest) path to the accepting state is taken as
+-- a baseline; at each intermediate state that has self-loop transitions (i.e.
+-- transitions on some symbol that lead back to the same state) extra characters
+-- are randomly inserted.  This produces non-trivial token values such as
+-- non-empty strings, multi-digit numbers, etc.
+--
+-- The @maxExtra@ parameter bounds the total number of inserted characters so
+-- the function always terminates.  The updated generator is also returned so
+-- callers can thread randomness across multiple tokens.
+generateVariedTokenBytes ::
+  (Ord s, RandomGen g) =>
+  g ->
+  Int ->
+  T ->
+  Set.Set Word8 ->
+  DFALexer Word8 s T ->
+  ([Word8], g)
+generateVariedTokenBytes gen maxExtra tok alpha dfa_lexer =
+  let token_bytes_map = computeTokenBytesMap alpha dfa_lexer
+      min_bytes = Map.findWithDefault [] tok token_bytes_map
+      dfa_fsa = fsa dfa_lexer
+      trans = transitions' dfa_fsa
+      produces = producesToken dfa_lexer
+      syms = Set.toList alpha
+      -- Self-loop symbols at a state: non-producing transitions back to itself.
+      selfLoops state =
+        [ sym
+        | sym <- syms
+        , Just next <- [Map.lookup (state, sym) trans]
+        , not ((state, sym) `Set.member` produces)
+        , next == state
+        ]
+      initial_state = initial dfa_fsa
+      -- Walk the minimum path, carrying the current DFA state.  At each step,
+      -- optionally insert self-loop characters before advancing.
+      go g _ _ acc [] = (reverse acc, g)
+      go g state extraSoFar acc (sym : rest) =
+        let loops = selfLoops state
+            (g', extra) = addLoops g extraSoFar loops maxExtra
+            -- Self-loop chars leave us in the same state; then take sym.
+            next_state = Map.findWithDefault state (state, sym) trans
+            new_acc = sym : (reverse extra ++ acc)
+         in go g' next_state (extraSoFar + length extra) new_acc rest
+      addLoops g count _ maxE | count >= maxE = (g, [])
+      addLoops g count loops maxE
+        | null loops = (g, [])
+        | otherwise =
+            let (r, g') = randomR (0 :: Int, 2) g
+             in if r == 0
+                  then
+                    let (idx, g'') = randomR (0, length loops - 1) g'
+                        sym = loops !! idx
+                        (g''', more) = addLoops g'' (count + 1) loops maxE
+                     in (g''', sym : more)
+                  else (g', [])
+   in go gen initial_state 0 [] min_bytes
 
 -- | Generate a single random input of given length from the alphabet.
 -- Returns an empty list if the alphabet is empty or length is 0.
@@ -290,14 +356,24 @@ generateParseableLexerParserInputFast len alpha dfa_lexer maybe_ignore grammar =
         then generateSingleLongLexerParserInput len alpha
         else
           -- Generate a random derivation using the fast DFS approach
-          let (_, derivedTerminals) = generateRandomDerivation gen len grammar
+          let (gen2, derivedTerminals) = generateRandomDerivation gen len grammar
               -- Extract tokens that are common between lexer and grammar
               tokens = mapMaybe unaug derivedTerminals
            in if null tokens
                 then generateSingleLongLexerParserInput len alpha
                 else
-                  let token_bytes_map = computeTokenBytesMap alpha dfa_lexer
-                   in concatMap (\tok -> Map.findWithDefault [] tok token_bytes_map) tokens
+                  -- Generate varied bytes for each token, threading the generator
+                  -- so each occurrence gets different content (e.g. non-empty strings).
+                  let maxExtra = max 1 (len `div` max 1 (length tokens))
+                      (_, bytesRev) =
+                        foldl
+                          ( \(g, acc) tok ->
+                              let (bs, g') = generateVariedTokenBytes g maxExtra tok alpha dfa_lexer
+                               in (g', bs : acc)
+                          )
+                          (gen2, [])
+                          tokens
+                   in concat (reverse bytesRev)
 
 lexerParserTests :: TestMode -> Bool -> CFG -> Int -> Either Text (ByteString, ByteString)
 lexerParserTests mode parseable cfg n = do

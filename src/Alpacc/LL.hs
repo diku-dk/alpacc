@@ -732,34 +732,43 @@ generateRandomDerivation gen targetLen grammar =
                   chosen =
                     if shouldExpand
                       then chooseExpanding g rhss
-                      else chooseContracting g rhss
+                      else chooseContracting g remaining rhss
                   (g', rhs) = chosen
                   newSymbols = rhs ++ syms
                in derive g' termCount newSymbols
 
-    -- Choose a production that can expand (prefers recursive ones)
+    -- Choose a production, preferring recursive ones only half the time so
+    -- that leaf productions (e.g. string/number/null) are selected regularly.
+    -- This prevents unbounded nesting from consuming the entire budget before
+    -- sibling nonterminals (e.g. FS1/EL1) have a chance to expand.
     chooseExpanding g rhss =
       let recursive = canDeriveRecursively grammar
-          -- Prefer productions that contain recursive nonterminals
           expandable = filter (hasRecursiveNT recursive) rhss
-          candidates = if null expandable then rhss else expandable
-          (idx, g') = randomR (0, length candidates - 1) g
-       in (g', candidates !! idx)
+          (r, g') = randomR (0 :: Int, 1) g
+          useExpand = r == 1
+          candidates = if null expandable || not useExpand then rhss else expandable
+          (idx, g'') = randomR (0, length candidates - 1) g'
+       in (g'', candidates !! idx)
 
-    -- Choose a production that contracts (minimizes terminals)
-    chooseContracting g rhss =
+    -- Choose a production that fits within the remaining budget, picking
+    -- randomly among all fitting candidates rather than always the minimum.
+    -- This allows multi-element arrays/objects to be generated when budget
+    -- permits, instead of always collapsing to epsilon.
+    chooseContracting g remaining rhss =
       let minCounts = minTerminalCounts grammar
-          -- Compute terminal counts for each production
           countsWithRhs = [(rhsCount minCounts rhs, rhs) | rhs <- rhss]
-          -- Filter to those with known counts
           validCounts = [(c, rhs) | (Just c, rhs) <- countsWithRhs]
-          -- If we have valid counts, choose minimum; otherwise choose randomly
+          -- Prefer productions that fit within the remaining budget; fall back
+          -- to the minimum-count production(s) if nothing fits.
+          fittingCounts = filter (\(c, _) -> c <= remaining) validCounts
           candidates =
-            if null validCounts
-              then rhss
-              else
-                let minC = minimum [c | (c, _) <- validCounts]
-                 in [rhs | (c, rhs) <- validCounts, c == minC]
+            if not (null fittingCounts)
+              then map snd fittingCounts
+              else if not (null validCounts)
+                then
+                  let minC = minimum [c | (c, _) <- validCounts]
+                   in [rhs | (c, rhs) <- validCounts, c == minC]
+              else rhss
           (idx, g') = randomR (0, length candidates - 1) g
        in (g', candidates !! idx)
 
