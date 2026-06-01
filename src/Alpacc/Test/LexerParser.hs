@@ -150,23 +150,22 @@ parse cfg q k str = do
 -- and parses correctly. Strategy: first generate a valid token sequence using
 -- grammar derivations, then generate byte sequences that lex to those tokens.
 generateParseableLexerParserInput ::
-  (Ord s, Ord nt, Ord t, Show nt, Show t) =>
+  (Ord s, Ord nt, Show nt) =>
   Int ->
   Set.Set Word8 ->
-  DFALexer Word8 (Set.Set s) T ->
+  DFALexer Word8 s T ->
   Maybe T ->
-  Grammar (AugmentedNonterminal nt) (AugmentedTerminal t) ->
+  Grammar (AugmentedNonterminal (Symbol nt T)) (AugmentedTerminal (Unused T)) ->
   [Word8]
 generateParseableLexerParserInput len alpha dfa_lexer maybe_ignore grammar =
   let gen = mkStdGen randomSeed
-      dfa = fsa dfa_lexer
-      trans = transitions' dfa
-      accept = accepting dfa
       token_map_dfa = tokenMap dfa_lexer
-      produces_token_set = producesToken dfa_lexer
       
       -- Get terminals that can be produced by the lexer
-      lexer_terminals = Map.elems token_map_dfa
+      all_lexer_terminals = Map.elems token_map_dfa
+      lexer_terminals = case maybe_ignore of
+        Just ignore -> filter (/= ignore) all_lexer_terminals
+        Nothing -> all_lexer_terminals
       
       -- Get valid terminals from the grammar
       validGrammarTerminals =
@@ -180,6 +179,8 @@ generateParseableLexerParserInput len alpha dfa_lexer maybe_ignore grammar =
       
       -- Find terminals that are in both the lexer and the grammar
       commonTerminals = filter (`elem` lexer_terminals) validGrammarTerminals
+      commonTerminalsSet :: Set.Set (AugmentedTerminal (Unused T))
+      commonTerminalsSet = Set.fromList $ map (AugmentedTerminal . Used) commonTerminals
       
    in if null commonTerminals
         then generateSingleLongLexerParserInput len alpha
@@ -188,14 +189,14 @@ generateParseableLexerParserInput len alpha dfa_lexer maybe_ignore grammar =
           let derivable = derivableNLengths (len + 1) grammar
               derivableList = Set.toList derivable
               -- Filter to get derivations that use our common terminals
-              validDerivations = filter (\d -> all (`elem` map AugmentedTerminal commonTerminals) (take len d)) derivableList
+              validDerivations = filter (\d -> all (`Set.member` commonTerminalsSet) (take len d)) derivableList
            in if null validDerivations
                 then generateSingleLongLexerParserInput len alpha
                 else
                   -- Pick a random derivation
                   let (idx, gen') = randomR (0, length validDerivations - 1) gen
                       chosen = take len $ validDerivations !! idx
-                      tokens = mapMaybe unaug chosen
+                      tokens = mapMaybe (unaug >=> Just) chosen
                    in generateBytesForTokens gen' tokens
   where
     -- Generate byte sequences that will lex to the given token sequence
@@ -206,33 +207,33 @@ generateParseableLexerParserInput len alpha dfa_lexer maybe_ignore grammar =
     
     -- Generate bytes that lex to a specific token
     generateBytesForToken g target_token =
-      let dfa = fsa dfa_lexer
-          initial_state = initial dfa
-          trans = transitions' dfa
-          accept = accepting dfa
+      let dfa_local = fsa dfa_lexer
+          initial_state_local = initial dfa_local
+          trans_local = transitions' dfa_local
+          accept_local = accepting dfa_local
           token_map_local = tokenMap dfa_lexer
-          produces_token_set = producesToken dfa_lexer
-          alphaList = Set.toList alpha
-       in simulateForToken g initial_state [] target_token
-      where
-        simulateForToken gen state acc target
-          | state `Set.member` accept,
-            Just tok <- Map.lookup state token_map_local,
-            tok == target = reverse acc
-          | otherwise =
-              let validSymbols = [sym | sym <- alphaList, Map.member (state, sym) trans]
-               in if null validSymbols
-                    then reverse acc
-                    else
-                      let (idx, gen') = randomR (0, length validSymbols - 1) gen
-                          nextSymbol = validSymbols !! idx
-                          nextState = trans Map.! (state, nextSymbol)
-                          -- Check if this transition produces our target token
-                          shouldStop = (nextState, nextSymbol) `Set.member` produces_token_set
-                                    && Map.lookup nextState token_map_local == Just target
-                       in if shouldStop
-                            then reverse (nextSymbol : acc)
-                            else simulateForToken gen' nextState (nextSymbol : acc) target
+          produces_token_set_local = producesToken dfa_lexer
+          alphaList_local = Set.toList alpha
+          
+          simulateForToken gen state acc target
+            | state `Set.member` accept_local,
+              Just tok <- Map.lookup state token_map_local,
+              tok == target = reverse acc
+            | otherwise =
+                let validSymbols = [sym | sym <- alphaList_local, Map.member (state, sym) trans_local]
+                 in if null validSymbols
+                      then reverse acc
+                      else
+                        let (idx, gen') = randomR (0, length validSymbols - 1) gen
+                            nextSymbol = validSymbols !! idx
+                            nextState = trans_local Map.! (state, nextSymbol)
+                            -- Check if this transition produces our target token
+                            shouldStop = (nextState, nextSymbol) `Set.member` produces_token_set_local
+                                      && Map.lookup nextState token_map_local == Just target
+                         in if shouldStop
+                              then reverse (nextSymbol : acc)
+                              else simulateForToken gen' nextState (nextSymbol : acc) target
+       in simulateForToken g initial_state_local [] target_token
 
 -- | Generate a single random input of given length from the alphabet.
 -- Returns an empty list if the alphabet is empty or length is 0.

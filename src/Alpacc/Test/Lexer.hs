@@ -118,28 +118,28 @@ instance Binary Outputs where
 -- | Generate a parseable input by simulating the DFA.
 -- Starting from the initial state, randomly choose valid transitions
 -- until we reach the desired length and are in an accepting state.
-generateParseableInputFromDFA :: Ord s => Int -> Set.Set Word8 -> DFA Word8 (Set.Set s) -> [Word8]
+generateParseableInputFromDFA :: (Ord s, Ord t) => Int -> Set.Set t -> DFA t s -> [t]
 generateParseableInputFromDFA len alpha dfa =
   let gen = mkStdGen randomSeed
       initial_state = initial dfa
       trans = transitions' dfa
       accept = accepting dfa
+      alphaList = Set.toList alpha
+      
+      simulateDFA _ 0 state acc
+        | state `Set.member` accept = reverse acc
+        | otherwise = reverse acc -- Best effort, return what we have
+      simulateDFA g n state acc =
+        -- Get all valid next symbols from current state
+        let validSymbols = [sym | sym <- alphaList, Map.member (state, sym) trans]
+         in if null validSymbols
+              then reverse acc -- Stuck, return what we have
+              else
+                let (idx, g') = randomR (0, length validSymbols - 1) g
+                    nextSymbol = validSymbols !! idx
+                    nextState = trans Map.! (state, nextSymbol)
+                 in simulateDFA g' (n - 1) nextState (nextSymbol : acc)
    in simulateDFA gen len initial_state []
-  where
-    simulateDFA _ 0 state acc
-      | state `Set.member` accept = reverse acc
-      | otherwise = reverse acc -- Best effort, return what we have
-    simulateDFA g n state acc =
-      let alphaList = Set.toList alpha
-          -- Get all valid next symbols from current state
-          validSymbols = [sym | sym <- alphaList, Map.member (state, sym) trans]
-       in if null validSymbols
-            then reverse acc -- Stuck, return what we have
-            else
-              let (idx, g') = randomR (0, length validSymbols - 1) g
-                  nextSymbol = validSymbols !! idx
-                  nextState = trans Map.! (state, nextSymbol)
-               in simulateDFA g' (n - 1) nextState (nextSymbol : acc)
 
 -- | Generate a single random input of given length from the alphabet.
 -- Returns an empty list if the alphabet is empty or length is 0.

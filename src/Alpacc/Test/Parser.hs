@@ -90,7 +90,7 @@ instance Binary Outputs where
 -- | Generate a parseable token sequence using derivations from the grammar.
 -- Start with the start symbol and randomly choose productions until we
 -- derive a string of terminals of the desired length.
-generateParseableTokenSequence :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar (AugmentedNonterminal nt) (AugmentedTerminal t) -> [Unused t] -> [Unused t]
+generateParseableTokenSequence :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar (AugmentedNonterminal nt) (AugmentedTerminal t) -> [t] -> [t]
 generateParseableTokenSequence _ _ [] = []
 generateParseableTokenSequence len grammar terminals =
   let gen = mkStdGen randomSeed
@@ -114,7 +114,7 @@ generateParseableTokenSequence len grammar terminals =
 
 -- | Generate a single random token sequence of given length.
 -- Returns an empty list if the terminals list is empty or length is 0.
-generateSingleLongTokenSequence :: Int -> [Unused T] -> [Unused T]
+generateSingleLongTokenSequence :: Int -> [a] -> [a]
 generateSingleLongTokenSequence _ [] = []
 generateSingleLongTokenSequence len terminals =
   let gen = mkStdGen randomSeed
