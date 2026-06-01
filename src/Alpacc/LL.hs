@@ -669,7 +669,6 @@ minTerminalCounts grammar = fixedPointIterate (==) update initial
 
     -- Compute the terminal count for a right-hand side
     -- Returns Nothing if any nonterminal in the RHS has unknown count
-    rhsTerminalCount :: Map nt Int -> [Symbol nt t] -> Maybe Int
     rhsTerminalCount _ [] = Just 0
     rhsTerminalCount counts (Terminal _ : syms) = (1 +) <$> rhsTerminalCount counts syms
     rhsTerminalCount counts (Nonterminal nt : syms) = do
@@ -694,7 +693,6 @@ canDeriveRecursively grammar = fixedPointIterate (==) update Set.empty
         ]
 
     -- Check if a RHS can reach a specific nonterminal (directly or through recursive nonterminals)
-    canReachRecursive :: Set nt -> nt -> [Symbol nt t] -> Bool
     canReachRecursive _ _ [] = False
     canReachRecursive recursive target (Terminal _ : syms) = canReachRecursive recursive target syms
     canReachRecursive recursive target (Nonterminal nt : syms)
@@ -720,7 +718,6 @@ generateRandomDerivation gen targetLen grammar =
       initialSymbols = [Nonterminal $ start grammar]
    in derive gen 0 initialSymbols
   where
-    derive :: (RandomGen g) => g -> Int -> [Symbol nt t] -> (g, [t])
     derive g termCount [] = (g, [])
     derive g termCount (Terminal t : syms) =
       let (g', rest) = derive g (termCount + 1) syms
@@ -745,7 +742,6 @@ generateRandomDerivation gen targetLen grammar =
                in derive g' termCount newSymbols
 
     -- Choose a production that can expand (prefers recursive ones)
-    chooseExpanding :: (RandomGen g) => g -> [[Symbol nt t]] -> (g, [Symbol nt t])
     chooseExpanding g rhss =
       let recursive = canDeriveRecursively grammar
           -- Prefer productions that contain recursive nonterminals
@@ -755,7 +751,6 @@ generateRandomDerivation gen targetLen grammar =
        in (g', candidates !! idx)
 
     -- Choose a production that contracts (minimizes terminals)
-    chooseContracting :: (RandomGen g) => g -> [[Symbol nt t]] -> (g, [Symbol nt t])
     chooseContracting g rhss =
       let minCounts = minTerminalCounts grammar
           -- Compute terminal counts for each production
@@ -773,11 +768,9 @@ generateRandomDerivation gen targetLen grammar =
        in (g', candidates !! idx)
 
     -- Check if a RHS contains a recursive nonterminal
-    hasRecursiveNT :: Set nt -> [Symbol nt t] -> Bool
     hasRecursiveNT rec = any (\sym -> case sym of Nonterminal nt -> nt `Set.member` rec; _ -> False)
 
     -- Compute terminal count for a RHS
-    rhsCount :: Map nt Int -> [Symbol nt t] -> Maybe Int
     rhsCount _ [] = Just 0
     rhsCount counts (Terminal _ : syms) = (1 +) <$> rhsCount counts syms
     rhsCount counts (Nonterminal nt : syms) = do
