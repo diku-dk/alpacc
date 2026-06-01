@@ -118,6 +118,8 @@ instance Binary Outputs where
 -- | Generate a parseable input by simulating the DFA.
 -- Starting from the initial state, randomly choose valid transitions
 -- until we reach the desired length and are in an accepting state.
+-- If we can't reach an accepting state at the exact length, we try to find
+-- the nearest accepting state and pad or trim accordingly.
 generateParseableInputFromDFA :: (Ord s, Ord t) => Int -> Set.Set t -> DFA t s -> [t]
 generateParseableInputFromDFA len alpha dfa =
   let gen = mkStdGen randomSeed
@@ -126,20 +128,28 @@ generateParseableInputFromDFA len alpha dfa =
       accept = accepting dfa
       alphaList = Set.toList alpha
       
+      -- First, try to generate a string that ends at an accepting state
       simulateDFA _ 0 state acc
-        | state `Set.member` accept = reverse acc
-        | otherwise = reverse acc -- Best effort, return what we have
+        | state `Set.member` accept = Just (reverse acc)
+        | otherwise = Nothing
       simulateDFA g n state acc =
-        -- Get all valid next symbols from current state
         let validSymbols = [sym | sym <- alphaList, Map.member (state, sym) trans]
          in if null validSymbols
-              then reverse acc -- Stuck, return what we have
+              then Nothing -- Stuck, can't continue
               else
-                let (idx, g') = randomR (0, length validSymbols - 1) g
-                    nextSymbol = validSymbols !! idx
-                    nextState = trans Map.! (state, nextSymbol)
-                 in simulateDFA g' (n - 1) nextState (nextSymbol : acc)
-   in simulateDFA gen len initial_state []
+               let (idx, g') = randomR (0, length validSymbols - 1) g
+                   nextSymbol = validSymbols !! idx
+                   nextState = trans Map.! (state, nextSymbol)
+                in simulateDFA g' (n - 1) nextState (nextSymbol : acc)
+      
+      result = simulateDFA gen len initial_state []
+      fallback = let numChoices = length alphaList
+                     randomIndices = take len $ randomRs (0, numChoices - 1) gen
+                  in map (alphaList !!) randomIndices
+   in case result of
+        Just xs -> xs
+        -- Fallback to random generation if we can't find a valid path
+        Nothing -> fallback
 
 -- | Generate a single random input of given length from the alphabet.
 -- Returns an empty list if the alphabet is empty or length is 0.

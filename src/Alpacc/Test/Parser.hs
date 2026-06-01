@@ -94,10 +94,9 @@ generateParseableTokenSequence :: (Ord nt, Ord t, Show nt, Show t) => Int -> Gra
 generateParseableTokenSequence _ _ [] = []
 generateParseableTokenSequence len grammar terminals =
   let gen = mkStdGen randomSeed
-      start_symbol = start grammar
-      production_map = toProductionsMap $ productions grammar
       -- Get all derivations of length up to len from the start symbol
-      derivable = derivableNLengths (len + 1) grammar
+      -- We use len to ensure we get all derivations up to and including length len
+      derivable = derivableNLengths len grammar
    in if Set.null derivable
         then generateSingleLongTokenSequence len terminals
         else
@@ -118,8 +117,8 @@ generateSingleLongTokenSequence :: Int -> [a] -> [a]
 generateSingleLongTokenSequence _ [] = []
 generateSingleLongTokenSequence len terminals =
   let gen = mkStdGen randomSeed
-      numTerminals = length terminals
-      randomIndices = take len $ randomRs (0, numTerminals - 1) gen
+      numTerms = length terminals
+      randomIndices = take len $ randomRs (0, numTerms - 1) gen
    in map (terminals !!) randomIndices
 
 parserTests :: TestMode -> Bool -> CFG -> Int -> Either Text (ByteString, ByteString)
