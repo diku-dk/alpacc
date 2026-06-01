@@ -2,6 +2,7 @@ module Alpacc.Test.Parser
   ( parserTests,
     parserTestsCompare,
     generateParseableTokenSequence,
+    generateParseableTokenSequenceFast,
   )
 where
 
@@ -9,7 +10,7 @@ import Alpacc.CFG
 import Alpacc.Encode
 import Alpacc.Grammar
 import Alpacc.LLP
-import Alpacc.LL (derivableNLengths)
+import Alpacc.LL (derivableNLengths, generateRandomDerivation)
 import Alpacc.Test.Lexer (TestMode (..), randomSeed)
 import Alpacc.Util
 import Control.Monad
@@ -111,6 +112,23 @@ generateParseableTokenSequence len grammar terminals =
     unaug (AugmentedTerminal t) = Just t
     unaug _ = Nothing
 
+-- | Fast version of generateParseableTokenSequence using the new DFS-based approach.
+-- This avoids enumerating all derivations and instead generates one randomly using
+-- a smart strategy that switches between expansion and convergence.
+generateParseableTokenSequenceFast :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar (AugmentedNonterminal nt) (AugmentedTerminal t) -> [t] -> [t]
+generateParseableTokenSequenceFast _ _ [] = []
+generateParseableTokenSequenceFast len grammar terminals =
+  let gen = mkStdGen randomSeed
+      (_, derivedTerminals) = generateRandomDerivation gen len grammar
+      -- Filter out augmented terminals
+      result = mapMaybe unaug $ map AugmentedTerminal derivedTerminals
+   in if null result
+        then generateSingleLongTokenSequence len terminals
+        else take len result ++ generateSingleLongTokenSequence (len - length result) terminals
+  where
+    unaug (AugmentedTerminal t) = Just t
+    unaug _ = Nothing
+
 -- | Generate a single random token sequence of given length.
 -- Returns an empty list if the terminals list is empty or length is 0.
 generateSingleLongTokenSequence :: Int -> [a] -> [a]
@@ -146,7 +164,9 @@ parserTests mode parseable cfg n = do
               )
         SingleLong ->
           let singleSeq = if parseable
-                            then generateParseableTokenSequence n (getGrammar grammar) validTerminals
+                            then if n > 5
+                                   then generateParseableTokenSequenceFast n (getGrammar grammar) validTerminals
+                                   else generateParseableTokenSequence n (getGrammar grammar) validTerminals
                             else generateSingleLongTokenSequence n validTerminals
               comb = [singleSeq]
            in ( Inputs $ Input . fmap (fromIntegral . encode' . AugmentedTerminal) <$> comb,
