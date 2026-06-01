@@ -23,6 +23,9 @@ module Alpacc.LL
     firstMap,
     truncatedProduct,
     llTableM,
+    minTerminalCounts,
+    canDeriveRecursively,
+    generateRandomDerivation,
   )
 where
 
@@ -46,6 +49,7 @@ import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Tuple.Extra (both)
 import GHC.Generics
+import System.Random (RandomGen, randomR)
 import Prelude hiding (last)
 
 derivableNLengths :: (Ord t, Ord nt, Show nt, Show t) => Int -> Grammar nt t -> Set [t]
@@ -641,3 +645,142 @@ llParse k grammar = parse
       parse (input, symbols production ++ ys, index : parsed)
     parse ([], [], parsed) = Just ([], [], reverse parsed)
     parse (_, _, _) = Nothing
+
+-- | Compute the minimum number of terminals that can be derived from each nonterminal.
+-- Returns a map from nonterminal to minimum terminal count.
+-- If a nonterminal can derive epsilon (empty string), its count is 0.
+-- If a nonterminal cannot derive any terminal string, it's not in the map.
+minTerminalCounts :: (Ord nt, Ord t) => Grammar nt t -> Map nt Int
+minTerminalCounts grammar = fixedPointIterate (==) update initial
+  where
+    prod_map = toProductionsMap $ productions grammar
+    initial = Map.empty
+
+    -- Update the map by computing minimum counts for all nonterminals
+    update counts =
+      Map.fromList
+        [ (nt, minCount)
+          | nt <- nonterminals grammar,
+            let rhss = Map.findWithDefault [] nt prod_map,
+            let counts_for_rhs = mapMaybe (rhsTerminalCount counts) rhss,
+            not (null counts_for_rhs),
+            let minCount = minimum counts_for_rhs
+        ]
+
+    -- Compute the terminal count for a right-hand side
+    -- Returns Nothing if any nonterminal in the RHS has unknown count
+    rhsTerminalCount :: Map nt Int -> [Symbol nt t] -> Maybe Int
+    rhsTerminalCount _ [] = Just 0
+    rhsTerminalCount counts (Terminal _ : syms) = (1 +) <$> rhsTerminalCount counts syms
+    rhsTerminalCount counts (Nonterminal nt : syms) = do
+      ntCount <- Map.lookup nt counts
+      restCount <- rhsTerminalCount counts syms
+      return (ntCount + restCount)
+
+-- | Determine which nonterminals can derive recursively (i.e., can produce infinite derivations).
+-- A nonterminal can derive recursively if it can appear in its own derivation.
+canDeriveRecursively :: (Ord nt, Ord t) => Grammar nt t -> Set nt
+canDeriveRecursively grammar = fixedPointIterate (==) update Set.empty
+  where
+    prod_map = toProductionsMap $ productions grammar
+
+    -- Update the set by finding nonterminals that can derive themselves
+    update recursive =
+      Set.fromList
+        [ nt
+          | nt <- nonterminals grammar,
+            let rhss = Map.findWithDefault [] nt prod_map,
+            any (canReachRecursive recursive nt) rhss
+        ]
+
+    -- Check if a RHS can reach a specific nonterminal (directly or through recursive nonterminals)
+    canReachRecursive :: Set nt -> nt -> [Symbol nt t] -> Bool
+    canReachRecursive _ _ [] = False
+    canReachRecursive recursive target (Terminal _ : syms) = canReachRecursive recursive target syms
+    canReachRecursive recursive target (Nonterminal nt : syms)
+      | nt == target = True
+      | nt `Set.member` recursive = True
+      | otherwise = canReachRecursive recursive target syms
+
+-- | Generate a random derivation of a target length using a smart strategy.
+-- This function switches between expanding (choosing productions that can recurse)
+-- and contracting (choosing productions that minimize terminal count) based on
+-- the current length vs. target length.
+-- Returns the generated terminal sequence.
+generateRandomDerivation ::
+  (RandomGen g, Ord nt, Ord t, Show nt, Show t) =>
+  g ->
+  Int ->
+  Grammar nt t ->
+  (g, [t])
+generateRandomDerivation gen targetLen grammar =
+  let minCounts = minTerminalCounts grammar
+      recursive = canDeriveRecursively grammar
+      prod_map = toProductionsMap $ productions grammar
+      initialSymbols = [Nonterminal $ start grammar]
+   in derive gen 0 initialSymbols
+  where
+    derive :: (RandomGen g) => g -> Int -> [Symbol nt t] -> (g, [t])
+    derive g termCount [] = (g, [])
+    derive g termCount (Terminal t : syms) =
+      let (g', rest) = derive g (termCount + 1) syms
+       in (g', t : rest)
+    derive g termCount (Nonterminal nt : syms) =
+      let prod_map = toProductionsMap $ productions grammar
+          minCounts = minTerminalCounts grammar
+          recursive = canDeriveRecursively grammar
+          rhss = Map.findWithDefault [] nt prod_map
+       in if null rhss
+            then derive g termCount syms
+            else
+              let remaining = targetLen - termCount
+                  -- Choose production based on remaining length
+                  shouldExpand = remaining > 5 && nt `Set.member` recursive
+                  chosen =
+                    if shouldExpand
+                      then chooseExpanding g rhss
+                      else chooseContracting g rhss
+                  (g', rhs) = chosen
+                  newSymbols = rhs ++ syms
+               in derive g' termCount newSymbols
+
+    -- Choose a production that can expand (prefers recursive ones)
+    chooseExpanding :: (RandomGen g) => g -> [[Symbol nt t]] -> (g, [Symbol nt t])
+    chooseExpanding g rhss =
+      let recursive = canDeriveRecursively grammar
+          -- Prefer productions that contain recursive nonterminals
+          expandable = filter (hasRecursiveNT recursive) rhss
+          candidates = if null expandable then rhss else expandable
+          (idx, g') = randomR (0, length candidates - 1) g
+       in (g', candidates !! idx)
+
+    -- Choose a production that contracts (minimizes terminals)
+    chooseContracting :: (RandomGen g) => g -> [[Symbol nt t]] -> (g, [Symbol nt t])
+    chooseContracting g rhss =
+      let minCounts = minTerminalCounts grammar
+          -- Compute terminal counts for each production
+          countsWithRhs = [(rhsCount minCounts rhs, rhs) | rhs <- rhss]
+          -- Filter to those with known counts
+          validCounts = [(c, rhs) | (Just c, rhs) <- countsWithRhs]
+          -- If we have valid counts, choose minimum; otherwise choose randomly
+          candidates =
+            if null validCounts
+              then rhss
+              else
+                let minC = minimum [c | (c, _) <- validCounts]
+                 in [rhs | (c, rhs) <- validCounts, c == minC]
+          (idx, g') = randomR (0, length candidates - 1) g
+       in (g', candidates !! idx)
+
+    -- Check if a RHS contains a recursive nonterminal
+    hasRecursiveNT :: Set nt -> [Symbol nt t] -> Bool
+    hasRecursiveNT rec = any (\sym -> case sym of Nonterminal nt -> nt `Set.member` rec; _ -> False)
+
+    -- Compute terminal count for a RHS
+    rhsCount :: Map nt Int -> [Symbol nt t] -> Maybe Int
+    rhsCount _ [] = Just 0
+    rhsCount counts (Terminal _ : syms) = (1 +) <$> rhsCount counts syms
+    rhsCount counts (Nonterminal nt : syms) = do
+      ntCount <- Map.lookup nt counts
+      restCount <- rhsCount counts syms
+      return (ntCount + restCount)
