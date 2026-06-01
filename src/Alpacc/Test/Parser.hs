@@ -84,8 +84,10 @@ instance Binary Outputs where
     results <- mapM (const get) [1 .. i]
     pure $ Outputs results
 
--- | Generate a single random token sequence of given length
+-- | Generate a single random token sequence of given length.
+-- Returns an empty list if the terminals list is empty or length is 0.
 generateSingleLongTokenSequence :: Int -> [Unused T] -> [Unused T]
+generateSingleLongTokenSequence _ [] = []
 generateSingleLongTokenSequence len terminals =
   let seed = 42  -- Fixed seed for reproducibility
       gen = mkStdGen seed

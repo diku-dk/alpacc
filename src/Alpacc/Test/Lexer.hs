@@ -25,6 +25,11 @@ import Data.Text (Text)
 import Data.Text qualified as Text
 import System.Random
 
+-- | Test generation mode.
+-- 'Exhaustive' generates all possible input combinations up to the specified length.
+-- This is useful for comprehensive testing but becomes impractical for lengths > 7.
+-- 'SingleLong' generates a single random input of exactly the specified length.
+-- This is useful for performance testing and stress testing with long inputs.
 data TestMode
   = Exhaustive
   | SingleLong
@@ -104,8 +109,10 @@ instance Binary Outputs where
     results <- mapM (const get) [1 .. i]
     pure $ Outputs results
 
--- | Generate a single random input of given length from the alphabet
+-- | Generate a single random input of given length from the alphabet.
+-- Returns an empty list if the alphabet is empty or length is 0.
 generateSingleLongInput :: Int -> Set.Set Word8 -> [Word8]
+generateSingleLongInput _ alpha | Set.null alpha = []
 generateSingleLongInput len alpha =
   let seed = 42  -- Fixed seed for reproducibility
       gen = mkStdGen seed

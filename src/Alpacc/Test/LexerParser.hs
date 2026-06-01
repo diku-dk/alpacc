@@ -143,8 +143,10 @@ parse cfg q k str = do
   where
     toTuple (Lexeme t m) = (t, m)
 
--- | Generate a single random input of given length from the alphabet
+-- | Generate a single random input of given length from the alphabet.
+-- Returns an empty list if the alphabet is empty or length is 0.
 generateSingleLongLexerParserInput :: Int -> Set.Set Word8 -> [Word8]
+generateSingleLongLexerParserInput _ alpha | Set.null alpha = []
 generateSingleLongLexerParserInput len alpha =
   let seed = 42  -- Fixed seed for reproducibility
       gen = mkStdGen seed
