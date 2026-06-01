@@ -226,20 +226,19 @@ computeTokenBytesMap alpha dfa_lexer = go [(initial_state, [])] Set.empty Map.em
       | state `Set.member` visited = go queue visited result
       | otherwise =
           let visited' = Set.insert state visited
-              -- Record the shortest path to this token (if it is an accepting state)
-              result' = case (Set.member state accept_states, Map.lookup state token_map) of
-                          (True, Just tok)
-                            | not (Map.member tok result) ->
-                                Map.insert tok (reverse path) result
+              -- Record the shortest path to this token (if it is an accepting state).
+              result' = case Map.lookup state token_map of
+                          Just tok | Set.member state accept_states
+                                   , not (Map.member tok result) ->
+                              Map.insert tok (reverse path) result
                           _ -> result
               -- Only follow transitions that are NOT producing transitions so we
               -- never cross into the next token's recognition path.
               neighbors =
                 [ (next_state, sym : path)
                 | sym <- syms
-                , Map.member (state, sym) trans
+                , Just next_state <- [Map.lookup (state, sym) trans]
                 , not ((state, sym) `Set.member` produces)
-                , let next_state = trans Map.! (state, sym)
                 ]
           in go (queue ++ neighbors) visited' result'
 
