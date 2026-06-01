@@ -712,19 +712,15 @@ generateRandomDerivation ::
   Grammar nt t ->
   (g, [t])
 generateRandomDerivation gen targetLen grammar =
-  let minCounts = minTerminalCounts grammar
-      recursive = canDeriveRecursively grammar
-      prod_map = toProductionsMap $ productions grammar
-      initialSymbols = [Nonterminal $ start grammar]
+  let initialSymbols = [Nonterminal $ start grammar]
    in derive gen 0 initialSymbols
   where
-    derive g termCount [] = (g, [])
+    derive g _ [] = (g, [])
     derive g termCount (Terminal t : syms) =
       let (g', rest) = derive g (termCount + 1) syms
        in (g', t : rest)
     derive g termCount (Nonterminal nt : syms) =
       let prod_map = toProductionsMap $ productions grammar
-          minCounts = minTerminalCounts grammar
           recursive = canDeriveRecursively grammar
           rhss = Map.findWithDefault [] nt prod_map
        in if null rhss

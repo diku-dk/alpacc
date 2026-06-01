@@ -291,7 +291,7 @@ generateParseableLexerParserInputFast len alpha dfa_lexer maybe_ignore grammar =
           -- Generate a random derivation using the fast DFS approach
           let (gen', derivedTerminals) = generateRandomDerivation gen len grammar
               -- Extract tokens that are common between lexer and grammar
-              tokens = take len $ mapMaybe unaug $ map (AugmentedTerminal . Used) derivedTerminals
+              tokens = take len $ mapMaybe unaug derivedTerminals
            in if null tokens
                 then generateSingleLongLexerParserInput len alpha
                 else generateBytesForTokens gen' tokens

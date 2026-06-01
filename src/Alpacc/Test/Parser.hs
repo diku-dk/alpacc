@@ -121,7 +121,7 @@ generateParseableTokenSequenceFast len grammar terminals =
   let gen = mkStdGen randomSeed
       (_, derivedTerminals) = generateRandomDerivation gen len grammar
       -- Filter out augmented terminals
-      result = mapMaybe unaug $ map AugmentedTerminal derivedTerminals
+      result = mapMaybe unaug derivedTerminals
    in if null result
         then generateSingleLongTokenSequence len terminals
         else take len result ++ generateSingleLongTokenSequence (len - length result) terminals
