@@ -69,3 +69,56 @@ jobs:
           bash tests/testfuthark.sh 1 1 50 10
           bash tests/testfuthark.sh 2 2 50 10
           bash tests/testfuthark.sh 3 3 50 10
+
+  test-json-multicore:
+    if: github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'test')
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up GHC 9.6.5
+        uses: haskell-actions/setup@v2
+        id: setup
+        with:
+          ghc-version: '9.6.5'
+          cabal-version: '3.10.3.0'
+          cabal-update: true
+
+      - name: Installed versions of GHC and Cabal
+        shell: bash
+        run: |
+          GHC_VERSION=$(ghc --numeric-version)
+          CABAL_VERSION=$(cabal --numeric-version)
+          echo "GHC_VERSION=${GHC_VERSION}"     >> "${GITHUB_ENV}"
+          echo "CABAL_VERSION=${CABAL_VERSION}" >> "${GITHUB_ENV}"
+
+      - name: Cache Cabal packages
+        uses:  actions/cache@v3
+        with:
+          path: |
+            ~/.cabal/packages
+            ~/.cabal/store
+            dist-newstyle
+          key:  ${{ runner.os }}-cabal-${{ env.GHC_VERSION }}-${{ hashFiles('**/*.cabal', '**/cabal.project') }}
+          restore-keys: |
+            ${{ runner.os }}-cabal-${{ env.GHC_VERSION }}-
+            ${{ runner.os }}-cabal-
+
+      - name: Install dependencies
+        run: cabal build all --only-dependencies
+
+      - name: Build
+        run: cabal build all
+
+      - name: Install
+        run: cabal install
+
+      - uses: diku-dk/install-futhark@v1.1.0
+        with:
+          version: 'nightly'
+
+      - name: Run JSON grammar tests with multicore backend.
+        run: |
+          export CFLAGS="-fsanitize=undefined -fno-sanitize-recover -O"
+          bash tests/testjson.sh multicore
