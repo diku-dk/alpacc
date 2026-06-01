@@ -1,6 +1,7 @@
 module Alpacc.Test.Lexer
   ( lexerTests,
     lexerTestsCompare,
+    TestMode (..),
   )
 where
 
@@ -22,6 +23,12 @@ import Data.Map qualified as Map
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as Text
+import System.Random
+
+data TestMode
+  = Exhaustive
+  | SingleLong
+  deriving (Show, Eq)
 
 newtype Output
   = Output
@@ -97,8 +104,18 @@ instance Binary Outputs where
     results <- mapM (const get) [1 .. i]
     pure $ Outputs results
 
-lexerTests :: CFG -> Int -> Either Text (ByteString, ByteString)
-lexerTests cfg k = do
+-- | Generate a single random input of given length from the alphabet
+generateSingleLongInput :: Int -> Set.Set Word8 -> [Word8]
+generateSingleLongInput len alpha =
+  let seed = 42  -- Fixed seed for reproducibility
+      gen = mkStdGen seed
+      alphaList = Set.toList alpha
+      numChoices = length alphaList
+      randomIndices = take len $ randomRs (0, numChoices - 1) gen
+   in map (alphaList !!) randomIndices
+
+lexerTests :: TestMode -> CFG -> Int -> Either Text (ByteString, ByteString)
+lexerTests mode cfg k = do
   spec <- cfgToDFALexerSpec cfg
   let ts = Map.keys $ regexMap spec
       encoder = encodeTerminals (T "ignore") $ parsingTerminals ts
@@ -109,9 +126,13 @@ lexerTests cfg k = do
           mapSymbols unBytes spec
   let ignore = fromIntegral <$> terminalLookup (T "ignore") encoder
       alpha = alphabet $ fsa dfa
-      comb = listProducts k $ Set.toList alpha
-      inputs = toInputs comb
-      outputs = toOutputs dfa ignore comb
+      (inputs, outputs) = case mode of
+        Exhaustive ->
+          let comb = listProducts k $ Set.toList alpha
+           in (toInputs comb, toOutputs dfa ignore comb)
+        SingleLong ->
+          let singleInput = generateSingleLongInput k alpha
+           in (toInputs [singleInput], toOutputs dfa ignore [singleInput])
   pure
     ( ByteString.toStrict $ encode inputs,
       ByteString.toStrict $ encode outputs

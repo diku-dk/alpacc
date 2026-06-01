@@ -8,6 +8,7 @@ import Alpacc.CFG
 import Alpacc.Encode
 import Alpacc.Grammar
 import Alpacc.LLP
+import Alpacc.Test.Lexer (TestMode (..))
 import Alpacc.Util
 import Control.Monad
 import Data.Bifunctor
@@ -18,6 +19,7 @@ import Data.List (zip4)
 import Data.Maybe
 import Data.Text (Text)
 import Data.Text qualified as Text
+import System.Random
 
 newtype Output
   = Output
@@ -82,8 +84,17 @@ instance Binary Outputs where
     results <- mapM (const get) [1 .. i]
     pure $ Outputs results
 
-parserTests :: CFG -> Int -> Either Text (ByteString, ByteString)
-parserTests cfg n = do
+-- | Generate a single random token sequence of given length
+generateSingleLongTokenSequence :: Int -> [Unused T] -> [Unused T]
+generateSingleLongTokenSequence len terminals =
+  let seed = 42  -- Fixed seed for reproducibility
+      gen = mkStdGen seed
+      numTerminals = length terminals
+      randomIndices = take len $ randomRs (0, numTerminals - 1) gen
+   in map (terminals !!) randomIndices
+
+parserTests :: TestMode -> CFG -> Int -> Either Text (ByteString, ByteString)
+parserTests mode cfg n = do
   let q = paramsLookback $ cfgParams cfg
       k = paramsLookahead $ cfgParams cfg
   grammar <- cfgToGrammar cfg
@@ -94,15 +105,24 @@ parserTests cfg n = do
           && x /= LeftTurnstile
           && x /= RightTurnstile
       encode' x = fromJust $ Terminal x `symbolLookup` s_encoder
-      comb =
-        listProducts n $
-          mapMaybe unaug $
-            filter p $
-              terminals $
-                getGrammar grammar
-      inputs = Inputs $ Input . fmap (fromIntegral . encode' . AugmentedTerminal) <$> comb
+      validTerminals =
+        mapMaybe unaug $
+          filter p $
+            terminals $
+              getGrammar grammar
+      (inputs, outputs) = case mode of
+        Exhaustive ->
+          let comb = listProducts n validTerminals
+           in ( Inputs $ Input . fmap (fromIntegral . encode' . AugmentedTerminal) <$> comb,
+                Outputs $ Output . fmap (fmap fromIntegral) . parse <$> comb
+              )
+        SingleLong ->
+          let singleSeq = generateSingleLongTokenSequence n validTerminals
+              comb = [singleSeq]
+           in ( Inputs $ Input . fmap (fromIntegral . encode' . AugmentedTerminal) <$> comb,
+                Outputs $ Output . fmap (fmap fromIntegral) . parse <$> comb
+              )
       parse = llpParse q k table
-      outputs = Outputs $ Output . fmap (fmap fromIntegral) . parse <$> comb
   pure
     ( ByteString.toStrict $ encode inputs,
       ByteString.toStrict $ encode outputs

@@ -12,6 +12,7 @@ import Alpacc.LLP
 import Alpacc.Lexer.DFA
 import Alpacc.Lexer.FSA
 import Alpacc.Lexer.RegularExpression
+import Alpacc.Test.Lexer (TestMode (..))
 import Alpacc.Util
 import Codec.Binary.UTF8.String (encodeChar)
 import Control.Monad
@@ -26,6 +27,7 @@ import Data.Maybe
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as Text
+import System.Random
 
 newtype Output
   = Output
@@ -141,8 +143,18 @@ parse cfg q k str = do
   where
     toTuple (Lexeme t m) = (t, m)
 
-lexerParserTests :: CFG -> Int -> Either Text (ByteString, ByteString)
-lexerParserTests cfg n = do
+-- | Generate a single random input of given length from the alphabet
+generateSingleLongLexerParserInput :: Int -> Set.Set Word8 -> [Word8]
+generateSingleLongLexerParserInput len alpha =
+  let seed = 42  -- Fixed seed for reproducibility
+      gen = mkStdGen seed
+      alphaList = Set.toList alpha
+      numChoices = length alphaList
+      randomIndices = take len $ randomRs (0, numChoices - 1) gen
+   in map (alphaList !!) randomIndices
+
+lexerParserTests :: TestMode -> CFG -> Int -> Either Text (ByteString, ByteString)
+lexerParserTests mode cfg n = do
   let q = paramsLookback $ cfgParams cfg
       k = paramsLookahead $ cfgParams cfg
   spec <- cfgToDFALexerSpec cfg
@@ -154,10 +166,15 @@ lexerParserTests cfg n = do
       dfa = lexerDFA (0 :: Integer) $ mapSymbols unBytes spec
       ignore = T "ignore"
       alpha = alphabet $ fsa dfa
-      comb = listProducts n $ Set.toList alpha
-      inputs = toInputs comb
       maybe_ignore = if ignore `Map.member` regex_map then Just ignore else Nothing
-      outputs = toOutputs q k encoder dfa maybe_ignore (getGrammar grammar) table comb
+      (inputs, outputs) = case mode of
+        Exhaustive ->
+          let comb = listProducts n $ Set.toList alpha
+           in (toInputs comb, toOutputs q k encoder dfa maybe_ignore (getGrammar grammar) table comb)
+        SingleLong ->
+          let singleInput = generateSingleLongLexerParserInput n alpha
+              comb = [singleInput]
+           in (toInputs comb, toOutputs q k encoder dfa maybe_ignore (getGrammar grammar) table comb)
   pure
     ( ByteString.toStrict $ encode inputs,
       ByteString.toStrict $ encode outputs

@@ -5,6 +5,7 @@ module Alpacc.Test
     lexerTestsCompare,
     parserTestsCompare,
     lexerParserTestsCompare,
+    TestMode (..),
   )
 where
 
