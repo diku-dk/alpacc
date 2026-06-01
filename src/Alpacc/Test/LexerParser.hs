@@ -198,7 +198,7 @@ generateParseableLexerParserInput len alpha dfa_lexer maybe_ignore grammar =
                   let (idx, gen2) = randomR (0, length validDerivations - 1) gen
                       chosen = take len $ validDerivations !! idx
                       tokens = mapMaybe unaug chosen
-                      maxExtra = max 1 (len `div` max 1 (length tokens))
+                      maxExtra = calculateMaxExtra len tokens
                       (_, bytesRev) =
                         foldl
                           ( \(g, acc) tok ->
@@ -249,6 +249,11 @@ computeTokenBytesMap alpha dfa_lexer = go [(initial_state, [])] Set.empty Map.em
                 ]
           in go (queue ++ neighbors) visited' result'
 
+-- | Compute the per-token budget for extra self-loop characters.
+-- Distributes the total target length evenly across the token list.
+calculateMaxExtra :: Int -> [a] -> Int
+calculateMaxExtra len tokens = max 1 (len `div` max 1 (length tokens))
+
 -- | Generate a varied-length byte sequence that the DFA lexer will lex as the
 -- given token.  The minimum (shortest) path to the accepting state is taken as
 -- a baseline; at each intermediate state that has self-loop transitions (i.e.
@@ -285,7 +290,7 @@ generateVariedTokenBytes gen maxExtra tok alpha dfa_lexer =
       initial_state = initial dfa_fsa
       -- Walk the minimum path, carrying the current DFA state.  At each step,
       -- optionally insert self-loop characters before advancing.
-      go g _ _ acc [] = (reverse acc, g)
+      go g _state _extraSoFar acc [] = (reverse acc, g)
       go g state extraSoFar acc (sym : rest) =
         let loops = selfLoops state
             (g', extra) = addLoops g extraSoFar loops maxExtra
@@ -364,7 +369,7 @@ generateParseableLexerParserInputFast len alpha dfa_lexer maybe_ignore grammar =
                 else
                   -- Generate varied bytes for each token, threading the generator
                   -- so each occurrence gets different content (e.g. non-empty strings).
-                  let maxExtra = max 1 (len `div` max 1 (length tokens))
+                  let maxExtra = calculateMaxExtra len tokens
                       (_, bytesRev) =
                         foldl
                           ( \(g, acc) tok ->
