@@ -119,6 +119,10 @@ jobs:
           version: 'nightly'
 
       - name: Run JSON grammar tests with multicore backend.
+        # CFLAGS follow the same pattern used by the Futhark project's own
+        # multicore CI: UBSan (-fsanitize=undefined) with -fno-sanitize-recover
+        # turns undefined behaviour into immediate crashes, making failures
+        # deterministic rather than silently wrong.
         run: |
           export CFLAGS="-fsanitize=undefined -fno-sanitize-recover -O"
           bash tests/testjson.sh multicore

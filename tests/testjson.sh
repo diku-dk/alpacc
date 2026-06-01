@@ -30,7 +30,7 @@ GRAMMAR="$REPO_ROOT/grammars/json.alp"
 
 # Create a temporary directory for this run
 temp_dir=$(mktemp -d)
-trap "rm -rf $temp_dir" EXIT
+trap "rm -rf \"$temp_dir\"" EXIT
 
 # Set up Futhark packages once
 echo "Setting up Futhark packages..."
@@ -83,7 +83,9 @@ run_json_test() {
         return 1
     fi
 
-    # Run the Futhark script with the selected backend
+    # Run the Futhark script with the selected backend.
+    # `futhark script -b` produces binary output with a 16-byte header that
+    # encodes the result type; strip it before passing to `alpacc test compare`.
     futhark script --backend="$backend" -b json.fut 'test ($loadbytes "json.inputs")' \
         | tail -c +16 > json.results
 
