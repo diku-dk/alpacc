@@ -132,8 +132,7 @@ parse cfg q k str = do
   table <- llpParserTableWithStarts q k $ getGrammar grammar
   let regex_map = regexMap spec
       ignore = T "ignore"
-      ters = Map.keys regex_map
-      encoder = encodeTerminals (T "ignore") $ parsingTerminals ters
+      encoder = fromSymbolToTerminalEncoder $ encodeSymbols ignore grammar
       maybe_ignore = if ignore `Map.member` regex_map then Just ignore else Nothing
       dfa = lexerDFA (0 :: Integer) $ mapSymbols unBytes spec
       bytes = concatMap encodeChar $ Text.unpack str
@@ -308,10 +307,9 @@ lexerParserTests mode parseable cfg n = do
   grammar <- cfgToGrammar cfg
   table <- llpParserTableWithStarts q k $ getGrammar grammar
   let regex_map = regexMap spec
-      ts = Map.keys regex_map
-      encoder = encodeTerminals (T "ignore") $ parsingTerminals ts
-      dfa = lexerDFA (0 :: Integer) $ mapSymbols unBytes spec
       ignore = T "ignore"
+      encoder = fromSymbolToTerminalEncoder $ encodeSymbols ignore grammar
+      dfa = lexerDFA (0 :: Integer) $ mapSymbols unBytes spec
       alpha = alphabet $ fsa dfa
       maybe_ignore = if ignore `Map.member` regex_map then Just ignore else Nothing
       (inputs, outputs) = case mode of
@@ -343,14 +341,14 @@ lexerParserTests mode parseable cfg n = do
 
 lexerParserTestsCompare :: CFG -> ByteString -> ByteString -> ByteString -> Either Text ()
 lexerParserTestsCompare cfg input expected result = do
-  spec <- cfgToDFALexerSpec cfg
-
-  let ts = Map.keys $ regexMap spec
-      encoder = encodeTerminals (T "ignore") $ parsingTerminals ts
-  encodings <-
-    maybeToEither "Error: Could not encode tokens." $
-      mapM (fmap fromIntegral . (`terminalLookup` encoder)) ts
-  let int_to_token = Map.fromList $ zip encodings ts
+  grammar <- cfgToGrammar cfg
+  let ignore = T "ignore"
+      encoder = fromSymbolToTerminalEncoder $ encodeSymbols ignore grammar
+      int_to_token =
+        Map.fromList
+          [ (fromIntegral i, t)
+          | (i, Used t) <- zip [0 ..] (toTerminals encoder)
+          ]
   Inputs inp <- dec "Error: Could not parse input file." input
   Outputs ex <- dec "Error: Could not parse expected output file." expected
   Outputs res <- dec "Error: Could not parse result output file." result
