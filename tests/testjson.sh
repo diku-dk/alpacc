@@ -19,7 +19,7 @@ if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
 fi
 
 backend="${1:-c}"
-length=10
+length=100000
 
 echo "Testing JSON grammar with backend '$backend' and length $length..."
 
