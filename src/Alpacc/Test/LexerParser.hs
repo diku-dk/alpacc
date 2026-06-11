@@ -148,9 +148,10 @@ parse cfg q k str = do
   where
     toTuple (Lexeme t m) = (t, m)
 
--- | Compute the shortest byte sequence that lexes to each token in the DFA.
--- Uses BFS from the initial state, following only original (non-producing)
--- transitions so that the accumulated bytes never cross a token boundary.
+-- | Compute the shortest byte sequence that lexes to each token in
+-- the DFA.  Uses BFS from the initial state, following only original
+-- (non-producing) transitions so that the accumulated bytes never
+-- cross a token boundary.
 computeTokenBytesMap ::
   (Ord s) =>
   Set.Set Word8 ->
@@ -198,17 +199,18 @@ computeTokenBytesMap _alpha dfa_lexer =
 calculateMaxExtra :: Int -> [a] -> Int
 calculateMaxExtra len tokens = max 1 (len `div` max 1 (length tokens))
 
--- | Generate a varied-length byte sequence that the DFA lexer will lex as the
--- given token.  The minimum (shortest) path to the accepting state is taken as
--- a baseline; at each intermediate state that has self-loop transitions (i.e.
--- transitions on some symbol that lead back to the same state) extra characters
--- are randomly inserted.  This produces non-trivial token values such as
--- non-empty strings, multi-digit numbers, etc.
+-- | Generate a varied-length byte sequence that the DFA lexer will
+-- lex as the given token. The minimum (shortest) path to the
+-- accepting state is taken as a baseline; at each intermediate state
+-- that has self-loop transitions (i.e. transitions on some symbol
+-- that lead back to the same state) extra characters are randomly
+-- inserted. This produces non-trivial token values such as non-empty
+-- strings, multi-digit numbers, etc.
 --
--- The @maxExtra@ parameter bounds the total number of inserted characters so
--- the function always terminates.  The updated generator is also returned so
--- callers can thread randomness across multiple tokens.
--- Requires: import Data.Array (Array, listArray, (!), bounds)
+-- The @maxExtra@ parameter bounds the total number of inserted
+-- characters so the function always terminates. The updated generator
+-- is also returned so callers can thread randomness across multiple
+-- tokens.
 generateVariedTokenBytes ::
   (Ord s, RandomGen g) =>
   Map T [Word8] ->
