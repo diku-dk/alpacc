@@ -1,6 +1,8 @@
 module Alpacc.Test.Lexer
   ( lexerTests,
     lexerTestsCompare,
+    TestMode (..),
+    randomSeed,
   )
 where
 
@@ -22,6 +24,21 @@ import Data.Map qualified as Map
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as Text
+import System.Random
+
+-- | Seed used for reproducible random generation in test cases
+randomSeed :: Int
+randomSeed = 42
+
+-- | Test generation mode.
+-- 'Exhaustive' generates all possible input combinations up to the specified length.
+-- This is useful for comprehensive testing but becomes impractical for lengths > 7.
+-- 'SingleLong' generates a single random input of exactly the specified length.
+-- This is useful for performance testing and stress testing with long inputs.
+data TestMode
+  = Exhaustive
+  | SingleLong
+  deriving (Show, Eq)
 
 newtype Output
   = Output
@@ -97,8 +114,45 @@ instance Binary Outputs where
     results <- mapM (const get) [1 .. i]
     pure $ Outputs results
 
-lexerTests :: CFG -> Int -> Either Text (ByteString, ByteString)
-lexerTests cfg k = do
+-- | Generate a single long input by simulating the DFA. Starting from
+-- the initial state, randomly choose valid transitions until we reach
+-- the desired length and are in an accepting state. If we can't reach
+-- an accepting state at the exact length, we try to find the nearest
+-- accepting state and pad or trim accordingly.
+generateSingleLongInputFromDFA :: (Ord s, Ord t) => Int -> Set.Set t -> DFA t s -> [t]
+generateSingleLongInputFromDFA len alpha dfa =
+  let gen = mkStdGen randomSeed
+      initial_state = initial dfa
+      trans = transitions' dfa
+      accept = accepting dfa
+      alphaList = Set.toList alpha
+
+      -- First, try to generate a string that ends at an accepting state
+      simulateDFA _ 0 state acc
+        | state `Set.member` accept = Just (reverse acc)
+        | otherwise = Nothing
+      simulateDFA g n state acc =
+        let validSymbols = [sym | sym <- alphaList, Map.member (state, sym) trans]
+         in if null validSymbols
+              then Nothing -- Stuck, can't continue
+              else
+                let (idx, g') = randomR (0, length validSymbols - 1) g
+                    nextSymbol = validSymbols !! idx
+                    nextState = trans Map.! (state, nextSymbol)
+                 in simulateDFA g' (n - 1) nextState (nextSymbol : acc)
+
+      result = simulateDFA gen len initial_state []
+      fallback =
+        let numChoices = length alphaList
+            randomIndices = take len $ randomRs (0, numChoices - 1) gen
+         in map (alphaList !!) randomIndices
+   in case result of
+        Just xs -> xs
+        -- Fallback to random generation if we can't find a valid path
+        Nothing -> fallback
+
+lexerTests :: TestMode -> CFG -> Int -> Either Text (ByteString, ByteString)
+lexerTests mode cfg k = do
   spec <- cfgToDFALexerSpec cfg
   let ts = Map.keys $ regexMap spec
       encoder = encodeTerminals (T "ignore") $ parsingTerminals ts
@@ -109,9 +163,13 @@ lexerTests cfg k = do
           mapSymbols unBytes spec
   let ignore = fromIntegral <$> terminalLookup (T "ignore") encoder
       alpha = alphabet $ fsa dfa
-      comb = listProducts k $ Set.toList alpha
-      inputs = toInputs comb
-      outputs = toOutputs dfa ignore comb
+      (inputs, outputs) = case mode of
+        Exhaustive ->
+          let comb = listProducts k $ Set.toList alpha
+           in (toInputs comb, toOutputs dfa ignore comb)
+        SingleLong ->
+          let singleInput = generateSingleLongInputFromDFA k alpha (fsa dfa)
+           in (toInputs [singleInput], toOutputs dfa ignore [singleInput])
   pure
     ( ByteString.toStrict $ encode inputs,
       ByteString.toStrict $ encode outputs

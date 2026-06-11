@@ -39,7 +39,7 @@ import Data.Bifunctor qualified as BI
 import Data.Bits
 import Data.Either.Extra
 import Data.IntMap qualified as IntMap
-import Data.List (foldl', sortOn)
+import Data.List (sortOn)
 import Data.List qualified as List
 import Data.Map (Map)
 import Data.Map qualified as Map

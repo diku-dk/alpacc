@@ -9,19 +9,19 @@ string = /"([\x00-\x21\x23-\xFF]|\\")*"/.
 number = /-?[0-9]+(.[0-9]+)?/.
 ignore = /\s|\n|\t|\r/.
 
-J [Object] -> O.
-J [Array] -> A.
+J [Object_production] -> O.
+J [Array_production] -> A.
 J [String] -> string.
 J [Number] -> number.
 J [Null] -> "null".
 J [True] -> "true".
 J [False] -> "false".
 
-O [Object] -> "{" FS0 "}".
-FS0 [Object] -> | F FS1.
-FS1 [Object] -> | "," F FS1.
-F [Object] -> string ":" J.
+O [Object_head] -> "{" FS0 "}".
+FS0 [Object_tail] -> | F FS1.
+FS1 [Object_elem] -> | "," F FS1.
+F [Object_key] -> string ":" J.
 
-A [Array] -> "[" EL0 "]".
-EL0 [Array] -> | J EL1.
-EL1 [Array] -> | "," J EL1.
+A [Array_head] -> "[" EL0 "]".
+EL0 [Array_tail] -> | J EL1.
+EL1 [Array_elem] -> | "," J EL1.

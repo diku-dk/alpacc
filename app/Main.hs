@@ -77,7 +77,8 @@ data TestGenerateParameters = TestGenerateParameters
   { testGenerateInput :: !Input,
     testGenerateOutput :: !(Maybe String),
     testGenerateLength :: !Int,
-    testGenerateGenerator :: !Gen
+    testGenerateGenerator :: !Gen,
+    testGenerateMode :: !TestMode
   }
   deriving (Show)
 
@@ -96,10 +97,19 @@ lengthParameter =
     auto
     ( long "length"
         <> short 'l'
-        <> help "The maximum length of the input(s)."
+        <> help "The maximum length of inputs (exhaustive mode, default) or exact length (single-long mode)."
         <> showDefault
         <> value 7
         <> metavar "INT"
+    )
+
+testModeParameter :: Parser TestMode
+testModeParameter =
+  flag
+    Exhaustive
+    SingleLong
+    ( long "single-long"
+        <> help "Generate a single long test instead of exhaustive tests."
     )
 
 lookbackParameter :: Parser Int
@@ -254,6 +264,7 @@ testGenerateParameters =
             <*> outputParameter
             <*> lengthParameter
             <*> generateParametar
+            <*> testModeParameter
         )
 
 testCompareParameters :: Parser Command
@@ -396,21 +407,22 @@ mainTestGenerate params = do
 
   case testGenerateGenerator params of
     GenLexer -> do
-      (inputs, ouputs) <- eitherToIO $ lexerTests cfg len
+      (inputs, ouputs) <- eitherToIO $ lexerTests mode cfg len
       ByteString.writeFile (name <> ".inputs") inputs
       ByteString.writeFile (name <> ".outputs") ouputs
     GenParser -> do
-      (inputs, ouputs) <- eitherToIO $ parserTests cfg len
+      (inputs, ouputs) <- eitherToIO $ parserTests mode cfg len
       ByteString.writeFile (name <> ".inputs") inputs
       ByteString.writeFile (name <> ".outputs") ouputs
     GenBoth -> do
-      (inputs, ouputs) <- eitherToIO $ lexerParserTests cfg len
+      (inputs, ouputs) <- eitherToIO $ lexerParserTests mode cfg len
       ByteString.writeFile (name <> ".inputs") inputs
       ByteString.writeFile (name <> ".outputs") ouputs
   where
     out = testGenerateOutput params
     input = testGenerateInput params
     len = testGenerateLength params
+    mode = testGenerateMode params
 
 mainTestCompare :: TestCompareParameters -> IO ()
 mainTestCompare params = do

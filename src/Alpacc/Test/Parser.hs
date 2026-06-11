@@ -7,7 +7,9 @@ where
 import Alpacc.CFG
 import Alpacc.Encode
 import Alpacc.Grammar
+import Alpacc.LL (generateRandomDerivation)
 import Alpacc.LLP
+import Alpacc.Test.Lexer (TestMode (..), randomSeed)
 import Alpacc.Util
 import Control.Monad
 import Data.Bifunctor
@@ -18,6 +20,7 @@ import Data.List (zip4)
 import Data.Maybe
 import Data.Text (Text)
 import Data.Text qualified as Text
+import System.Random
 
 newtype Output
   = Output
@@ -82,8 +85,23 @@ instance Binary Outputs where
     results <- mapM (const get) [1 .. i]
     pure $ Outputs results
 
-parserTests :: CFG -> Int -> Either Text (ByteString, ByteString)
-parserTests cfg n = do
+-- | Generate a parseable token sequence using derivations from the
+-- grammar.  Start with the start symbol and randomly choose
+-- productions until we derive a string of terminals of the desired
+-- length.
+generateSingleLongTokenSequence :: (Ord nt, Ord t, Show nt, Show t) => Int -> Grammar (AugmentedNonterminal nt) (AugmentedTerminal t) -> [t]
+generateSingleLongTokenSequence len grammar =
+  let gen = mkStdGen randomSeed
+      -- Get all derivations of length up to len from the start symbol
+      -- We use len to ensure we get all derivations up to and including length len
+      (_, ts) = generateRandomDerivation gen len grammar
+   in mapMaybe unaug ts
+  where
+    unaug (AugmentedTerminal t) = Just t
+    unaug _ = Nothing
+
+parserTests :: TestMode -> CFG -> Int -> Either Text (ByteString, ByteString)
+parserTests mode cfg n = do
   let q = paramsLookback $ cfgParams cfg
       k = paramsLookahead $ cfgParams cfg
   grammar <- cfgToGrammar cfg
@@ -94,15 +112,24 @@ parserTests cfg n = do
           && x /= LeftTurnstile
           && x /= RightTurnstile
       encode' x = fromJust $ Terminal x `symbolLookup` s_encoder
-      comb =
-        listProducts n $
-          mapMaybe unaug $
-            filter p $
-              terminals $
-                getGrammar grammar
-      inputs = Inputs $ Input . fmap (fromIntegral . encode' . AugmentedTerminal) <$> comb
+      validTerminals =
+        mapMaybe unaug $
+          filter p $
+            terminals $
+              getGrammar grammar
+      (inputs, outputs) = case mode of
+        Exhaustive ->
+          let comb = listProducts n validTerminals
+           in ( Inputs $ Input . fmap (fromIntegral . encode' . AugmentedTerminal) <$> comb,
+                Outputs $ Output . fmap (fmap fromIntegral) . parse <$> comb
+              )
+        SingleLong ->
+          let singleSeq = generateSingleLongTokenSequence n (getGrammar grammar)
+              comb = [singleSeq]
+           in ( Inputs $ Input . fmap (fromIntegral . encode' . AugmentedTerminal) <$> comb,
+                Outputs $ Output . fmap (fmap fromIntegral) . parse <$> comb
+              )
       parse = llpParse q k table
-      outputs = Outputs $ Output . fmap (fmap fromIntegral) . parse <$> comb
   pure
     ( ByteString.toStrict $ encode inputs,
       ByteString.toStrict $ encode outputs
