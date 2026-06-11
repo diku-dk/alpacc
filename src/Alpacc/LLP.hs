@@ -605,21 +605,25 @@ pairLookup table' q k = toList . auxiliary Seq.empty Seq.empty . Seq.fromList
           where
             n = Seq.length seq'
 
+-- | Checks if the first sequence is a prefix of the second.
+seqIsPrefixOf :: (Eq a) => Seq a -> Seq a -> Bool
+seqIsPrefixOf xs ys = Seq.take (Seq.length xs) ys == xs
+
 -- | glues two stacks together as described in definition 1 of the LLP paper.
 glue ::
   (Eq nt, Eq t) =>
-  ([Symbol nt t], [Symbol nt t], [Int]) ->
-  ([Symbol nt t], [Symbol nt t], [Int]) ->
-  Maybe ([Symbol nt t], [Symbol nt t], [Int])
+  (Seq (Symbol nt t), Seq (Symbol nt t), Seq Int) ->
+  (Seq (Symbol nt t), Seq (Symbol nt t), Seq Int) ->
+  Maybe (Seq (Symbol nt t), Seq (Symbol nt t), Seq Int)
 glue (alpha_l, omega_l, pi_l) (alpha_r, omega_r, pi_r)
   | omega_l == alpha_r = Just (alpha_l, omega_r, pi')
-  | omega_l `List.isPrefixOf` alpha_r = Just (alpha_l ++ beta_0, omega_r, pi')
-  | alpha_r `List.isPrefixOf` omega_l = Just (alpha_l, omega_r ++ beta_1, pi')
+  | omega_l `seqIsPrefixOf` alpha_r = Just (alpha_l <> beta_0, omega_r, pi')
+  | alpha_r `seqIsPrefixOf` omega_l = Just (alpha_l, omega_r <> beta_1, pi')
   | otherwise = Nothing
   where
-    pi' = pi_l ++ pi_r
-    beta_0 = drop (length omega_l) alpha_r
-    beta_1 = drop (length alpha_r) omega_l
+    pi' = pi_l <> pi_r
+    beta_0 = Seq.drop (Seq.length omega_l) alpha_r
+    beta_1 = Seq.drop (Seq.length alpha_r) omega_l
 
 -- | Given a grammar it will parse the string using a LLP table.
 llpParse ::
@@ -637,10 +641,11 @@ llpParse ::
 llpParse q k table string = do
   let padded_string = addStoppers $ aug string
   pairs <- sequence $ pairLookup table q k padded_string
-  thd3 <$> glueAll pairs
+  toList . thd3 <$> glueAll (toSeqTuple <$> pairs)
   where
     addStoppers = ([RightTurnstile] <>) . (<> [LeftTurnstile])
     aug = fmap AugmentedTerminal
+    toSeqTuple (a, b, c) = (Seq.fromList a, Seq.fromList b, Seq.fromList c)
     glueAll [] = Nothing
     glueAll (x : xs) = foldM glue x xs
 
@@ -709,14 +714,14 @@ llpParseTree grammar q k table str_meta = do
         (n, ms'', ds'') = mkTree ms' ds'
 
 flattenTree :: (Integral i) => CST i m t -> [FlatNode i m t]
-flattenTree = fst . mkFlatTree 0 0
+flattenTree = toList . fst . mkFlatTree 0 0
   where
-    mkFlatTree c p (CSTTerminal m t) = ([FlatTerminal p m t], succ c)
+    mkFlatTree c p (CSTTerminal m t) = (Seq.singleton $ FlatTerminal p m t, succ c)
     mkFlatTree c p (CSTProduction j subtrees) =
-      (curr : res, c''')
+      (curr <| res, c''')
       where
         curr = FlatProduction p j
-        (res, c''') = foldl' auxiliary ([], succ c) subtrees
+        (res, c''') = foldl' auxiliary (Seq.empty, succ c) subtrees
         auxiliary (flat, c') t = (flat <> flat', c'')
           where
             (flat', c'') = mkFlatTree c' c t

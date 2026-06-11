@@ -2,16 +2,14 @@ module Alpacc.Test.LexerParser
   ( lexerParserTests,
     parse,
     lexerParserTestsCompare,
-    generateParseableLexerParserInput,
-    generateParseableLexerParserInputFast,
   )
 where
 
 import Alpacc.CFG
 import Alpacc.Encode
 import Alpacc.Grammar
+import Alpacc.LL (generateRandomDerivation)
 import Alpacc.LLP
-import Alpacc.LL (derivableNLengths, generateRandomDerivation)
 import Alpacc.Lexer.DFA
 import Alpacc.Lexer.FSA
 import Alpacc.Lexer.RegularExpression
@@ -19,14 +17,19 @@ import Alpacc.Test.Lexer (TestMode (..), randomSeed)
 import Alpacc.Util
 import Codec.Binary.UTF8.String (encodeChar)
 import Control.Monad
+import Data.Array (Array, bounds, listArray, (!))
 import Data.Bifunctor
 import Data.Binary
 import Data.ByteString qualified as ByteString
 import Data.ByteString.Internal
 import Data.Either.Extra
+import Data.Foldable
 import Data.List (zip4)
-import Data.Map qualified as Map
+import Data.Map (Map)
+import Data.Map qualified as Map hiding (Map)
 import Data.Maybe
+import Data.Sequence (Seq (..))
+import Data.Sequence qualified as Seq hiding (Seq (..), (<|), (><), (|>))
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as Text
@@ -145,71 +148,6 @@ parse cfg q k str = do
   where
     toTuple (Lexeme t m) = (t, m)
 
--- | Generate a parseable lexer+parser input by simulating both together.
--- This is trickier: we need to generate a string that both lexes correctly
--- and parses correctly. Strategy: first generate a valid token sequence using
--- grammar derivations, then generate byte sequences that lex to those tokens.
-generateParseableLexerParserInput ::
-  (Ord s, Ord nt, Show nt) =>
-  Int ->
-  Set.Set Word8 ->
-  DFALexer Word8 s T ->
-  Maybe T ->
-  Grammar (AugmentedNonterminal (Symbol nt T)) (AugmentedTerminal (Unused T)) ->
-  [Word8]
-generateParseableLexerParserInput len alpha dfa_lexer maybe_ignore grammar =
-  let gen = mkStdGen randomSeed
-      token_map_dfa = tokenMap dfa_lexer
-      
-      -- Get terminals that can be produced by the lexer
-      all_lexer_terminals = Map.elems token_map_dfa
-      lexer_terminals = case maybe_ignore of
-        Just ignore -> filter (/= ignore) all_lexer_terminals
-        Nothing -> all_lexer_terminals
-      
-      -- Get valid terminals from the grammar
-      validGrammarTerminals =
-        mapMaybe unaug $
-          filter p $
-            terminals grammar
-      
-      p x = x /= AugmentedTerminal Unused && x /= LeftTurnstile && x /= RightTurnstile
-      unaug (AugmentedTerminal (Used t)) = Just t
-      unaug _ = Nothing
-      
-      -- Find terminals that are in both the lexer and the grammar
-      commonTerminals = filter (`elem` lexer_terminals) validGrammarTerminals
-      commonTerminalsSet :: Set.Set (AugmentedTerminal (Unused T))
-      commonTerminalsSet = Set.fromList $ map (AugmentedTerminal . Used) commonTerminals
-      
-   in if null commonTerminals
-        then generateSingleLongLexerParserInput len alpha
-        else
-          -- Generate a sequence of tokens using grammar derivations
-          -- We use len to get derivations of exactly that length
-          let derivable = derivableNLengths len grammar
-              derivableList = Set.toList derivable
-              -- Filter to get derivations that use our common terminals
-              validDerivations = filter (\d -> all (`Set.member` commonTerminalsSet) (take len d)) derivableList
-           in if null validDerivations
-                then generateSingleLongLexerParserInput len alpha
-                else
-                  -- Pick a random derivation
-                  let (idx, gen2) = randomR (0, length validDerivations - 1) gen
-                      chosen = take len $ validDerivations !! idx
-                      tokens = mapMaybe unaug chosen
-                      maxExtra = calculateMaxExtra len tokens
-                      (_, bytesRev) =
-                        foldl
-                          ( \(g, acc) tok ->
-                              let (bs, g') = generateVariedTokenBytes g maxExtra tok alpha dfa_lexer
-                               in (g', bs : acc)
-                          )
-                          (gen2, [])
-                          tokens
-                   in concat (reverse bytesRev)
-
-
 -- | Compute the shortest byte sequence that lexes to each token in the DFA.
 -- Uses BFS from the initial state, following only original (non-producing)
 -- transitions so that the accumulated bytes never cross a token boundary.
@@ -217,8 +155,9 @@ computeTokenBytesMap ::
   (Ord s) =>
   Set.Set Word8 ->
   DFALexer Word8 s T ->
-  Map.Map T [Word8]
-computeTokenBytesMap alpha dfa_lexer = go [(initial_state, [])] Set.empty Map.empty
+  Map T [Word8]
+computeTokenBytesMap _alpha dfa_lexer =
+  go (Seq.singleton (initial_state, [])) (Set.singleton initial_state) Map.empty
   where
     dfa = fsa dfa_lexer
     initial_state = initial dfa
@@ -226,28 +165,33 @@ computeTokenBytesMap alpha dfa_lexer = go [(initial_state, [])] Set.empty Map.em
     accept_states = accepting dfa
     token_map = tokenMap dfa_lexer
     produces = producesToken dfa_lexer
-    syms = Set.toList alpha
 
-    go [] _ result = result
-    go ((state, path) : queue) visited result
-      | state `Set.member` visited = go queue visited result
-      | otherwise =
-          let visited' = Set.insert state visited
-              -- Record the shortest path to this token (if it is an accepting state).
-              result' = case Map.lookup state token_map of
-                          Just tok | Set.member state accept_states
-                                   , not (Map.member tok result) ->
-                              Map.insert tok (reverse path) result
-                          _ -> result
-              -- Only follow transitions that are NOT producing transitions so we
-              -- never cross into the next token's recognition path.
-              neighbors =
-                [ (next_state, sym : path)
-                | sym <- syms
-                , Just next_state <- [Map.lookup (state, sym) trans]
-                , not ((state, sym) `Set.member` produces)
-                ]
-          in go (queue ++ neighbors) visited' result'
+    trans_by_state =
+      Map.fromListWith
+        Map.union
+        [ (s, Map.singleton sym s')
+        | ((s, sym), s') <- Map.toList trans
+        ]
+
+    go Empty _ result = result
+    go ((state, path) :<| queue) visited result =
+      let result' = case Map.lookup state token_map of
+            Just tok
+              | Set.member state accept_states,
+                not (Map.member tok result) ->
+                  Map.insert tok (reverse path) result
+            _ -> result
+          neighbors =
+            Seq.fromList
+              [ (next_state, sym : path)
+              | (sym, next_state) <-
+                  Map.toList $
+                    Map.findWithDefault Map.empty state trans_by_state,
+                not (next_state `Set.member` visited),
+                not ((state, sym) `Set.member` produces)
+              ]
+          visited' = Set.union visited (Set.fromList (fst <$> toList neighbors))
+       in go (queue <> neighbors) visited' result'
 
 -- | Compute the per-token budget for extra self-loop characters.
 -- Distributes the total target length evenly across the token list.
@@ -264,124 +208,101 @@ calculateMaxExtra len tokens = max 1 (len `div` max 1 (length tokens))
 -- The @maxExtra@ parameter bounds the total number of inserted characters so
 -- the function always terminates.  The updated generator is also returned so
 -- callers can thread randomness across multiple tokens.
+-- Requires: import Data.Array (Array, listArray, (!), bounds)
 generateVariedTokenBytes ::
   (Ord s, RandomGen g) =>
+  Map T [Word8] ->
+  Map s (Array Int Word8) ->
   g ->
   Int ->
   T ->
   Set.Set Word8 ->
   DFALexer Word8 s T ->
   ([Word8], g)
-generateVariedTokenBytes gen maxExtra tok alpha dfa_lexer =
-  let token_bytes_map = computeTokenBytesMap alpha dfa_lexer
-      min_bytes = Map.findWithDefault [] tok token_bytes_map
-      dfa_fsa = fsa dfa_lexer
-      trans = transitions' dfa_fsa
-      produces = producesToken dfa_lexer
-      syms = Set.toList alpha
-      -- Self-loop symbols at a state: non-producing transitions back to itself.
-      selfLoops state =
-        [ sym
-        | sym <- syms
-        , Just next <- [Map.lookup (state, sym) trans]
-        , not ((state, sym) `Set.member` produces)
-        , next == state
-        ]
-      initial_state = initial dfa_fsa
-      -- Walk the minimum path, carrying the current DFA state.  At each step,
-      -- optionally insert self-loop characters before advancing.
-      go g _state _extraSoFar acc [] = (reverse acc, g)
-      go g state extraSoFar acc (sym : rest) =
-        let loops = selfLoops state
-            (g', extra) = addLoops g extraSoFar loops maxExtra
-            -- Self-loop chars leave us in the same state; then take sym.
-            next_state = Map.findWithDefault state (state, sym) trans
-            new_acc = sym : (reverse extra ++ acc)
-         in go g' next_state (extraSoFar + length extra) new_acc rest
-      addLoops g count _ maxE | count >= maxE = (g, [])
-      addLoops g count loops maxE
-        | null loops = (g, [])
-        | otherwise =
-            let (r, g') = randomR (0 :: Int, 2) g
-             in if r == 0
-                  then
-                    let (idx, g'') = randomR (0, length loops - 1) g'
-                        sym = loops !! idx
-                        (g''', more) = addLoops g'' (count + 1) loops maxE
-                     in (g''', sym : more)
-                  else (g', [])
-   in go gen initial_state 0 [] min_bytes
+generateVariedTokenBytes token_bytes_map self_loop_map gen maxExtra tok _alpha dfa_lexer =
+  go gen initial_state 0 [] min_bytes
+  where
+    min_bytes = Map.findWithDefault [] tok token_bytes_map
+    dfa_fsa = fsa dfa_lexer
+    trans = transitions' dfa_fsa
 
--- | Generate a single random input of given length from the alphabet.
--- Returns an empty list if the alphabet is empty or length is 0.
-generateSingleLongLexerParserInput :: Int -> Set.Set Word8 -> [Word8]
-generateSingleLongLexerParserInput _ alpha | Set.null alpha = []
-generateSingleLongLexerParserInput len alpha =
-  let gen = mkStdGen randomSeed
-      alphaList = Set.toList alpha
-      numChoices = length alphaList
-      randomIndices = take len $ randomRs (0, numChoices - 1) gen
-   in map (alphaList !!) randomIndices
+    initial_state = initial dfa_fsa
 
--- | Fast version of generateParseableLexerParserInput using DFS-based approach.
--- This generates a valid token sequence efficiently and then generates byte sequences
--- that will lex to those tokens.
-generateParseableLexerParserInputFast ::
+    emptyArr = listArray (0, -1) []
+
+    selfLoops state = Map.findWithDefault emptyArr state self_loop_map
+
+    go g _state _extraSoFar acc [] = (reverse acc, g)
+    go g state extraSoFar acc (sym : rest) =
+      let loops = selfLoops state
+          (g', new_count, extra) = addLoops g extraSoFar loops
+          next_state = Map.findWithDefault state (state, sym) trans
+          new_acc = sym : foldl' (flip (:)) acc extra
+       in go g' next_state new_count new_acc rest
+
+    addLoops g count loops
+      | count >= maxExtra = (g, count, [])
+      | n == 0 = (g, count, [])
+      | otherwise =
+          let (r, g') = randomR (0 :: Int, 2) g
+           in if r == 0
+                then
+                  let (idx, g'') = randomR (0, n - 1) g'
+                      sym = loops ! idx
+                      (g''', new_count, more) = addLoops g'' (count + 1) loops
+                   in (g''', new_count, sym : more)
+                else (g', count, [])
+      where
+        (lo, hi) = bounds loops
+        n = hi - lo + 1
+
+-- | DFS based approach to generating input. This generates a valid
+-- token sequence efficiently and then generates byte sequences that
+-- will lex to those tokens.
+generateSingleLongLexerParserInput ::
   (Ord s, Ord nt, Show nt) =>
   Int ->
   Set.Set Word8 ->
   DFALexer Word8 s T ->
-  Maybe T ->
   Grammar (AugmentedNonterminal (Symbol nt T)) (AugmentedTerminal (Unused T)) ->
   [Word8]
-generateParseableLexerParserInputFast len alpha dfa_lexer maybe_ignore grammar =
+generateSingleLongLexerParserInput len alpha dfa_lexer grammar =
   let gen = mkStdGen randomSeed
-      token_map_dfa = tokenMap dfa_lexer
-      
-      -- Get terminals that can be produced by the lexer
-      all_lexer_terminals = Map.elems token_map_dfa
-      lexer_terminals = case maybe_ignore of
-        Just ignore -> filter (/= ignore) all_lexer_terminals
-        Nothing -> all_lexer_terminals
-      
-      -- Get valid terminals from the grammar
-      validGrammarTerminals =
-        mapMaybe unaug $
-          filter p $
-            terminals grammar
-      
-      p x = x /= AugmentedTerminal Unused && x /= LeftTurnstile && x /= RightTurnstile
+      token_bytes_map = computeTokenBytesMap alpha dfa_lexer
+      trans = transitions' $ fsa dfa_lexer
+      produces = producesToken dfa_lexer
+      self_loop_map =
+        Map.map (\xs -> listArray (0, length xs - 1) xs) $
+          Map.fromListWith
+            (++)
+            [ (s, [sym])
+            | ((s, sym), s') <- Map.toList trans,
+              s == s',
+              not ((s, sym) `Set.member` produces)
+            ]
+
       unaug (AugmentedTerminal (Used t)) = Just t
       unaug _ = Nothing
-      
-      -- Find terminals that are in both the lexer and the grammar
-      commonTerminals = filter (`elem` lexer_terminals) validGrammarTerminals
-      
-   in if null commonTerminals
-        then generateSingleLongLexerParserInput len alpha
-        else
-          -- Generate a random derivation using the fast DFS approach
-          let (gen2, derivedTerminals) = generateRandomDerivation gen len grammar
-              -- Extract tokens that are common between lexer and grammar
-              tokens = mapMaybe unaug derivedTerminals
-           in if null tokens
-                then generateSingleLongLexerParserInput len alpha
-                else
-                  -- Generate varied bytes for each token, threading the generator
-                  -- so each occurrence gets different content (e.g. non-empty strings).
-                  let maxExtra = calculateMaxExtra len tokens
-                      (_, bytesRev) =
-                        foldl
-                          ( \(g, acc) tok ->
-                              let (bs, g') = generateVariedTokenBytes g maxExtra tok alpha dfa_lexer
-                               in (g', bs : acc)
-                          )
-                          (gen2, [])
-                          tokens
-                   in concat (reverse bytesRev)
 
-lexerParserTests :: TestMode -> Bool -> CFG -> Int -> Either Text (ByteString, ByteString)
-lexerParserTests mode parseable cfg n = do
+      -- Find terminals that are in both the lexer and the grammar
+      (gen2, derivedTerminals) = generateRandomDerivation gen len grammar
+      tokens = mapMaybe unaug derivedTerminals
+
+      -- Generate varied bytes for each token, threading the generator
+      -- so each occurrence gets different content (e.g. non-empty strings).
+      maxExtra = calculateMaxExtra len tokens
+      (_, bytesRev) =
+        foldl
+          ( \(g, acc) tok ->
+              let (bs, g') = generateVariedTokenBytes token_bytes_map self_loop_map g maxExtra tok alpha dfa_lexer
+               in (g', bs : acc)
+          )
+          (gen2, [])
+          tokens
+   in concat (reverse bytesRev)
+
+lexerParserTests :: TestMode -> CFG -> Int -> Either Text (ByteString, ByteString)
+lexerParserTests mode cfg n = do
   let q = paramsLookback $ cfgParams cfg
       k = paramsLookahead $ cfgParams cfg
   spec <- cfgToDFALexerSpec cfg
@@ -398,11 +319,7 @@ lexerParserTests mode parseable cfg n = do
           let comb = listProducts n $ Set.toList alpha
            in (toInputs comb, toOutputs q k encoder dfa maybe_ignore (getGrammar grammar) table comb)
         SingleLong ->
-          let singleInput = if parseable
-                              then if n > 5
-                                     then generateParseableLexerParserInputFast n alpha dfa maybe_ignore (getGrammar grammar)
-                                     else generateParseableLexerParserInput n alpha dfa maybe_ignore (getGrammar grammar)
-                              else generateSingleLongLexerParserInput n alpha
+          let singleInput = generateSingleLongLexerParserInput n alpha dfa (getGrammar grammar)
               comb = [singleInput]
            in (toInputs comb, toOutputs q k encoder dfa maybe_ignore (getGrammar grammar) table comb)
   pure
@@ -428,7 +345,7 @@ lexerParserTestsCompare cfg input expected result = do
       int_to_token =
         Map.fromList
           [ (fromIntegral i, t)
-          | (i, Used t) <- zip [0 ..] (toTerminals encoder)
+          | (i, Used t) <- zip [0 :: Integer ..] (toTerminals encoder)
           ]
   Inputs inp <- dec "Error: Could not parse input file." input
   Outputs ex <- dec "Error: Could not parse expected output file." expected

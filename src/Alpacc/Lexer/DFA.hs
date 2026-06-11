@@ -36,6 +36,8 @@ import Data.List.NonEmpty (NonEmpty)
 import Data.Map (Map)
 import Data.Map qualified as Map hiding (Map)
 import Data.Maybe
+import Data.Sequence ((|>))
+import Data.Sequence qualified as Seq hiding (Seq (..), (<|), (><), (|>))
 import Data.Set (Set)
 import Data.Set qualified as Set hiding (Set)
 import Data.Text (Text)
@@ -411,7 +413,8 @@ data Lexeme t
   deriving (Show, Eq, Ord)
 
 tokenize :: (Eq k, Ord s, Ord t) => DFALexer t s k -> Maybe k -> [t] -> Maybe [Lexeme k]
-tokenize dfa_lexer maybe_ignore = auxiliary 0 0 [] (initial dfa)
+tokenize dfa_lexer maybe_ignore cs =
+  toList <$> auxiliary 0 0 (Seq.empty) (initial dfa) cs
   where
     dfa = fsa dfa_lexer
     trans = transitions' dfa
@@ -421,12 +424,12 @@ tokenize dfa_lexer maybe_ignore = auxiliary 0 0 [] (initial dfa)
 
     append t@(Lexeme k _) ts =
       case maybe_ignore of
-        Just ignore -> if k == ignore then ts else ts ++ [t]
-        Nothing -> ts ++ [t]
+        Just ignore -> if k == ignore then ts else ts |> t
+        Nothing -> ts |> t
 
     auxiliary _ _ _ s [] = do
       guard $ s `Set.member` accept
-      pure []
+      pure Seq.empty
     auxiliary i j lexemes s [t] = do
       s' <- Map.lookup (s, t) trans
       guard $ s' `Set.member` accept

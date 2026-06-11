@@ -3,7 +3,6 @@ module Alpacc.Test.Lexer
     lexerTestsCompare,
     TestMode (..),
     randomSeed,
-    generateParseableInputFromDFA,
   )
 where
 
@@ -115,19 +114,19 @@ instance Binary Outputs where
     results <- mapM (const get) [1 .. i]
     pure $ Outputs results
 
--- | Generate a parseable input by simulating the DFA.
--- Starting from the initial state, randomly choose valid transitions
--- until we reach the desired length and are in an accepting state.
--- If we can't reach an accepting state at the exact length, we try to find
--- the nearest accepting state and pad or trim accordingly.
-generateParseableInputFromDFA :: (Ord s, Ord t) => Int -> Set.Set t -> DFA t s -> [t]
-generateParseableInputFromDFA len alpha dfa =
+-- | Generate a single long input by simulating the DFA. Starting from
+-- the initial state, randomly choose valid transitions until we reach
+-- the desired length and are in an accepting state. If we can't reach
+-- an accepting state at the exact length, we try to find the nearest
+-- accepting state and pad or trim accordingly.
+generateSingleLongInputFromDFA :: (Ord s, Ord t) => Int -> Set.Set t -> DFA t s -> [t]
+generateSingleLongInputFromDFA len alpha dfa =
   let gen = mkStdGen randomSeed
       initial_state = initial dfa
       trans = transitions' dfa
       accept = accepting dfa
       alphaList = Set.toList alpha
-      
+
       -- First, try to generate a string that ends at an accepting state
       simulateDFA _ 0 state acc
         | state `Set.member` accept = Just (reverse acc)
@@ -137,33 +136,23 @@ generateParseableInputFromDFA len alpha dfa =
          in if null validSymbols
               then Nothing -- Stuck, can't continue
               else
-               let (idx, g') = randomR (0, length validSymbols - 1) g
-                   nextSymbol = validSymbols !! idx
-                   nextState = trans Map.! (state, nextSymbol)
-                in simulateDFA g' (n - 1) nextState (nextSymbol : acc)
-      
+                let (idx, g') = randomR (0, length validSymbols - 1) g
+                    nextSymbol = validSymbols !! idx
+                    nextState = trans Map.! (state, nextSymbol)
+                 in simulateDFA g' (n - 1) nextState (nextSymbol : acc)
+
       result = simulateDFA gen len initial_state []
-      fallback = let numChoices = length alphaList
-                     randomIndices = take len $ randomRs (0, numChoices - 1) gen
-                  in map (alphaList !!) randomIndices
+      fallback =
+        let numChoices = length alphaList
+            randomIndices = take len $ randomRs (0, numChoices - 1) gen
+         in map (alphaList !!) randomIndices
    in case result of
         Just xs -> xs
         -- Fallback to random generation if we can't find a valid path
         Nothing -> fallback
 
--- | Generate a single random input of given length from the alphabet.
--- Returns an empty list if the alphabet is empty or length is 0.
-generateSingleLongInput :: Int -> Set.Set Word8 -> [Word8]
-generateSingleLongInput _ alpha | Set.null alpha = []
-generateSingleLongInput len alpha =
-  let gen = mkStdGen randomSeed
-      alphaList = Set.toList alpha
-      numChoices = length alphaList
-      randomIndices = take len $ randomRs (0, numChoices - 1) gen
-   in map (alphaList !!) randomIndices
-
-lexerTests :: TestMode -> Bool -> CFG -> Int -> Either Text (ByteString, ByteString)
-lexerTests mode parseable cfg k = do
+lexerTests :: TestMode -> CFG -> Int -> Either Text (ByteString, ByteString)
+lexerTests mode cfg k = do
   spec <- cfgToDFALexerSpec cfg
   let ts = Map.keys $ regexMap spec
       encoder = encodeTerminals (T "ignore") $ parsingTerminals ts
@@ -179,9 +168,7 @@ lexerTests mode parseable cfg k = do
           let comb = listProducts k $ Set.toList alpha
            in (toInputs comb, toOutputs dfa ignore comb)
         SingleLong ->
-          let singleInput = if parseable
-                              then generateParseableInputFromDFA k alpha (fsa dfa)
-                              else generateSingleLongInput k alpha
+          let singleInput = generateSingleLongInputFromDFA k alpha (fsa dfa)
            in (toInputs [singleInput], toOutputs dfa ignore [singleInput])
   pure
     ( ByteString.toStrict $ encode inputs,
