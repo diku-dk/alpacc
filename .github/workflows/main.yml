@@ -47,13 +47,13 @@ jobs:
         run: cabal build all
 
       - name: Install
-        run: cabal install
+        run: cabal install --installdir=$HOME/alpacc-bin --overwrite-policy=always
 
       - name: Upload alpacc binary
         uses: actions/upload-artifact@v4
         with:
           name: alpacc-binary
-          path: ~/.local/bin/alpacc
+          path: ~/alpacc-bin/alpacc
 
   test:
     needs: build
@@ -86,10 +86,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: alpacc-binary
-          path: ~/.local/bin/
+          path: ~/alpacc-bin/
 
       - name: Make alpacc binary executable
-        run: chmod +x ~/.local/bin/alpacc
+        run: |
+          chmod +x ~/alpacc-bin/alpacc
+          echo "$HOME/alpacc-bin" >> $GITHUB_PATH
 
       - name: Install Futhark (${{ env.FUTHARK_VERSION }})
         uses: diku-dk/install-futhark@v1.1.0
@@ -124,10 +126,6 @@ jobs:
         run: bash tests/testfuthark.sh 3 3 50 10
 
       - name: JSON grammar tests with multicore backend
-        # CFLAGS follow the same pattern used by the Futhark project's own
-        # multicore CI: UBSan (-fsanitize=undefined) with -fno-sanitize-recover
-        # turns undefined behaviour into immediate crashes, making failures
-        # deterministic rather than silently wrong.
         run: |
           export CFLAGS="-fsanitize=undefined -fno-sanitize-recover -O"
           bash tests/testjson.sh multicore
