@@ -78,7 +78,7 @@ run_json_test() {
 
     # Generate the test input/output files
     # shellcheck disable=SC2086
-    if ! alpacc test generate "$GRAMMAR" --single-long --parseable --length $length $mode_flag; then
+    if ! alpacc test generate "$GRAMMAR" --single-long --length $length $mode_flag; then
         echo "ERROR: alpacc test generate failed for $mode_name mode"
         return 1
     fi
