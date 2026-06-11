@@ -123,27 +123,6 @@ jobs:
       - name: Futhark end-to-end tests (3 3)
         run: bash tests/testfuthark.sh 3 3 50 10
 
-  test-json-multicore:
-    needs: build
-    runs-on: ubuntu-24.04
-
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Download alpacc binary
-        uses: actions/download-artifact@v4
-        with:
-          name: alpacc-binary
-          path: ~/.local/bin/
-
-      - name: Make alpacc binary executable
-        run: chmod +x ~/.local/bin/alpacc
-
-      - name: Install Futhark (${{ env.FUTHARK_VERSION }})
-        uses: diku-dk/install-futhark@v1.1.0
-        with:
-          version: ${{ env.FUTHARK_VERSION }}
-
       - name: JSON grammar tests with multicore backend
         # CFLAGS follow the same pattern used by the Futhark project's own
         # multicore CI: UBSan (-fsanitize=undefined) with -fno-sanitize-recover
