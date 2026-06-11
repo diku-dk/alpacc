@@ -7,7 +7,7 @@ where
 import Alpacc.CFG
 import Alpacc.Encode
 import Alpacc.Grammar
-import Alpacc.LL (derivableNLengths)
+import Alpacc.LL (generateRandomDerivation)
 import Alpacc.LLP
 import Alpacc.Test.Lexer (TestMode (..), randomSeed)
 import Alpacc.Util
@@ -18,7 +18,6 @@ import Data.ByteString qualified as ByteString
 import Data.ByteString.Internal
 import Data.List (zip4)
 import Data.Maybe
-import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as Text
 import System.Random
@@ -95,11 +94,8 @@ generateSingleLongTokenSequence len grammar =
   let gen = mkStdGen randomSeed
       -- Get all derivations of length up to len from the start symbol
       -- We use len to ensure we get all derivations up to and including length len
-      derivable = derivableNLengths len grammar
-      derivableList = Set.toList derivable
-      validDerivations = filter ((== len) . length) derivableList
-      (idx, _) = randomR (0, length validDerivations - 1) gen
-   in mapMaybe unaug $ validDerivations !! idx
+      (_, ts) = generateRandomDerivation gen len grammar
+   in mapMaybe unaug ts
   where
     unaug (AugmentedTerminal t) = Just t
     unaug _ = Nothing
