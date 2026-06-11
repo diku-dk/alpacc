@@ -7,38 +7,35 @@ on:
   push:
     branches: [ main ]
 
+env:
+  GHC_VERSION: '9.14.1'
+  CABAL_VERSION: '3.16.0.0'
+  FUTHARK_VERSION: 'nightly'
+
 jobs:
-  test:
+  build:
     if: github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'test')
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v3
 
-      - name: Set up GHC 9.14.1
+      - name: Set up GHC ${{ env.GHC_VERSION }}
         uses: haskell-actions/setup@v2
         id: setup
         with:
-          ghc-version: '9.14.1'
-          cabal-version: '3.16.0.0'
+          ghc-version: ${{ env.GHC_VERSION }}
+          cabal-version: ${{ env.CABAL_VERSION }}
           cabal-update: true
 
-      - name: Installed versions of GHC and Cabal
-        shell: bash
-        run: |
-          GHC_VERSION=$(ghc --numeric-version)
-          CABAL_VERSION=$(cabal --numeric-version)
-          echo "GHC_VERSION=${GHC_VERSION}"     >> "${GITHUB_ENV}"
-          echo "CABAL_VERSION=${CABAL_VERSION}" >> "${GITHUB_ENV}"
-
       - name: Cache Cabal packages
-        uses:  actions/cache@v3
+        uses: actions/cache@v3
         with:
           path: |
             ~/.cabal/packages
             ~/.cabal/store
             dist-newstyle
-          key:  ${{ runner.os }}-cabal-${{ env.GHC_VERSION }}-${{ hashFiles('**/*.cabal', '**/cabal.project') }}
+          key: ${{ runner.os }}-cabal-${{ env.GHC_VERSION }}-${{ hashFiles('**/*.cabal', '**/cabal.project') }}
           restore-keys: |
             ${{ runner.os }}-cabal-${{ env.GHC_VERSION }}-
             ${{ runner.os }}-cabal-
@@ -49,76 +46,105 @@ jobs:
       - name: Build
         run: cabal build all
 
-      - name: Run tests
-        run: cabal test all
-
       - name: Install
         run: cabal install
 
-      - uses: diku-dk/install-futhark@v1.1.0
+      - name: Upload alpacc binary
+        uses: actions/upload-artifact@v4
         with:
-          version: 'nightly'
+          name: alpacc-binary
+          path: ~/.local/bin/alpacc
 
-      - name: Run Futhark tests.
-        run: |
-          bash tests/testfuthark.sh 0 0 50 10 --lexer
-          bash tests/testfuthark.sh 0 1 50 10 --parser 
-          bash tests/testfuthark.sh 1 1 50 10 --parser 
-          bash tests/testfuthark.sh 2 2 50 10 --parser 
-          bash tests/testfuthark.sh 3 3 50 10 --parser 
-          bash tests/testfuthark.sh 1 1 50 10
-          bash tests/testfuthark.sh 2 2 50 10
-          bash tests/testfuthark.sh 3 3 50 10
+  test:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up GHC ${{ env.GHC_VERSION }}
+        uses: haskell-actions/setup@v2
+        id: setup
+        with:
+          ghc-version: ${{ env.GHC_VERSION }}
+          cabal-version: ${{ env.CABAL_VERSION }}
+          cabal-update: true
+
+      - name: Restore Cabal cache
+        uses: actions/cache/restore@v3
+        with:
+          path: |
+            ~/.cabal/packages
+            ~/.cabal/store
+            dist-newstyle
+          key: ${{ runner.os }}-cabal-${{ env.GHC_VERSION }}-${{ hashFiles('**/*.cabal', '**/cabal.project') }}
+          restore-keys: |
+            ${{ runner.os }}-cabal-${{ env.GHC_VERSION }}-
+            ${{ runner.os }}-cabal-
+
+      - name: Download alpacc binary
+        uses: actions/download-artifact@v4
+        with:
+          name: alpacc-binary
+          path: ~/.local/bin/
+
+      - name: Make alpacc binary executable
+        run: chmod +x ~/.local/bin/alpacc
+
+      - name: Install Futhark (${{ env.FUTHARK_VERSION }})
+        uses: diku-dk/install-futhark@v1.1.0
+        with:
+          version: ${{ env.FUTHARK_VERSION }}
+
+      - name: Unit tests
+        run: cabal test all
+
+      - name: Futhark lexer tests
+        run: bash tests/testfuthark.sh 0 0 50 10 --lexer
+
+      - name: Futhark parser tests (0 1)
+        run: bash tests/testfuthark.sh 0 1 50 10 --parser
+
+      - name: Futhark parser tests (1 1)
+        run: bash tests/testfuthark.sh 1 1 50 10 --parser
+
+      - name: Futhark parser tests (2 2)
+        run: bash tests/testfuthark.sh 2 2 50 10 --parser
+
+      - name: Futhark parser tests (3 3)
+        run: bash tests/testfuthark.sh 3 3 50 10 --parser
+
+      - name: Futhark end-to-end tests (1 1)
+        run: bash tests/testfuthark.sh 1 1 50 10
+
+      - name: Futhark end-to-end tests (2 2)
+        run: bash tests/testfuthark.sh 2 2 50 10
+
+      - name: Futhark end-to-end tests (3 3)
+        run: bash tests/testfuthark.sh 3 3 50 10
 
   test-json-multicore:
-    if: github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'test')
+    needs: build
     runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v3
 
-      - name: Set up GHC 9.14.1
-        uses: haskell-actions/setup@v2
-        id: setup
+      - name: Download alpacc binary
+        uses: actions/download-artifact@v4
         with:
-          ghc-version: '9.14.1'
-          cabal-version: '3.16.0.0'
-          cabal-update: true
+          name: alpacc-binary
+          path: ~/.local/bin/
 
-      - name: Installed versions of GHC and Cabal
-        shell: bash
-        run: |
-          GHC_VERSION=$(ghc --numeric-version)
-          CABAL_VERSION=$(cabal --numeric-version)
-          echo "GHC_VERSION=${GHC_VERSION}"     >> "${GITHUB_ENV}"
-          echo "CABAL_VERSION=${CABAL_VERSION}" >> "${GITHUB_ENV}"
+      - name: Make alpacc binary executable
+        run: chmod +x ~/.local/bin/alpacc
 
-      - name: Cache Cabal packages
-        uses:  actions/cache@v3
+      - name: Install Futhark (${{ env.FUTHARK_VERSION }})
+        uses: diku-dk/install-futhark@v1.1.0
         with:
-          path: |
-            ~/.cabal/packages
-            ~/.cabal/store
-            dist-newstyle
-          key:  ${{ runner.os }}-cabal-${{ env.GHC_VERSION }}-${{ hashFiles('**/*.cabal', '**/cabal.project') }}
-          restore-keys: |
-            ${{ runner.os }}-cabal-${{ env.GHC_VERSION }}-
-            ${{ runner.os }}-cabal-
+          version: ${{ env.FUTHARK_VERSION }}
 
-      - name: Install dependencies
-        run: cabal build all --only-dependencies
-
-      - name: Build
-        run: cabal build all
-
-      - name: Install
-        run: cabal install
-
-      - uses: diku-dk/install-futhark@v1.1.0
-        with:
-          version: 'nightly'
-
-      - name: Run JSON grammar tests with multicore backend.
+      - name: JSON grammar tests with multicore backend
         # CFLAGS follow the same pattern used by the Futhark project's own
         # multicore CI: UBSan (-fsanitize=undefined) with -fno-sanitize-recover
         # turns undefined behaviour into immediate crashes, making failures
