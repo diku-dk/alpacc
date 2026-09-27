@@ -27,6 +27,11 @@
 // is NUM_STATES x classes entries (JSON: 823 x 23, 37 KB) instead of the
 // NUM_STATES^2 compose table (1.35 MB), so it stays L1-resident.  The scans
 // and look-backs use the compose table (a few lookups per thread).
+// Pass B starts from a known state, so it does not need the endofunctions:
+// it steps through the lexer's minimal forward machine (JSON: 19 states,
+// 19 x 23 entries), derived in the LexerCtx constructor and kept in shared
+// memory, when that table fits in LEXER_SMALL_BYTES; otherwise through the
+// step table like pass A.
 // Each chunk's 16-byte vectors are swizzled in shared memory (vector k of
 // thread t at slot k ^ ((t >> 2) & 1)), which removes the 2-way bank
 // conflicts of the stride-96 vector accesses.
@@ -36,6 +41,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <map>
 #include <vector>
 
 // Default tile shape: 256 threads x 96 bytes (tuned on the A100).
@@ -43,6 +49,9 @@
 // offsets keep bit 4 free) and at most 96 (three-word bit masks).
 constexpr uint32_t LEXER_BLOCK_SIZE = 256;
 constexpr uint32_t LEXER_CHUNK      = 96;
+// Shared memory for pass B's forward-machine table (fits 6 blocks/SM on the
+// A100 with the 96-byte tile).
+constexpr uint32_t LEXER_SMALL_BYTES = 1536;
 
 #if __CUDA_ARCH__ >= 800
 #define ALPACC_LEXER_BOUNDS(BS) __launch_bounds__(BS, 1536 / (BS))   // 1536 threads/SM
@@ -317,6 +326,7 @@ template<uint32_t BLOCK_SIZE>
 constexpr size_t lexer_shmem_bytes(uint32_t items_per_thread) {
   return (size_t)BLOCK_SIZE * items_per_thread       // tile
        + 256                                         // byte classes
+       + LEXER_SMALL_BYTES                           // pass B forward machine
        + sizeof(typename LexerBlockScanState<BLOCK_SIZE>::TempStorage)
        + sizeof(typename LexerPrefixOpState::TempStorage)
        + sizeof(typename LexerBlockScanMA<BLOCK_SIZE>::TempStorage)
@@ -397,6 +407,13 @@ public:
   uint8_t* d_byte_class;
   state_t* d_step;
   uint32_t num_classes;
+  // Forward machine for pass B (see the constructor): small_step[q *
+  // num_classes + c] and the machine state of each endofunction.  Used when
+  // small_ok (the table fits LEXER_SMALL_BYTES of shared memory).
+  state_t* d_small_step;
+  state_t* d_endo_small;
+  uint32_t num_small;
+  bool small_ok;
   ScanTileState<state_t> state_tiles;
   ScanTileState<MaxAdd>  maxadd_tiles;
 
@@ -435,6 +452,52 @@ public:
     gpuAssert(cudaMalloc(&d_step, step.size() * sizeof(state_t)));
     gpuAssert(cudaMemcpy(d_step, step.data(), step.size() * sizeof(state_t), cudaMemcpyHostToDevice));
 
+    // Forward machine for pass B.  Pass B runs from a known incoming state,
+    // so it needs the lexer's states, not the endofunctions: minimise the
+    // endofunctions as a Mealy machine (transition output: the produce and
+    // terminal flags of step[s][c]; state output: acceptance).  Each block is
+    // one machine state (JSON: 823 endofunctions -> 19 states).
+    // small_step[q * num_classes + c] is a state_t whose index is the next
+    // state and whose flags are the transition's flags.
+    {
+      const state_t FLAGS = TERMINAL_MASK | PRODUCE_MASK;
+      std::vector<uint32_t> blk(NUM_STATES), next_blk(NUM_STATES);
+      for (uint32_t s = 0; s < NUM_STATES; s++) blk[s] = h_accept[s] ? 1 : 0;
+      uint32_t count = 0;
+      for (;;) {   // refine until the number of blocks is stable
+        std::map<std::vector<uint32_t>, uint32_t> ids;
+        std::vector<uint32_t> sig(1 + 2 * num_classes);
+        for (uint32_t s = 0; s < NUM_STATES; s++) {
+          sig[0] = blk[s];
+          for (uint32_t c = 0; c < num_classes; c++) {
+            const state_t v = step[(size_t)s * num_classes + c];
+            sig[1 + 2 * c] = v & FLAGS;
+            sig[2 + 2 * c] = blk[get_index_cpu(v)];
+          }
+          next_blk[s] = ids.emplace(sig, (uint32_t)ids.size()).first->second;
+        }
+        blk.swap(next_blk);
+        if ((uint32_t)ids.size() == count) break;
+        count = (uint32_t)ids.size();
+      }
+      num_small = count;
+      std::vector<state_t> small_step((size_t)num_small * num_classes);
+      std::vector<state_t> endo_small(NUM_STATES);
+      for (uint32_t s = 0; s < NUM_STATES; s++) {
+        endo_small[s] = (state_t)(blk[s] << ENDO_OFFSET);
+        for (uint32_t c = 0; c < num_classes; c++) {
+          const state_t v = step[(size_t)s * num_classes + c];
+          small_step[(size_t)blk[s] * num_classes + c] =
+              (state_t)((blk[get_index_cpu(v)] << ENDO_OFFSET) | (v & FLAGS));
+        }
+      }
+      small_ok = small_step.size() * sizeof(state_t) <= LEXER_SMALL_BYTES;
+      gpuAssert(cudaMalloc(&d_small_step, small_step.size() * sizeof(state_t)));
+      gpuAssert(cudaMemcpy(d_small_step, small_step.data(), small_step.size() * sizeof(state_t), cudaMemcpyHostToDevice));
+      gpuAssert(cudaMalloc(&d_endo_small, endo_small.size() * sizeof(state_t)));
+      gpuAssert(cudaMemcpy(d_endo_small, endo_small.data(), endo_small.size() * sizeof(state_t), cudaMemcpyHostToDevice));
+    }
+
     gpuAssert(cudaMalloc(&state_tiles.d_tile_descriptors, ScanTileState<state_t>::AllocationSize(num_tiles)));
     gpuAssert(cudaMalloc(&maxadd_tiles.d_tile_descriptors, ScanTileState<MaxAdd>::AllocationSize(num_tiles)));
 
@@ -462,6 +525,8 @@ public:
     if (d_compose) cudaFree(d_compose);
     if (d_byte_class) cudaFree(d_byte_class);
     if (d_step) cudaFree(d_step);
+    if (d_small_step) cudaFree(d_small_step);
+    if (d_endo_small) cudaFree(d_endo_small);
     if (state_tiles.d_tile_descriptors) cudaFree(state_tiles.d_tile_descriptors);
     if (maxadd_tiles.d_tile_descriptors) cudaFree(maxadd_tiles.d_tile_descriptors);
     if (d_new_last_start) cudaFree((void*)d_new_last_start);
@@ -573,10 +638,14 @@ lexer(LexerCtx<I, J> ctx, uint8_t* d_string, terminal_t* d_terminals, J* d_start
   __shared__ typename LexerBlockScanMA<BLOCK_SIZE>::TempStorage    ma_scan;
   __shared__ typename LexerPrefixOpMA::TempStorage     ma_prefix;
   __shared__ __align__(16) uint8_t byte_class[256];
+  __shared__ state_t small_step[LEXER_SMALL_BYTES / sizeof(state_t)];   // pass B forward machine
 
   if (threadIdx.x < 256 / 16)
     reinterpret_cast<uint4*>(byte_class)[threadIdx.x] =
         reinterpret_cast<const uint4*>(ctx.d_byte_class)[threadIdx.x];
+  if (ctx.small_ok)
+    for (uint32_t i = threadIdx.x; i < ctx.num_small * ctx.num_classes; i += BLOCK_SIZE)
+      small_step[i] = ctx.d_small_step[i];
 
   const LexerCompose compose{ctx.d_compose};
   const state_t* __restrict__ d_step = ctx.d_step;
@@ -659,9 +728,12 @@ lexer(LexerCtx<I, J> ctx, uint8_t* d_string, terminal_t* d_terminals, J* d_start
   // ended at the chunk boundary); only tracked for the chunk's first byte,
   // other boundaries are the preceding thread's last token end.
   bool start0 = false;
-  state_t last = prefix;   // state after my last valid byte
-  {
-    state_t st = prefix;
+  // Pass B steps through the forward machine in shared memory when its table
+  // fits (small_ok), else through the endofunction step table.  bstep is one
+  // byte step, init my incoming state in that representation.
+  auto pass_b = [&](auto bstep, const state_t init) {
+    state_t st   = init;
+    state_t last = init;   // state after my last valid byte
 #pragma unroll
     for (I k = 0; k < VECS; k++) {
       const uint4 v = my[k ^ sw];
@@ -672,7 +744,7 @@ lexer(LexerCtx<I, J> ctx, uint8_t* d_string, terminal_t* d_terminals, J* d_start
         const uint32_t word = b < 4 ? v.x : b < 8 ? v.y : b < 12 ? v.z : v.w;
         const uint32_t byte = (word >> (8 * (b % 4))) & 0xffu;
         if (full || i < valid) {
-          st = step(st, byte);
+          st = bstep(st, byte);
           if (i == 0) {
             start0 = my_offs == 0 && is_produce(st);
           } else if (is_produce(st)) {   // byte i - 1 ends a token
@@ -694,16 +766,25 @@ lexer(LexerCtx<I, J> ctx, uint8_t* d_string, terminal_t* d_terminals, J* d_start
       }
       my[k ^ sw] = make_uint4(tw[0], tw[1], tw[2], tw[3]);
     }
-  }
-  if (valid > 0) {
-    // My last byte ends a token if the state after the next byte produces;
-    // the input's last byte ends one in the last chunk.
-    const I li = valid - 1;
-    if (has_nb ? is_produce(step(last, nb)) : is_last_chunk) {
-      if (li < 32)      m0 |= 1u << li;
-      else if (li < 64) m1 |= 1u << (li - 32);
-      else              m2 |= 1u << (li - 64);
+    if (valid > 0) {
+      // My last byte ends a token if the state after the next byte produces;
+      // the input's last byte ends one in the last chunk.
+      const I li = valid - 1;
+      if (has_nb ? is_produce(bstep(last, nb)) : is_last_chunk) {
+        if (li < 32)      m0 |= 1u << li;
+        else if (li < 64) m1 |= 1u << (li - 32);
+        else              m2 |= 1u << (li - 64);
+      }
     }
+  };
+  if (ctx.small_ok) {
+    const uint32_t nc = num_classes;
+    pass_b([&](state_t s, uint32_t byte) -> state_t {
+             return small_step[(uint32_t)get_index(s) * nc + byte_class[byte]];
+           },
+           __ldg(&ctx.d_endo_small[get_index(prefix)]));
+  } else {
+    pass_b(step, prefix);
   }
   const uint32_t e0 = m0 & n0, e1 = m1 & n1, e2 = m2 & n2;   // emitted tokens
   const I count = __popc(e0) + __popc(e1) + __popc(e2);
@@ -721,7 +802,7 @@ lexer(LexerCtx<I, J> ctx, uint8_t* d_string, terminal_t* d_terminals, J* d_start
 
   if (valid > 0 && my_offs + valid == size) {   // owner of the last input byte
     ctx.setNewSize(offs + count);
-    ctx.setLastState(last);
+    ctx.setLastState(compose(prefix, agg));   // endofunction after my last byte
     // start of the token holding the last byte
     const int prev = lexer_last_below(m0, m1, m2, valid - 1);
     ctx.setLastStart(prev >= 0  ? ctx.addOffset(my_offs + prev + 1)
