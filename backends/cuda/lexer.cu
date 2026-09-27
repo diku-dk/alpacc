@@ -15,12 +15,11 @@
 //      and kept tokens (terminal != IGNORE_TOKEN); a second block scan with
 //      look-back over (max token start, kept-token count) gives each thread
 //      its first output slot and the start of its first token;
-//   C. staged emission, in rounds of LEXER_STAGE kept tokens: each thread
-//      walks its own kept tokens (lowest set bit of its mask; the start is
-//      its previous token end, else its incoming token start) and stages
-//      (end, start) as tile-local positions in shared memory; the block
-//      then writes the round's tokens to consecutive output slots
-//      (coalesced), reading each terminal from the tile.
+//   C. warp-cooperative emission: each warp writes 32 consecutive output
+//      slots per step (coalesced).  Lane r finds the lane owning slot r by a
+//      binary search over the lanes' inclusive counts and the byte by a
+//      k-th-set-bit select in that lane's mask; the start is the owner's
+//      previous token end in its mask, else its incoming token start.
 // One byte step is two lookups: the byte's class (bytes with the same
 // to_state endofunction, a 256-byte table in shared memory) and the step
 // table step[s * num_classes + class] = compose(s, to_state[byte]), derived
@@ -44,13 +43,11 @@
 // offsets keep bit 4 free) and at most 96 (three-word bit masks).
 constexpr uint32_t LEXER_BLOCK_SIZE = 256;
 constexpr uint32_t LEXER_CHUNK      = 96;
-// Kept tokens emitted per round of pass C (4 bytes each in shared memory).
-constexpr uint32_t LEXER_STAGE      = 1792;   // 7 KB: 5 blocks/SM at 96 bytes/thread on the A100
 
 #if __CUDA_ARCH__ >= 800
-#define ALPACC_LEXER_BOUNDS(BS, IPT) __launch_bounds__(BS, lexer_min_blocks<BS, IPT>())
+#define ALPACC_LEXER_BOUNDS(BS) __launch_bounds__(BS, 1536 / (BS))   // 1536 threads/SM
 #else
-#define ALPACC_LEXER_BOUNDS(BS, IPT) __launch_bounds__(BS)
+#define ALPACC_LEXER_BOUNDS(BS) __launch_bounds__(BS)
 #endif
 
 __device__ __host__ __forceinline__
@@ -323,20 +320,7 @@ constexpr size_t lexer_shmem_bytes(uint32_t items_per_thread) {
        + sizeof(typename LexerBlockScanState<BLOCK_SIZE>::TempStorage)
        + sizeof(typename LexerPrefixOpState::TempStorage)
        + sizeof(typename LexerBlockScanMA<BLOCK_SIZE>::TempStorage)
-       + sizeof(typename LexerPrefixOpMA::TempStorage)
-       + LEXER_STAGE * sizeof(uint32_t)                // emission staging
-       + 16;                                         // pass C scalars
-}
-
-// Blocks per SM the launch bounds reserve registers for (sm_80+): the
-// thread limit (1536 per SM) or what fits in the A100's 164 KB of shared
-// memory (1 KB reserved per block), whichever is smaller.
-template<uint32_t BLOCK_SIZE, uint32_t ITEMS_PER_THREAD>
-constexpr uint32_t lexer_min_blocks() {
-  const uint32_t by_threads = 1536 / BLOCK_SIZE;
-  const uint32_t by_smem    = (uint32_t)(167936 / (lexer_shmem_bytes<BLOCK_SIZE>(ITEMS_PER_THREAD) + 1024));
-  const uint32_t blocks     = by_smem < by_threads ? by_smem : by_threads;
-  return blocks > 0 ? blocks : 1;
+       + sizeof(typename LexerPrefixOpMA::TempStorage);
 }
 
 // Largest supported ITEMS_PER_THREAD (96, 64, 32) whose per-block shared
@@ -550,6 +534,17 @@ public:
   }
 };
 
+// Position of the k-th (from 0) set bit of m.
+__device__ __forceinline__ uint32_t lexer_select_bit(uint32_t m, uint32_t k) {
+  uint32_t pos = 0, c;
+  c = __popc(m & 0xffffu); if (k >= c) { k -= c; m >>= 16; pos += 16; }
+  c = __popc(m & 0xffu);   if (k >= c) { k -= c; m >>= 8;  pos += 8;  }
+  c = __popc(m & 0xfu);    if (k >= c) { k -= c; m >>= 4;  pos += 4;  }
+  c = __popc(m & 0x3u);    if (k >= c) { k -= c; m >>= 2;  pos += 2;  }
+  c = m & 0x1u;            if (k >= c) {                   pos += 1;  }
+  return pos;
+}
+
 // Highest set bit below position pos of the 96-bit mask (m0, m1, m2), -1 if none.
 __device__ __forceinline__ int lexer_last_below(uint32_t m0, uint32_t m1, uint32_t m2, uint32_t pos) {
   const uint32_t b0 = pos >= 32 ? m0 : m0 & ((1u << pos) - 1);
@@ -559,14 +554,13 @@ __device__ __forceinline__ int lexer_last_below(uint32_t m0, uint32_t m1, uint32
 }
 
 template<typename I, typename J, I BLOCK_SIZE, I ITEMS_PER_THREAD>
-__global__ ALPACC_LEXER_BOUNDS(BLOCK_SIZE, ITEMS_PER_THREAD) void
+__global__ ALPACC_LEXER_BOUNDS(BLOCK_SIZE) void
 lexer(LexerCtx<I, J> ctx, uint8_t* d_string, terminal_t* d_terminals, J* d_starts, length_t* d_lengths, const I size, const bool is_last_chunk) {
   constexpr I CHUNK = ITEMS_PER_THREAD;
   static_assert(CHUNK % 32 == 0 && CHUNK <= 96,
                 "ITEMS_PER_THREAD: 32, 64 or 96 (multiple of 32 for the swizzle, at most 96 for the bit masks)");
   static_assert(BLOCK_SIZE % WARP == 0 && BLOCK_SIZE >= 256 / 16, "BLOCK_SIZE: whole warps, at least 16 threads");
   static_assert(sizeof(I) == 4, "tile descriptors hold 31-bit positions and counts");
-  static_assert(BLOCK_SIZE * CHUNK < 0xffff, "pass C stages tile-local positions as 16 bits");
   static_assert(sizeof(state_t) <= 4, "look-back descriptors pack state_t with a status into one word");
   static_assert((TERMINAL_MASK >> TERMINAL_OFFSET) <= 0xff, "terminals are stored as bytes in the tile");
   constexpr I VECS       = CHUNK / 16;
@@ -579,7 +573,6 @@ lexer(LexerCtx<I, J> ctx, uint8_t* d_string, terminal_t* d_terminals, J* d_start
   __shared__ typename LexerBlockScanMA<BLOCK_SIZE>::TempStorage    ma_scan;
   __shared__ typename LexerPrefixOpMA::TempStorage     ma_prefix;
   __shared__ __align__(16) uint8_t byte_class[256];
-  __shared__ uint32_t stage[LEXER_STAGE];         // pass C: (end, start) per kept token
 
   if (threadIdx.x < 256 / 16)
     reinterpret_cast<uint4*>(byte_class)[threadIdx.x] =
@@ -736,57 +729,57 @@ lexer(LexerCtx<I, J> ctx, uint8_t* d_string, terminal_t* d_terminals, J* d_start
                                 : ctx.getLastStart());
   }
 
-  // Pass C: staged emission, in rounds of LEXER_STAGE kept tokens.  Each
-  // thread walks its kept tokens (lowest set bit of its mask) whose
-  // tile-local rank falls in the round and stages each token's end and
-  // start as tile-local positions; the block then writes the round's tokens
-  // to consecutive output slots (coalesced), reading terminals from the tile.
-  __shared__ I tile_base_sh, tile_end_sh;
-  __shared__ J tile_first_start;   // start of the token that began before the tile
-  if (threadIdx.x == 0)              tile_base_sh = offs;
-  if (threadIdx.x == BLOCK_SIZE - 1) tile_end_sh  = offs + count;
-  __syncthreads();
-  const I tile_base = tile_base_sh;
-  const I tile_kept = tile_end_sh - tile_base;
-  const I loc       = offs - tile_base;           // tile-local rank of my first kept token
-  const I chunk_tl  = threadIdx.x * CHUNK;        // tile-local offset of my chunk
-  uint32_t r0 = e0, r1 = e1, r2 = e2;             // kept tokens not yet staged
-  I k = 0;
-  for (I round = 0; round < tile_kept; round += LEXER_STAGE) {
-    while (k < count && loc + k < round + LEXER_STAGE) {
-      const uint32_t pos = r0 ? __ffs(r0) - 1 : r1 ? 31 + __ffs(r1) : 63 + __ffs(r2);
-      if (r0) r0 &= r0 - 1; else if (r1) r1 &= r1 - 1; else r2 &= r2 - 1;
-      // start: after my previous token end (any terminal), else my incoming
-      // token start, which lies in this tile or before it (sentinel 0xffff)
-      const int prev = lexer_last_below(m0, m1, m2, pos);
-      uint32_t st;
-      if (prev >= 0) {
-        st = chunk_tl + prev + 1;
-      } else if (max_in > tile_offs) {
-        st = max_in - 1 - tile_offs;
-      } else {
-        st = 0xffffu;
-        tile_first_start = max_in > 0 ? ctx.addOffset(max_in - 1) : ctx.getLastStart();
-      }
-      stage[loc + k - round] = (chunk_tl + pos) | (st << 16);
-      k++;
+  // Pass C: warp-cooperative emission.
+  I incl = count;
+#pragma unroll
+  for (I d = 1; d < WARP; d <<= 1) {
+    I y = __shfl_up_sync(0xffffffff, incl, d);
+    if (lane >= d) incl += y;
+  }
+  const I warp_total = __shfl_sync(0xffffffff, incl, WARP - 1);
+  const I warp_base  = __shfl_sync(0xffffffff, offs, 0);
+  const I warp_offs  = tile_offs + warp * WARP_BYTES;
+  const uint8_t* warp_terminals = bytes + warp * WARP_BYTES;
+  __syncwarp();   // terminals of all lanes written
+  for (I j = 0; j < warp_total; j += WARP) {
+    const I r = j + lane;
+    // owner lane: smallest o with incl_o > r
+    I o = 0;
+#pragma unroll
+    for (I d = WARP / 2; d >= 1; d >>= 1) {
+      I v = __shfl_sync(0xffffffff, incl, o + d - 1);
+      if (v <= r) o += d;
     }
-    __syncthreads();   // round staged
-    const I n = min((I)LEXER_STAGE, tile_kept - round);
-    for (I i = threadIdx.x; i < n; i += BLOCK_SIZE) {
-      const uint32_t v = stage[i];
-      const I end = v & 0xffffu;
-      const I st  = v >> 16;
-      const J tok_start = st == 0xffffu ? tile_first_start : ctx.addOffset(tile_offs + st);
-      const J tok_len   = ctx.addOffset(tile_offs + end + 1) - tok_start;
+    const I o_incl  = __shfl_sync(0xffffffff, incl, o);
+    const I o_count = __shfl_sync(0xffffffff, count, o);
+    I k = r - (o_incl - o_count);   // rank within the owner's tokens
+    const uint32_t oe0 = __shfl_sync(0xffffffff, e0, o);
+    const uint32_t oe1 = __shfl_sync(0xffffffff, e1, o);
+    const uint32_t oe2 = __shfl_sync(0xffffffff, e2, o);
+    // Word holding the k-th set bit, then the bit within it.
+    const I c0 = __popc(oe0), c01 = c0 + __popc(oe1);
+    const uint32_t m = k < c0 ? oe0 : k < c01 ? oe1 : oe2;
+    const I base     = k < c0 ? 0   : k < c01 ? 32  : 64;
+    k               -= k < c0 ? 0   : k < c01 ? c0  : c01;
+    const I pos = base + lexer_select_bit(m, k);
+    // start: after the owner's previous token end (any terminal) below pos,
+    // else the owner's incoming token start
+    const uint32_t om0   = __shfl_sync(0xffffffff, m0, o);
+    const uint32_t om1   = __shfl_sync(0xffffffff, m1, o);
+    const uint32_t om2   = __shfl_sync(0xffffffff, m2, o);
+    const uint32_t o_max = __shfl_sync(0xffffffff, max_in, o);
+    const int prev = lexer_last_below(om0, om1, om2, pos);
+    if (r < warp_total) {
+      const I chunk = warp_offs + o * CHUNK;
+      const J tok_start = prev >= 0  ? ctx.addOffset(chunk + prev + 1)
+                        : o_max > 0  ? ctx.addOffset(o_max - 1)
+                                     : ctx.getLastStart();
+      const J tok_len = ctx.addOffset(chunk + pos + 1) - tok_start;
       if ((length_t)(tok_len) != tok_len) ctx.signalLengthOverflow();
-      const I t = end / CHUNK, b = end % CHUNK;
-      const I slot = tile_base + round + i;
-      d_terminals[slot] = (terminal_t)bytes[t * CHUNK + (b ^ (((t >> 2) & 1) << 4))];
-      d_starts[slot]    = tok_start;
-      d_lengths[slot]   = (length_t)tok_len;
+      d_terminals[warp_base + r] =
+          (terminal_t)warp_terminals[(o * CHUNK + pos) ^ (((o >> 2) & 1) << 4)];
+      d_starts[warp_base + r]  = tok_start;
+      d_lengths[warp_base + r] = (length_t)tok_len;
     }
-    if (round + LEXER_STAGE < tile_kept)
-      __syncthreads();   // round written before the next one is staged
   }
 }
