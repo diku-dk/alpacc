@@ -7,12 +7,12 @@
 #                       [BS_LIST] [IPT_LIST] [STATE_LIST] [INDEX_LIST]
 #
 # All list arguments are space-separated inside a single argv slot, e.g.
-#   sweep-cuda-lexer.sh json.alp data.inputs "128 256" "2 4 8 16" ...
+#   sweep-cuda-lexer.sh json.alp data.inputs "128 256" "32 64 96" ...
 #
 # Defaults exercise the interesting ranges for the JSON grammar on
 # Turing-class GPUs:
 #   BS_LIST     = "256"
-#   IPT_LIST    = "8 12 16 20"
+#   IPT_LIST    = "32 64 96"
 #   STATE_LIST  = "uint8_t"   (state_t is now endo_t fixed by codegen; this is a dummy)
 #   INDEX_LIST  = "int32_t"
 #
@@ -43,7 +43,7 @@ Positional args:
                 data-\$INPUT_SIZE.inputs alongside the grammar, generated
                 via the sibling Makefile if needed)
   BS_LIST       space-separated block sizes  (default: "256")
-  IPT_LIST      space-separated IPT values    (default: "8 12 16 20")
+  IPT_LIST      space-separated IPT values    (default: "32 64 96")
   STATE_LIST    space-separated C++ typedefs for state_t
                 (default: "uint8_t"; state_t is now endo_t fixed by codegen, this is a dummy)
   INDEX_LIST    space-separated C++ typedefs for index_t
@@ -77,7 +77,7 @@ INPUT_FILE_ARG="${1:-}"
 [ $# -ge 1 ] && shift
 BS_LIST="${1:-256}"
 [ $# -ge 1 ] && shift
-IPT_LIST="${1:-8 12 16 20}"
+IPT_LIST="${1:-32 64 96}"
 [ $# -ge 1 ] && shift
 STATE_LIST="${1:-uint8_t}"
 [ $# -ge 1 ] && shift
