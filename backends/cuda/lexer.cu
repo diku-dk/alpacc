@@ -1,196 +1,54 @@
 // ---------------------------------------------------------------------------
-// Compile-time shared-memory accounting for the lexer kernel.
+// Large-tile single-pass lexer.
 //
-// The kernel's per-block shmem footprint has three parts:
-//   1. IPT-scaling storage: `states[SHMEM_STRIDE * BLOCK_SIZE]` and the
-//      `exch` union `[IPT * BLOCK_SIZE]`.  These dominate at large IPT.
-//   2. cub::BlockScan TempStorage for the state scan (state_t) and the two
-//      SoA scans (u32, shared between Max and Add).  cub gives us an exact
-//      sizeof() for each, so we can query it as a constexpr.
-//   3. Small fixed scalars: `next_block_first_state`, `last_start`,
-//      `num_sel_sh`, and the lookbackPrefixPair warp buffers.
-//
-// max_items_per_thread() below scans IPT from 1 to some cap (1024) and
-// returns the largest value that keeps the total under `usable * SHMEM /
-// 100` (default 90%).  Because it's constexpr the search folds away at
-// compile time; the returned IPT feeds straight into the kernel template.
-template<typename I, typename state_t, typename J, typename length_t, typename terminal_t>
-constexpr size_t exch_elem_bytes() {
-  size_t t = sizeof(terminal_t);
-  size_t j = sizeof(J);
-  size_t l = sizeof(length_t);
-  return (t > j ? (t > l ? t : l) : (j > l ? j : l));
-}
-
-template<typename I, typename state_t, uint32_t BLOCK_SIZE>
-constexpr size_t shmem_pad_stride(uint32_t items_per_thread) {
-  // Mirror the SHMEM_PAD calculation from the kernel body: STRIDE picked so
-  // (STRIDE * sizeof(state_t)) ≡ 4 (mod 8), yielding conflict-free reads for
-  // the blocked state layout.  Padding depends only on state_t's byte width
-  // and IPT.
-  uint32_t shmem_mod    = 8u / (uint32_t)sizeof(state_t);
-  uint32_t shmem_target = 4u / (uint32_t)sizeof(state_t);
-  uint32_t shmem_rem    = items_per_thread % shmem_mod;
-  uint32_t shmem_raw    = (shmem_target - shmem_rem + shmem_mod) % shmem_mod;
-  uint32_t shmem_pad    = (shmem_raw == 0) ? shmem_mod : shmem_raw;
-  return (size_t)(items_per_thread + shmem_pad);
-}
-
-template<typename I, typename state_t, typename J, typename length_t, typename terminal_t, uint32_t BLOCK_SIZE>
-constexpr size_t lexer_shmem_variable(uint32_t items_per_thread) {
-  size_t states_bytes = sizeof(state_t) * shmem_pad_stride<I, state_t, BLOCK_SIZE>(items_per_thread) * BLOCK_SIZE;
-  size_t exch_bytes   = exch_elem_bytes<I, state_t, J, length_t, terminal_t>() * items_per_thread * BLOCK_SIZE;
-  return states_bytes + exch_bytes;
-}
-
-template<typename I, typename state_t, uint32_t BLOCK_SIZE>
-constexpr size_t lexer_shmem_fixed() {
-  // cub TempStorage: one for the state scan (state_t) and one shared between
-  // the two SoA scans (u32).  sizeof gives us the exact per-instantiation
-  // size cub picks for this (T, BLOCK_SIZE) pair.
-  size_t cub_state_temp = sizeof(typename cub::BlockScan<state_t, BLOCK_SIZE>::TempStorage);
-  size_t cub_u32_temp   = sizeof(typename cub::BlockScan<uint32_t,  BLOCK_SIZE>::TempStorage);
-  // lookbackPrefixPair shmem: two warp-sized value arrays (I each) + one
-  // status array + two shmem prefix scalars.
-  size_t lookback = 2u * sizeof(I) * WARP + sizeof(uint8_t) * WARP + 2u * sizeof(I);
-  size_t fixed_scalars = sizeof(state_t)      // next_block_first_state
-                        + sizeof(I)           // last_start
-                        + sizeof(I);          // num_sel_sh
-  return cub_state_temp + cub_u32_temp + lookback + fixed_scalars;
-}
-
-// Largest ITEMS_PER_THREAD ≤ HARD_CAP whose per-block shmem footprint fits
-// in floor(SHARED_MEMORY * USABLE_PCT / 100) bytes.  Reserving 10% by
-// default (USABLE_PCT = 90) leaves headroom for cub internals and any small
-// implicit allocations we haven't modelled.
-template<typename I, typename state_t, typename J, typename length_t, typename terminal_t,
-         uint32_t BLOCK_SIZE, uint32_t SHARED_MEMORY,
-         uint32_t HARD_CAP = 1024, uint32_t USABLE_PCT = 90>
-constexpr uint32_t max_items_per_thread() {
-  size_t usable = (size_t)SHARED_MEMORY * USABLE_PCT / 100u;
-  size_t fixed = lexer_shmem_fixed<I, state_t, BLOCK_SIZE>();
-  uint32_t best = 1;
-  for (uint32_t ipt = 1; ipt <= HARD_CAP; ipt++) {
-    size_t total = fixed + lexer_shmem_variable<I, state_t, J, length_t, terminal_t, BLOCK_SIZE>(ipt);
-    if (total <= usable) best = ipt;
-    else break;
-  }
-  return best;
-}
-
+// A block's tile is BLOCK_SIZE * ITEMS_PER_THREAD input bytes (24 KB at the
+// default 256 x 96), kept in shared memory; thread t owns the
+// ITEMS_PER_THREAD contiguous bytes [t * IPT, (t + 1) * IPT) (its chunk).
+// Per tile:
+//   A. each thread reduces its chunk to one state (a chain of byte steps from
+//      IDENTITY); a block exclusive scan of these aggregates with a decoupled
+//      look-back over the preceding tiles gives each thread its incoming
+//      state;
+//   B. each thread rescans its chunk from the incoming state, writes every
+//      byte's terminal in place over the input, and gathers per-byte bits in
+//      three-word registers: token ends (the state after the byte produces)
+//      and kept tokens (terminal != IGNORE_TOKEN); a second block scan with
+//      look-back over (max token start, kept-token count) gives each thread
+//      its first output slot and the start of its first token;
+//   C. warp-cooperative emission: each warp writes 32 consecutive output
+//      slots per step (coalesced).  Lane r finds the lane owning slot r by a
+//      binary search over the lanes' inclusive counts and the byte by a
+//      k-th-set-bit select in that lane's mask; the start is the owner's
+//      previous token end in its mask, else its incoming token start.
+// One byte step is two lookups: the byte's class (bytes with the same
+// to_state endofunction, a 256-byte table in shared memory) and the step
+// table step[s * num_classes + class] = compose(s, to_state[byte]), derived
+// in the LexerCtx constructor from h_compose and h_to_state.  The step table
+// is NUM_STATES x classes entries (JSON: 823 x 23, 37 KB) instead of the
+// NUM_STATES^2 compose table (1.35 MB), so it stays L1-resident.  The scans
+// and look-backs use the compose table (a few lookups per thread).
+// Each chunk's 16-byte vectors are swizzled in shared memory (vector k of
+// thread t at slot k ^ ((t >> 2) & 1)), which removes the 2-way bank
+// conflicts of the stride-96 vector accesses.
+// The look-backs use static tile indices (blockIdx.x) and one-word tile
+// descriptors (status and value together) published with relaxed stores.
 // ---------------------------------------------------------------------------
-// Per-arch tuning table (CUB-style).
-//
-// CUB stores a nominal IPT in 4-byte-work units per (arch, algorithm) and
-// scales at instantiation by `NOMINAL_ITEMS_PER_THREAD_4B * 4 / sizeof(T)`.
-// We mirror that pattern: the table holds `nominal_ipt_4B` and
-// `block_size`, and the lexer takes ELEM_BYTES = sizeof(index_t) as the
-// type-size bucket — the max/add scans over start codes and produce
-// flags are index_t-sized and drive the per-item register pressure at
-// the block boundary.  state_t affects an earlier scan whose shmem cost
-// is folded into `max_items_per_thread()` as a clamp.
-//
-// Values marked `[measured]` come from
-// `benchmarks/sweep-cuda-lexer.sh` on the JSON grammar for the given
-// arch and are the fastest observed setting at ELEM_BYTES = 4
-// (state_t = u16, index_t = i32).  Values marked `[cub]` are copied
-// directly from CUB's DeviceScan `NOMINAL_ITEMS_PER_THREAD_4B` and are
-// starting points until we have measurements.  Rows with
-// nominal_ipt_4B == 0 mean "unknown arch; fall back to the shmem-based
-// search".  Replace `[cub]` with `[measured]` as sweep data comes in.
-template<int SM_ARCH, size_t ELEM_BYTES>
-struct alpacc_ipt_tuning {
-  static constexpr uint32_t nominal_ipt_4B = 0;
-  static constexpr uint32_t block_size     = 256;
-};
 
-// Pascal (sm_60, sm_61) — Tesla P100 / GP102          [cub]
-template<size_t ELEM> struct alpacc_ipt_tuning<60, ELEM> {
-  static constexpr uint32_t nominal_ipt_4B = 15;
-  static constexpr uint32_t block_size     = 128;
-};
-template<size_t ELEM> struct alpacc_ipt_tuning<61, ELEM> {
-  static constexpr uint32_t nominal_ipt_4B = 15;
-  static constexpr uint32_t block_size     = 128;
-};
+#include <cstdio>
+#include <cstdlib>
+#include <vector>
 
-// Volta (sm_70) — V100                                 [cub]
-template<size_t ELEM> struct alpacc_ipt_tuning<70, ELEM> {
-  static constexpr uint32_t nominal_ipt_4B = 15;
-  static constexpr uint32_t block_size     = 128;
-};
+// Default tile shape: 256 threads x 96 bytes (tuned on the A100).
+// ITEMS_PER_THREAD must be 32, 64 or 96: a multiple of 32 (swizzled chunk
+// offsets keep bit 4 free) and at most 96 (three-word bit masks).
+constexpr uint32_t LEXER_BLOCK_SIZE = 256;
+constexpr uint32_t LEXER_CHUNK      = 96;
 
-// Turing (sm_75) — T4, 1660 Ti, RTX 20xx               [measured]
-// Sweep on the JSON grammar (index_t = i32, 10M-token dataset) with
-// `benchmarks/sweep-cuda-lexer.sh` picked BS=256, IPT=12 as the
-// fastest (2832 μs kernel-only vs 2929 μs at CUB's IPT=8).
-// nominal_ipt_4B = 12 * 4 / 4 = 12.
-template<size_t ELEM> struct alpacc_ipt_tuning<75, ELEM> {
-  static constexpr uint32_t nominal_ipt_4B = 12;
-  static constexpr uint32_t block_size     = 256;
-};
-
-// Ampere data-centre (sm_80) — A100                    [measured]
-template<size_t ELEM> struct alpacc_ipt_tuning<80, ELEM> {
-  static constexpr uint32_t nominal_ipt_4B = 20;
-  static constexpr uint32_t block_size     = 256;
-};
-
-// Ampere consumer (sm_86) — RTX 30xx, A40              [cub]
-template<size_t ELEM> struct alpacc_ipt_tuning<86, ELEM> {
-  static constexpr uint32_t nominal_ipt_4B = 12;
-  static constexpr uint32_t block_size     = 128;
-};
-
-// Ada Lovelace (sm_89) — RTX 40xx, L4/L40              [cub]
-template<size_t ELEM> struct alpacc_ipt_tuning<89, ELEM> {
-  static constexpr uint32_t nominal_ipt_4B = 12;
-  static constexpr uint32_t block_size     = 128;
-};
-
-// Hopper (sm_90) — H100                                [cub]
-template<size_t ELEM> struct alpacc_ipt_tuning<90, ELEM> {
-  static constexpr uint32_t nominal_ipt_4B = 15;
-  static constexpr uint32_t block_size     = 128;
-};
-
-// Blackwell (sm_100) — B100/B200                       [cub]
-template<size_t ELEM> struct alpacc_ipt_tuning<100, ELEM> {
-  static constexpr uint32_t nominal_ipt_4B = 15;
-  static constexpr uint32_t block_size     = 128;
-};
-
-// Type-size bucket driver: sizeof(index_t).  The block-local max and add
-// scans run on I = uint32_t but their downstream register arrays
-// (`starts[IPT]`, `local_offs[IPT]`) and the SoA lookback buffers are
-// index_t-sized, which is what drives the scan's per-item register
-// pressure at the block boundary.  state_t affects a separate scan that
-// runs first; its impact on IPT is captured indirectly through the shmem
-// clamp in `max_items_per_thread()`.  length_t and terminal_t are always
-// narrower and don't move the optimum in practice.
-template<typename state_t, typename J>
-constexpr size_t elem_bytes() {
-  (void)sizeof(state_t);  // silence unused-template-parameter warnings
-  return sizeof(J);
-}
-
-// Table-driven IPT (0 if the arch is unknown, in which case callers fall
-// back to max_items_per_thread<>()).
-template<int SM_ARCH, typename state_t, typename J>
-constexpr uint32_t arch_ipt() {
-  constexpr size_t bytes = elem_bytes<state_t, J>();
-  constexpr uint32_t nominal = alpacc_ipt_tuning<SM_ARCH, bytes>::nominal_ipt_4B;
-  if (nominal == 0) return 0;
-  // Scale from 4B-work units to the actual per-thread element size.
-  uint32_t scaled = nominal * 4u / (uint32_t)bytes;
-  return scaled == 0 ? 1 : scaled;
-}
-
-template<int SM_ARCH, typename state_t, typename J>
-constexpr uint32_t arch_block_size() {
-  constexpr size_t bytes = elem_bytes<state_t, J>();
-  return alpacc_ipt_tuning<SM_ARCH, bytes>::block_size;
-}
+#if __CUDA_ARCH__ >= 800
+#define ALPACC_LEXER_BOUNDS(BS) __launch_bounds__(BS, 1536 / (BS))   // 1536 threads/SM
+#else
+#define ALPACC_LEXER_BOUNDS(BS) __launch_bounds__(BS)
+#endif
 
 __device__ __host__ __forceinline__
 state_t get_index(state_t state) {
@@ -220,14 +78,279 @@ bool is_produce_cpu(state_t state) {
   return (state & PRODUCE_MASK) >> PRODUCE_OFFSET;
 }
 
+// compose(a, b): apply a first, then b.
+struct LexerCompose {
+  const state_t* table;
+  __device__ __forceinline__ state_t operator()(const state_t& a, const state_t& b) const {
+    return __ldg(&table[(uint32_t)get_index(a) * NUM_STATES + get_index(b)]);
+  }
+};
+
+// Token starts and output slots (pass B): per thread the start of the token
+// after its last token end, and its number of kept tokens.  Starts are
+// encoded as position + 1 relative to the chunk, 0 = no token end seen yet
+// (the token started in an earlier chunk: LexerCtx::getLastStart()).
+struct MaxAdd {
+  uint32_t max;
+  uint32_t cnt;
+};
+struct MaxAddOp {
+  __device__ __forceinline__ MaxAdd operator()(const MaxAdd& a, const MaxAdd& b) const {
+    return MaxAdd{a.max > b.max ? a.max : b.max, a.cnt + b.cnt};
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Decoupled look-back with one-word tile descriptors: status and value are
+// packed into one TxnWord, so publishing and reading a tile are each a single
+// transaction and need no fences.
+// ---------------------------------------------------------------------------
+
+// Padding entries before the descriptors: the first window of tile t reads
+// tiles t - 1 ... t - WARP, as low as -WARP.
+const uint32_t LEXER_TILE_PADDING = WARP;
+
+enum LexerTileStatus : uint32_t {
+  LEXER_TILE_OOB       = 0,  // padding (before the first tile)
+  LEXER_TILE_INVALID   = 1,  // not yet published
+  LEXER_TILE_PARTIAL   = 2,  // tile aggregate published
+  LEXER_TILE_INCLUSIVE = 3,  // inclusive prefix published
+};
+
+template<typename T>
+struct TxnWordTraits;
+
+template<> struct TxnWordTraits<uint8_t> {
+  using TxnWord    = uint16_t;
+  using StatusWord = uint8_t;
+  __device__ __forceinline__ static TxnWord pack(StatusWord status, uint8_t value) {
+    return uint16_t((uint32_t(value) << 8) | uint32_t(status));
+  }
+  __device__ __forceinline__ static StatusWord unpack_status(TxnWord w) { return StatusWord(w & 0xffu); }
+  __device__ __forceinline__ static uint8_t unpack_value(TxnWord w) { return uint8_t(w >> 8); }
+};
+template<> struct TxnWordTraits<uint16_t> {
+  using TxnWord    = uint32_t;
+  using StatusWord = uint16_t;
+  __device__ __forceinline__ static TxnWord pack(StatusWord status, uint16_t value) {
+    return (uint32_t(value) << 16) | uint32_t(status);
+  }
+  __device__ __forceinline__ static StatusWord unpack_status(TxnWord w) { return StatusWord(w & 0xffffu); }
+  __device__ __forceinline__ static uint16_t unpack_value(TxnWord w) { return uint16_t(w >> 16); }
+};
+template<> struct TxnWordTraits<uint32_t> {
+  using TxnWord    = unsigned long long;
+  using StatusWord = uint32_t;
+  __device__ __forceinline__ static TxnWord pack(StatusWord status, uint32_t value) {
+    return (TxnWord(value) << 32) | TxnWord(status);
+  }
+  __device__ __forceinline__ static StatusWord unpack_status(TxnWord w) { return StatusWord(w & 0xffffffffull); }
+  __device__ __forceinline__ static uint32_t unpack_value(TxnWord w) { return uint32_t(w >> 32); }
+};
+// MaxAdd: status in bits 1-0, max in bits 32-2, cnt in bits 63-33 (inputs
+// and token counts < 2^31, checked in the LexerCtx constructor).
+template<> struct TxnWordTraits<MaxAdd> {
+  using TxnWord    = unsigned long long;
+  using StatusWord = uint32_t;
+  __device__ __forceinline__ static TxnWord pack(StatusWord status, MaxAdd v) {
+    return TxnWord(status) | (TxnWord(v.max) << 2) | (TxnWord(v.cnt) << 33);
+  }
+  __device__ __forceinline__ static StatusWord unpack_status(TxnWord w) { return StatusWord(w & 3ull); }
+  __device__ __forceinline__ static MaxAdd unpack_value(TxnWord w) {
+    return MaxAdd{uint32_t((w >> 2) & 0x7fffffffull), uint32_t(w >> 33)};
+  }
+};
+
+// Relaxed GPU-scope stores: status and value share one word, so a reader
+// needs no ordering beyond that word itself.
+#if __CUDA_ARCH__ >= 700
+__device__ __forceinline__ void lexer_store_relaxed(uint16_t* ptr, uint16_t val) {
+  asm volatile("st.relaxed.gpu.u16 [%0], %1;" :: "l"(ptr), "h"(val) : "memory");
+}
+__device__ __forceinline__ void lexer_store_relaxed(uint32_t* ptr, uint32_t val) {
+  asm volatile("st.relaxed.gpu.u32 [%0], %1;" :: "l"(ptr), "r"(val) : "memory");
+}
+__device__ __forceinline__ void lexer_store_relaxed(unsigned long long* ptr, unsigned long long val) {
+  asm volatile("st.relaxed.gpu.u64 [%0], %1;" :: "l"(ptr), "l"(val) : "memory");
+}
+#define LEXER_SLEEP(ns) __nanosleep(ns)
+#else
+template<typename W>
+__device__ __forceinline__ void lexer_store_relaxed(W* ptr, W val) {
+  __threadfence();
+  *const_cast<volatile W*>(ptr) = val;
+}
+#define LEXER_SLEEP(ns) __threadfence_block()
+#endif
+
+// Per-tile descriptors, (num_tiles + LEXER_TILE_PADDING) TxnWords.
+template<typename T>
+struct ScanTileState {
+  using StatusWord = typename TxnWordTraits<T>::StatusWord;
+  using TxnWord    = typename TxnWordTraits<T>::TxnWord;
+
+  TxnWord* d_tile_descriptors;
+
+  __host__ static size_t AllocationSize(uint32_t num_tiles) {
+    return (num_tiles + LEXER_TILE_PADDING) * sizeof(TxnWord);
+  }
+
+  // One thread per descriptor.
+  __device__ void InitializeStatus(uint32_t num_tiles) {
+    uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < num_tiles)
+      d_tile_descriptors[LEXER_TILE_PADDING + idx] =
+          TxnWordTraits<T>::pack(StatusWord(LEXER_TILE_INVALID), T());
+    if (blockIdx.x == 0 && threadIdx.x < LEXER_TILE_PADDING)
+      d_tile_descriptors[threadIdx.x] = TxnWordTraits<T>::pack(StatusWord(LEXER_TILE_OOB), T());
+  }
+
+  __device__ __forceinline__ void SetPartial(int tile_idx, T value) {
+    lexer_store_relaxed(d_tile_descriptors + LEXER_TILE_PADDING + tile_idx,
+                        TxnWordTraits<T>::pack(StatusWord(LEXER_TILE_PARTIAL), value));
+  }
+  __device__ __forceinline__ void SetInclusive(int tile_idx, T value) {
+    lexer_store_relaxed(d_tile_descriptors + LEXER_TILE_PADDING + tile_idx,
+                        TxnWordTraits<T>::pack(StatusWord(LEXER_TILE_INCLUSIVE), value));
+  }
+
+  // Spins (warp-wide) until the tile is published.
+  __device__ __forceinline__ void WaitForValid(int tile_idx, StatusWord& status, T& value,
+                                               uint32_t initial_delay_ns) {
+    if (initial_delay_ns > 0)
+      LEXER_SLEEP(initial_delay_ns);
+    const volatile TxnWord* p = d_tile_descriptors + LEXER_TILE_PADDING + tile_idx;
+    TxnWord word = *p;
+    while (__any_sync(0xffffffff,
+           TxnWordTraits<T>::unpack_status(word) == StatusWord(LEXER_TILE_INVALID))) {
+      LEXER_SLEEP(350);
+      word = *p;
+    }
+    status = TxnWordTraits<T>::unpack_status(word);
+    value  = TxnWordTraits<T>::unpack_value(word);
+  }
+};
+
+template<typename T>
+__global__ void lexerInitTiles(ScanTileState<T> tiles, uint32_t num_tiles) {
+  tiles.InitializeStatus(num_tiles);
+}
+
+// Prefix callback for cub::BlockScan (called by the first warp): lane i reads
+// tile tile_idx - i - 1; each window is combined with a tail-segmented
+// reduction, and the window slides back until an inclusive prefix (or the
+// padding before the first tile) is found.  The padding contributes `seed`,
+// the value before the first tile.
+template<typename T, typename ScanOpT, uint32_t FIRST_DELAY_NS = 450>
+struct TilePrefixCallbackOp {
+  using StatusWord  = typename ScanTileState<T>::StatusWord;
+  using WarpReduceT = cub::WarpReduce<T, WARP>;
+
+  struct TempStorage {
+    typename WarpReduceT::TempStorage warp_reduce;
+  };
+
+  ScanTileState<T>& tile_state;
+  TempStorage&      temp_storage;
+  ScanOpT           scan_op;
+  int               tile_idx;
+  T                 seed;
+
+  __device__ __forceinline__
+  TilePrefixCallbackOp(ScanTileState<T>& tile_state, TempStorage& temp_storage,
+                       ScanOpT scan_op, int tile_idx, T seed)
+      : tile_state(tile_state), temp_storage(temp_storage), scan_op(scan_op),
+        tile_idx(tile_idx), seed(seed) {}
+
+  __device__ __forceinline__ T
+  ProcessWindow(int predecessor_idx, StatusWord& predecessor_status, uint32_t delay_ns) {
+    T value;
+    tile_state.WaitForValid(predecessor_idx, predecessor_status, value, delay_ns);
+    const int is_oob    = predecessor_status == StatusWord(LEXER_TILE_OOB);
+    const int tail_flag = (predecessor_status == StatusWord(LEXER_TILE_INCLUSIVE)) | is_oob;
+    const T   eff_value = is_oob ? seed : value;
+    // Lane 0 is the nearest predecessor: combine with the operator flipped.
+    auto flipped_op = [&](T a, T b) { return scan_op(b, a); };
+    return WarpReduceT(temp_storage.warp_reduce).TailSegmentedReduce(eff_value, tail_flag, flipped_op);
+  }
+
+  // Called by BlockScan with the block aggregate; returns the exclusive prefix.
+  __device__ __forceinline__ T operator()(T block_aggregate) {
+    if (threadIdx.x == 0)
+      tile_state.SetPartial(tile_idx, block_aggregate);
+
+    int predecessor_idx = tile_idx - (int)threadIdx.x - 1;
+    StatusWord predecessor_status;
+    T exclusive_prefix = ProcessWindow(predecessor_idx, predecessor_status, FIRST_DELAY_NS);
+    while (__all_sync(0xffffffff, predecessor_status != StatusWord(LEXER_TILE_INCLUSIVE)
+                               && predecessor_status != StatusWord(LEXER_TILE_OOB))) {
+      predecessor_idx -= WARP;
+      T window_agg = ProcessWindow(predecessor_idx, predecessor_status, 350);
+      exclusive_prefix = scan_op(window_agg, exclusive_prefix);
+    }
+
+    T ep;
+    if constexpr (sizeof(T) <= sizeof(uint32_t))
+      ep = (T)__shfl_sync(0xffffffff, (uint32_t)exclusive_prefix, 0);
+    else
+      ep = cub::ShuffleIndex<WARP>(exclusive_prefix, 0, 0xffffffff);
+    if (threadIdx.x == 0)
+      tile_state.SetInclusive(tile_idx, scan_op(ep, block_aggregate));
+    return ep;
+  }
+};
+
+template<uint32_t BLOCK_SIZE>
+using LexerBlockScanState = cub::BlockScan<state_t, BLOCK_SIZE, cub::BLOCK_SCAN_WARP_SCANS>;
+template<uint32_t BLOCK_SIZE>
+using LexerBlockScanMA    = cub::BlockScan<MaxAdd, BLOCK_SIZE, cub::BLOCK_SCAN_WARP_SCANS>;
+using LexerPrefixOpState  = TilePrefixCallbackOp<state_t, LexerCompose>;
+using LexerPrefixOpMA     = TilePrefixCallbackOp<MaxAdd, MaxAddOp>;
+
+// ---------------------------------------------------------------------------
+// Tile shape selection (used by cli.cu).  The template parameters mirror the
+// former per-arch tuning interface; the lexer has one tuned shape, so the
+// "table" always proposes LEXER_BLOCK_SIZE x LEXER_CHUNK and
+// max_items_per_thread() clamps it to the shared memory budget.
+// ---------------------------------------------------------------------------
+template<uint32_t BLOCK_SIZE>
+constexpr size_t lexer_shmem_bytes(uint32_t items_per_thread) {
+  return (size_t)BLOCK_SIZE * items_per_thread       // tile
+       + 256                                         // byte classes
+       + sizeof(typename LexerBlockScanState<BLOCK_SIZE>::TempStorage)
+       + sizeof(typename LexerPrefixOpState::TempStorage)
+       + sizeof(typename LexerBlockScanMA<BLOCK_SIZE>::TempStorage)
+       + sizeof(typename LexerPrefixOpMA::TempStorage);
+}
+
+// Largest supported ITEMS_PER_THREAD (96, 64, 32) whose per-block shared
+// memory fits in SHARED_MEMORY * USABLE_PCT / 100 bytes.
+template<typename I, typename state_t_, typename J, typename length_t_, typename terminal_t_,
+         uint32_t BLOCK_SIZE, uint32_t SHARED_MEMORY,
+         uint32_t HARD_CAP = 1024, uint32_t USABLE_PCT = 90>
+constexpr uint32_t max_items_per_thread() {
+  const size_t usable = (size_t)SHARED_MEMORY * USABLE_PCT / 100u;
+  for (uint32_t ipt = LEXER_CHUNK; ipt >= 32; ipt -= 32)
+    if (ipt <= HARD_CAP && lexer_shmem_bytes<BLOCK_SIZE>(ipt) <= usable)
+      return ipt;
+  return 32;
+}
+
+template<int SM_ARCH, typename state_t_, typename J>
+constexpr uint32_t arch_ipt() {
+  return LEXER_CHUNK;
+}
+
+template<int SM_ARCH, typename state_t_, typename J>
+constexpr uint32_t arch_block_size() {
+  return LEXER_BLOCK_SIZE;
+}
+
 template<typename I, typename J>
 struct LexerCtx {
 
 private:
   J offset = 0;
-  state_t* d_to_state;
-  state_t* d_compose;
-  volatile uint32_t* d_dyn_block_index;
   volatile state_t* d_new_last_state;
   volatile state_t* d_old_last_state;
   I* d_new_size;
@@ -243,135 +366,115 @@ private:
   }
 
   void swapLastState() {
-  state_t h_last_state;
-  gpuAssert(cudaMemcpy(&h_last_state, (const void*) d_new_last_state, sizeof(state_t), cudaMemcpyDeviceToHost));
-  gpuAssert(cudaMemcpy((void *) d_new_last_state, (const void*) d_old_last_state, sizeof(state_t), cudaMemcpyDeviceToDevice));
-  gpuAssert(cudaMemcpy((void *) d_old_last_state, &h_last_state, sizeof(state_t), cudaMemcpyHostToDevice));
-}
+    state_t h_last_state;
+    gpuAssert(cudaMemcpy(&h_last_state, (const void*) d_new_last_state, sizeof(state_t), cudaMemcpyDeviceToHost));
+    gpuAssert(cudaMemcpy((void *) d_new_last_state, (const void*) d_old_last_state, sizeof(state_t), cudaMemcpyDeviceToDevice));
+    gpuAssert(cudaMemcpy((void *) d_old_last_state, &h_last_state, sizeof(state_t), cudaMemcpyHostToDevice));
+  }
 
-  void resetDynamicIndex() const {
-    cudaMemset((void*)d_dyn_block_index, 0, sizeof(uint32_t));
+  // Descriptors of all tiles: invalid (not yet published), padding OOB.
+  void initTiles() {
+    const uint32_t blocks = (num_tiles + 255) / 256;
+    lexerInitTiles<<<blocks, 256>>>(state_tiles, num_tiles);
+    lexerInitTiles<<<blocks, 256>>>(maxadd_tiles, num_tiles);
+  }
+
+  void setIdentity(volatile state_t* p) {
+    const state_t iden = IDENTITY;
+    gpuAssert(cudaMemcpy((void*)p, &iden, sizeof(state_t), cudaMemcpyHostToDevice));
   }
 
   void updateOffset() {
     offset += CHUNK_SIZE;
   }
 
-  void resetNewSize() const {
-    cudaMemset(d_new_size, 0, sizeof(I));
-  }
-
 public:
   const I CHUNK_SIZE;
-  States<I, state_t> d_state_states;
-  // SoA inter-block buffer for the (max token-start, +produce-count) scan.
-  // Both components are I (u32); keeping them in separate arrays avoids the
-  // former packed-u64 layout that dragged 8-byte traffic through the warp
-  // scan for two 4-byte values, and matches how the block-local scan runs
-  // them as independent scalar reductions.
-  PairStates<I, I, I> d_maxadd_states;
+  uint32_t num_tiles;
+  // Device tables (read by the kernel): compose for the scans and
+  // look-backs; byte classes and the step table for the per-byte steps.
+  state_t* d_compose;
+  uint8_t* d_byte_class;
+  state_t* d_step;
+  uint32_t num_classes;
+  ScanTileState<state_t> state_tiles;
+  ScanTileState<MaxAdd>  maxadd_tiles;
 
   LexerCtx(const I chunk_size,
            const I block_size,
            const I items_per_thread) : CHUNK_SIZE(chunk_size) {
-    I num_blocks = numBlocks(chunk_size, block_size, items_per_thread);
-    gpuAssert(cudaMalloc(&d_to_state, sizeof(h_to_state)));
-    cudaMemcpy(d_to_state, h_to_state, sizeof(h_to_state),
-                 cudaMemcpyHostToDevice);
-    gpuAssert(cudaMalloc(&d_compose, sizeof(h_compose)));
-    cudaMemcpy(d_compose, h_compose, sizeof(h_compose),
-                 cudaMemcpyHostToDevice);
-    d_maxadd_states = PairStates<I, I, I>(num_blocks);
-    d_state_states = States<I, state_t>(num_blocks);
+    // Token starts and counts are 31-bit fields of the MaxAdd descriptors.
+    if ((uint64_t)chunk_size >= (1ull << 31) - 1) {
+      fprintf(stderr, "error: lexer chunk of %llu bytes exceeds 2^31 - 2\n",
+              (unsigned long long)chunk_size);
+      exit(1);
+    }
+    num_tiles = numBlocks(chunk_size, block_size, items_per_thread);
 
-    gpuAssert(cudaMalloc((void**)&d_dyn_block_index, sizeof(uint32_t)));
+    gpuAssert(cudaMalloc(&d_compose, sizeof(h_compose)));
+    gpuAssert(cudaMemcpy(d_compose, h_compose, sizeof(h_compose), cudaMemcpyHostToDevice));
+
+    // Byte classes: bytes with the same to_state endofunction.  Step table:
+    // step[s * num_classes + c] = compose(s, class c's endofunction).
+    std::vector<uint8_t> byte_class(256);
+    std::vector<uint32_t> class_endo;
+    for (uint32_t b = 0; b < 256; b++) {
+      const uint32_t e = get_index_cpu(h_to_state[b]);
+      uint32_t c = 0;
+      while (c < class_endo.size() && class_endo[c] != e) c++;
+      if (c == class_endo.size()) class_endo.push_back(e);
+      byte_class[b] = (uint8_t)c;
+    }
+    num_classes = (uint32_t)class_endo.size();
+    std::vector<state_t> step((size_t)NUM_STATES * num_classes);
+    for (uint32_t s = 0; s < NUM_STATES; s++)
+      for (uint32_t c = 0; c < num_classes; c++)
+        step[(size_t)s * num_classes + c] = h_compose[(size_t)s * NUM_STATES + class_endo[c]];
+    gpuAssert(cudaMalloc(&d_byte_class, 256));
+    gpuAssert(cudaMemcpy(d_byte_class, byte_class.data(), 256, cudaMemcpyHostToDevice));
+    gpuAssert(cudaMalloc(&d_step, step.size() * sizeof(state_t)));
+    gpuAssert(cudaMemcpy(d_step, step.data(), step.size() * sizeof(state_t), cudaMemcpyHostToDevice));
+
+    gpuAssert(cudaMalloc(&state_tiles.d_tile_descriptors, ScanTileState<state_t>::AllocationSize(num_tiles)));
+    gpuAssert(cudaMalloc(&maxadd_tiles.d_tile_descriptors, ScanTileState<MaxAdd>::AllocationSize(num_tiles)));
+
     gpuAssert(cudaMalloc((void**)&d_new_size, sizeof(I)));
     gpuAssert(cudaMalloc((void**)&d_new_last_state, sizeof(state_t)));
     gpuAssert(cudaMalloc((void**)&d_old_last_state, sizeof(state_t)));
     gpuAssert(cudaMalloc((void**)&d_new_last_start, sizeof(J)));
     gpuAssert(cudaMalloc((void**)&d_old_last_start, sizeof(J)));
     gpuAssert(cudaMalloc((void**)&d_len_overflow, sizeof(uint32_t)));
-
-    cudaMemset((void*)d_dyn_block_index, 0, sizeof(uint32_t));
-    cudaMemset((void*)d_new_size, I(), sizeof(I));
-    cudaMemset((void*)d_new_last_state, IDENTITY, sizeof(state_t));
-    cudaMemset((void*)d_old_last_state, IDENTITY, sizeof(state_t));
-    cudaMemset((void*)d_new_last_start, J(), sizeof(J));
-    cudaMemset((void*)d_old_last_start, J(), sizeof(J));
-    cudaMemset((void*)d_len_overflow, 0, sizeof(uint32_t));
+    reset();
   }
 
   void reset() {
     offset = 0;
-    cudaMemset((void*)d_dyn_block_index, 0, sizeof(uint32_t));
     cudaMemset((void*)d_new_size, 0, sizeof(I));
-    cudaMemset((void*)d_new_last_state, IDENTITY, sizeof(state_t));
-    cudaMemset((void*)d_old_last_state, IDENTITY, sizeof(state_t));
+    setIdentity(d_new_last_state);
+    setIdentity(d_old_last_state);
     cudaMemset((void*)d_new_last_start, 0, sizeof(J));
     cudaMemset((void*)d_old_last_start, 0, sizeof(J));
     cudaMemset((void*)d_len_overflow, 0, sizeof(uint32_t));
-    d_maxadd_states.reset();
-    d_state_states.reset();
+    initTiles();
   }
 
   void cleanUp() {
-    if (d_to_state) cudaFree(d_to_state);
+    if (d_compose) cudaFree(d_compose);
+    if (d_byte_class) cudaFree(d_byte_class);
+    if (d_step) cudaFree(d_step);
+    if (state_tiles.d_tile_descriptors) cudaFree(state_tiles.d_tile_descriptors);
+    if (maxadd_tiles.d_tile_descriptors) cudaFree(maxadd_tiles.d_tile_descriptors);
     if (d_new_last_start) cudaFree((void*)d_new_last_start);
     if (d_old_last_start) cudaFree((void*)d_old_last_start);
-    if (d_compose) cudaFree(d_compose);
-    if (d_dyn_block_index) cudaFree((void*)d_dyn_block_index);
     if (d_new_size) cudaFree((void*)d_new_size);
     if (d_new_last_state) cudaFree((void*)d_new_last_state);
     if (d_old_last_state) cudaFree((void*)d_old_last_state);
     if (d_len_overflow) cudaFree((void*)d_len_overflow);
-    d_maxadd_states.cleanUp();
-    d_state_states.cleanUp();
-  }
-
-  __device__ __host__ __forceinline__
-  state_t operator()(const state_t &a, const state_t &b) const {
-#ifdef __CUDA_ARCH__
-    return __ldg(&d_compose[get_index(a) * NUM_STATES + get_index(b)]);
-#else
-    return d_compose[get_index(a) * NUM_STATES + get_index(b)];
-#endif
-  }
-
-  // Volatile-arg overload retained for scanWarp in lookbackPrefix, which
-  // still holds its intermediates in volatile shmem (small buffers, ordered
-  // by __syncwarp).  Dropping volatile in the lexer body — the state tile
-  // and exchange union — has no effect here.
-  __device__ __host__ __forceinline__
-  state_t operator()(const volatile state_t &a, const volatile state_t &b) const {
-#ifdef __CUDA_ARCH__
-    return __ldg(&d_compose[get_index(a) * NUM_STATES + get_index(b)]);
-#else
-    return d_compose[get_index(a) * NUM_STATES + get_index(b)];
-#endif
-  }
-
-  __device__ __forceinline__
-  const state_t* d_compose_row(state_t a) const {
-    return d_compose + (size_t)get_index(a) * NUM_STATES;
-  }
-
-  __device__ __host__ __forceinline__
-  state_t toState(const uint8_t &a) const {
-#ifdef __CUDA_ARCH__
-    return __ldg(&d_to_state[a]);
-#else
-    return d_to_state[a];
-#endif
   }
 
   __device__ __host__ __forceinline__
   J addOffset(I i) const {
-    return i + offset;
-  }
-
-  __device__ __forceinline__
-  uint32_t getDynamicIndex() const {
-    return dynamicIndex(d_dyn_block_index);
+    return (J)i + offset;
   }
 
   __device__ __host__ __forceinline__
@@ -424,338 +527,259 @@ public:
   }
 
   void update() {
-    resetDynamicIndex();
+    initTiles();
     swapLastStart();
     swapLastState();
     updateOffset();
   }
 };
 
-// Variant G: __launch_bounds__ removed. Nvcc picks regs/thread freely; if
-// the scatter's register capture pushes past 64 regs/thread, occupancy is
-// register-limited rather than shmem-limited.
+// Position of the k-th (from 0) set bit of m.
+__device__ __forceinline__ uint32_t lexer_select_bit(uint32_t m, uint32_t k) {
+  uint32_t pos = 0, c;
+  c = __popc(m & 0xffffu); if (k >= c) { k -= c; m >>= 16; pos += 16; }
+  c = __popc(m & 0xffu);   if (k >= c) { k -= c; m >>= 8;  pos += 8;  }
+  c = __popc(m & 0xfu);    if (k >= c) { k -= c; m >>= 4;  pos += 4;  }
+  c = __popc(m & 0x3u);    if (k >= c) { k -= c; m >>= 2;  pos += 2;  }
+  c = m & 0x1u;            if (k >= c) {                   pos += 1;  }
+  return pos;
+}
+
+// Highest set bit below position pos of the 96-bit mask (m0, m1, m2), -1 if none.
+__device__ __forceinline__ int lexer_last_below(uint32_t m0, uint32_t m1, uint32_t m2, uint32_t pos) {
+  const uint32_t b0 = pos >= 32 ? m0 : m0 & ((1u << pos) - 1);
+  const uint32_t b1 = pos >= 64 ? m1 : pos < 32 ? 0u : m1 & ((1u << (pos - 32)) - 1);
+  const uint32_t b2 = pos < 64 ? 0u : m2 & ((1u << (pos - 64)) - 1);
+  return b2 ? 95 - __clz(b2) : b1 ? 63 - __clz(b1) : b0 ? 31 - __clz(b0) : -1;
+}
+
 template<typename I, typename J, I BLOCK_SIZE, I ITEMS_PER_THREAD>
-__global__ void
+__global__ ALPACC_LEXER_BOUNDS(BLOCK_SIZE) void
 lexer(LexerCtx<I, J> ctx, uint8_t* d_string, terminal_t* d_terminals, J* d_starts, length_t* d_lengths, const I size, const bool is_last_chunk) {
-  // Bank-conflict-free padding: we need (STRIDE * sizeof(state_t)) to be
-  // ≡ 4 (mod 8) so the stride in 4-byte banks is odd (coprime with 32).
-  // Required: STRIDE ≡ 4/sizeof(state_t) (mod 8/sizeof(state_t)), clamped to ≥ 1.
-  // Works for state_t ∈ {u8, u16, u32, u64}.
-  static_assert(sizeof(state_t) == 1 || sizeof(state_t) == 2 ||
-                sizeof(state_t) == 4 || sizeof(state_t) == 8, "unexpected state_t");
-  constexpr I SHMEM_MOD    = 8 / (I)sizeof(state_t);
-  constexpr I SHMEM_TARGET = 4 / (I)sizeof(state_t);
-  constexpr I SHMEM_REM    = (ITEMS_PER_THREAD % SHMEM_MOD);
-  constexpr I SHMEM_RAW    = (SHMEM_TARGET - SHMEM_REM + SHMEM_MOD) % SHMEM_MOD;
-  constexpr I SHMEM_PAD    = (SHMEM_RAW == 0) ? SHMEM_MOD : SHMEM_RAW;
-  constexpr I SHMEM_STRIDE = ITEMS_PER_THREAD + SHMEM_PAD;
-  // Non-volatile: every read/write of the state tile is fenced by an
-  // explicit __syncthreads() at the boundaries; cub::BlockScan handles its
-  // own barriers internally.  Dropping volatile lets nvcc merge adjacent
-  // loads and hoist them across independent compute, eliminating one of
-  // the top stalls reported by ncu (~30% est speedup on shmem stores,
-  // ~19% on shmem loads at HEAD).
-  __shared__ state_t states[SHMEM_STRIDE * BLOCK_SIZE];
-  // Exchange buffer for the two-phase scatter on dense tiles.
-  // exch_t (terminals), exch_j (starts), and exch_l (lengths) are never live
-  // simultaneously, so they share one shmem region via a union.
-  constexpr I EXCH_ELEMS = ITEMS_PER_THREAD * BLOCK_SIZE;
-  union {
-    terminal_t as_t[EXCH_ELEMS];
-    J          as_j[EXCH_ELEMS];
-    length_t   as_l[EXCH_ELEMS];
-  } __shared__ exch;
-  terminal_t* exch_t = exch.as_t;
-  J*          exch_j = exch.as_j;
-  length_t*   exch_l = exch.as_l;
-  __shared__ state_t next_block_first_state;
+  constexpr I CHUNK = ITEMS_PER_THREAD;
+  static_assert(CHUNK % 32 == 0 && CHUNK <= 96,
+                "ITEMS_PER_THREAD: 32, 64 or 96 (multiple of 32 for the swizzle, at most 96 for the bit masks)");
+  static_assert(BLOCK_SIZE % WARP == 0 && BLOCK_SIZE >= 256 / 16, "BLOCK_SIZE: whole warps, at least 16 threads");
+  static_assert(sizeof(I) == 4, "tile descriptors hold 31-bit positions and counts");
+  static_assert(sizeof(state_t) <= 4, "look-back descriptors pack state_t with a status into one word");
+  static_assert((TERMINAL_MASK >> TERMINAL_OFFSET) <= 0xff, "terminals are stored as bytes in the tile");
+  constexpr I VECS       = CHUNK / 16;
+  constexpr I WARP_BYTES = WARP * CHUNK;
+  constexpr I TILE       = BLOCK_SIZE * CHUNK;
 
-  // Phase A reads directly from ctx.d_to_state via __ldg() into the
-  // states[] tile.
+  __shared__ __align__(16) uint8_t bytes[TILE];   // input bytes, then terminals
+  __shared__ typename LexerBlockScanState<BLOCK_SIZE>::TempStorage state_scan;
+  __shared__ typename LexerPrefixOpState::TempStorage  state_prefix;
+  __shared__ typename LexerBlockScanMA<BLOCK_SIZE>::TempStorage    ma_scan;
+  __shared__ typename LexerPrefixOpMA::TempStorage     ma_prefix;
+  __shared__ __align__(16) uint8_t byte_class[256];
 
-  // Main slots: ceil(ITEMS_PER_THREAD / 8) uint64_t registers per thread.
-  // One extra slot is added to cover the single byte past the block boundary
-  // needed for the boundary produce check (same as the original +1 trick).
-  constexpr uint32_t VPT = vecPerThread<uint8_t, uint64_t, ITEMS_PER_THREAD>() + 1;
-  uint64_t copy_reg[VPT];
-  uint8_t* chars_reg = reinterpret_cast<uint8_t*>(copy_reg);
-  uint32_t is_produce_state = 0;
+  if (threadIdx.x < 256 / 16)
+    reinterpret_cast<uint4*>(byte_class)[threadIdx.x] =
+        reinterpret_cast<const uint4*>(ctx.d_byte_class)[threadIdx.x];
 
-  uint32_t dyn_index = ctx.getDynamicIndex();
-  I glb_offs = dyn_index * BLOCK_SIZE * ITEMS_PER_THREAD;
+  const LexerCompose compose{ctx.d_compose};
+  const state_t* __restrict__ d_step = ctx.d_step;
+  const uint32_t num_classes = ctx.num_classes;
+  // One byte step from state s.
+  auto step = [&](state_t s, uint32_t byte) -> state_t {
+    return __ldg(&d_step[(uint32_t)get_index(s) * num_classes + byte_class[byte]]);
+  };
 
-  if (threadIdx.x == I()) {
-    next_block_first_state = IDENTITY;
-  }
+  const I tile      = blockIdx.x;
+  const I warp      = threadIdx.x / WARP;
+  const I lane      = threadIdx.x % WARP;
+  const I tile_offs = tile * TILE;
+  const bool full   = tile_offs + TILE <= size;
+  const I my_offs   = tile_offs + threadIdx.x * CHUNK;          // first byte of my chunk
+  const I valid     = my_offs < size ? min(size - my_offs, CHUNK) : 0;
+  uint8_t* my_bytes = bytes + threadIdx.x * CHUNK;
+  // Swizzle: vector k of thread t's chunk is stored at slot k ^ ((t >> 2) & 1), so
+  // the 8 lanes of each 16-byte access phase (chunk stride 96 bytes) hit
+  // different bank groups; byte offsets within a chunk flip bit 4.
+  const I sw = (threadIdx.x >> 2) & 1;
 
-  // Vectorized global → registers.  glbToReg covers the first VPT-1 slots
-  // (ITEMS_PER_THREAD bytes).  The last slot is loaded separately to reach the
-  // one byte immediately past the block boundary.
-  glbToReg<uint8_t, uint64_t, BLOCK_SIZE, ITEMS_PER_THREAD>(glb_offs, size, d_string, copy_reg);
-  {
-    constexpr uint32_t EPV = (uint32_t)sizeof(uint64_t);
-    constexpr uint32_t v   = VPT - 1;
-    I elem0       = (I)(v * BLOCK_SIZE + threadIdx.x) * EPV;
-    I n_remaining = size - glb_offs;
-    if (elem0 + EPV <= n_remaining) {
-      copy_reg[v] = *reinterpret_cast<const uint64_t*>(d_string + glb_offs + elem0);
-    } else {
-      uint8_t* bytes = reinterpret_cast<uint8_t*>(&copy_reg[v]);
+  // Load the tile: coalesced 16-byte vectors over each warp's segment.
+  if (full && (reinterpret_cast<uintptr_t>(d_string) & 15) == 0) {
+    const uint4* src = reinterpret_cast<const uint4*>(d_string + tile_offs + warp * WARP_BYTES);
+    uint4*       dst = reinterpret_cast<uint4*>(bytes + warp * WARP_BYTES);
 #pragma unroll
-      for (uint32_t b = 0; b < EPV; b++) {
-        I gid = elem0 + (I)b;
-        bytes[b] = (gid < n_remaining) ? d_string[glb_offs + gid] : 0;
-      }
+    for (I k = 0; k < VECS; k++) {
+      const I v = lane + k * WARP;   // vector of the warp's segment
+      dst[v ^ (((v / VECS) >> 2) & 1)] = src[v];
     }
-  }
-
-  // Phase A: byte -> state_t written directly into the states[] tile via
-  // ctx.toState() (__ldg-cached on the 256-entry d_to_state table).
-  {
-#pragma unroll
-    for (uint32_t i = 0; i < VPT; i++) {
-      I lid = (I)i * BLOCK_SIZE + threadIdx.x;
-      I _gid = glb_offs + (I)sizeof(uint64_t) * lid;
-      for (uint32_t j = 0; j < sizeof(uint64_t); j++) {
-        I gid = _gid + (I)j;
-        I lid_off = (I)sizeof(uint64_t) * lid + (I)j;
-        uint32_t reg_off = sizeof(uint64_t) * i + j;
-        bool is_in_block = lid_off < (I)(ITEMS_PER_THREAD * BLOCK_SIZE);
-        if (is_in_block) {
-          state_t s = (gid < size) ? ctx.toState(chars_reg[reg_off]) : IDENTITY;
-          I shmem_idx = (lid_off / ITEMS_PER_THREAD) * SHMEM_STRIDE
-                      + (lid_off % ITEMS_PER_THREAD);
-          states[shmem_idx] = s;
-        } else if (lid_off == (I)(ITEMS_PER_THREAD * BLOCK_SIZE) && gid < size) {
-          // First byte of the next block for boundary produce test.
-          next_block_first_state = ctx.toState(chars_reg[reg_off]);
-        }
-      }
-    }
-  }
-  __syncthreads();
-
-  // Phase B/C: load our blocked slice from states[] into registers, run the
-  // block-local scan + inter-block lookback, then write the inclusive
-  // prefix back.
-  {
-    state_t st[ITEMS_PER_THREAD];
-    const I off = threadIdx.x * SHMEM_STRIDE;
-    bool is_first = (glb_offs == 0) && (threadIdx.x == 0);
-#pragma unroll
-    for (I i = 0; i < ITEMS_PER_THREAD; i++) {
-      st[i] = states[off + i];
-      if (is_first && i == 0)
-        st[i] = ctx(ctx.getLastState(), st[i]);
-    }
-    const state_t pfx = scanReg<state_t, I, LexerCtx<I, J>, ITEMS_PER_THREAD, BLOCK_SIZE>(
-        st, ctx.d_state_states, ctx, IDENTITY, dyn_index);
-#pragma unroll
-    for (I i = 0; i < ITEMS_PER_THREAD; i++)
-      states[off + i] = ctx(pfx, st[i]);
-    __syncthreads();
-  }
-
-  // Split (max, +) block-local scans over u32 registers in blocked layout
-  // (thread t owns tile positions [t*IPT, (t+1)*IPT)): the token-start Max
-  // scan runs over start codes (0 = "no start seen", produce at gid encodes
-  // gid + 1) and the compaction Add scan runs over produce flags.  The two
-  // block-local scans are independent so we run them separately with scalar
-  // operators — the former fused u64 MaxAdd combine had ~4 dependent
-  // operations per reduction step (shift/mask/max/add threading through
-  // cub's binary tree), whereas the split u32 scalar operators run at one
-  // instruction per combine and give the compiler ILP across the two scans.
-  // The inter-block handshake then runs *once* over the SoA PairStates
-  // buffer via lookbackPrefixPair, so we don't pay for two lookback rounds.
-  // All loops below use blocked indexing so registers, the produce bitmask,
-  // and shmem stay consistent.
-  uint32_t start_codes[ITEMS_PER_THREAD];
-  uint32_t produce_flags[ITEMS_PER_THREAD];
-
-#pragma unroll
-  for (I i = 0; i < ITEMS_PER_THREAD; i++) {
-    I lid = threadIdx.x * ITEMS_PER_THREAD + i;
-    I gid = glb_offs + lid;
-    bool is_next_produce = false;
-    uint32_t start_code = 0;
-    // Padded shmem indices for this item and the next global item.
-    I shmem_cur  = (I)threadIdx.x * (SHMEM_STRIDE) + i;
-    I shmem_next = (i < ITEMS_PER_THREAD - 1)
-                   ? shmem_cur + 1
-                   : ((I)threadIdx.x + 1) * (SHMEM_STRIDE);
-    if (gid < size) {
-      state_t state = states[shmem_cur];
-#ifdef IGNORE_TOKEN
-      bool is_not_ignore = get_terminal(state) != IGNORE_TOKEN;
-#else
-      bool is_not_ignore = true;
-#endif
-      if (lid == ITEMS_PER_THREAD * BLOCK_SIZE - 1) {
-        is_next_produce = is_produce(ctx(state, next_block_first_state));
-      } else {
-        is_next_produce = is_produce(states[shmem_next]);
-      }
-
-      if (is_last_chunk) {
-        is_next_produce |= gid == size - 1;
-        is_next_produce &= is_not_ignore;
-      } else {
-        is_next_produce &= is_not_ignore;
-      }
-
-      start_code = is_produce(state) ? (uint32_t)(gid + 1) : 0u;
-    }
-    is_produce_state |= is_next_produce << i;
-    start_codes[i]   = start_code;
-    produce_flags[i] = is_next_produce ? 1u : 0u;
-  }
-
-  // Two independent block-local scans on scalar u32 monoids.  Both cub
-  // BlockScans share one TempStorage — they run sequentially in the same
-  // thread, so the storage is only live during one at a time.
-  using BlockScan32 = cub::BlockScan<uint32_t, BLOCK_SIZE>;
-  __shared__ typename BlockScan32::TempStorage scan_temp;
-  const uint32_t max_agg =
-      scanRegLocal<uint32_t, I, Max<uint32_t>, ITEMS_PER_THREAD, BLOCK_SIZE>(
-          start_codes, scan_temp, Max<uint32_t>());
-  const uint32_t add_agg =
-      scanRegLocal<uint32_t, I, Add<uint32_t>, ITEMS_PER_THREAD, BLOCK_SIZE>(
-          produce_flags, scan_temp, Add<uint32_t>());
-
-  // Single fused decoupled-lookback round over the SoA PairStates buffer.
-  // The two component aggregates live in separate arrays and the block
-  // status is shared, so the inter-block warp scan reads both components in
-  // parallel with one status atomic per predecessor tile — same handshake
-  // cost as the former packed-u64 layout but without paying for a u64 load
-  // when u32 will do.
-  I max_prefix, prefix;
-  lookbackPrefixPair<I, I, I, Max<I>, Add<I>>(
-      ctx.d_maxadd_states, Max<I>(), Add<I>(), (I)0, (I)0, dyn_index,
-      (I)max_agg, (I)add_agg,
-      max_prefix, prefix);
-
-  I starts[ITEMS_PER_THREAD];
-  I local_offs[ITEMS_PER_THREAD];
-  __shared__ I last_start;
-  __shared__ I num_sel_sh;
-
-#pragma unroll
-  for (I i = 0; i < ITEMS_PER_THREAD; i++) {
-    I lid = threadIdx.x * ITEMS_PER_THREAD + i;
-    I gid = glb_offs + lid;
-    starts[i] = max(max_prefix, (I)start_codes[i]);
-    local_offs[i] = ((is_produce_state >> i) & 1) ? (I)produce_flags[i] - 1 : I();
-    if (gid == size - 1) {
-      last_start = starts[i];
-    }
-  }
-
-  if (threadIdx.x == BLOCK_SIZE - 1) {
-    num_sel_sh = (I)produce_flags[ITEMS_PER_THREAD - 1];
-  }
-  __syncthreads();
-
-  const I num_sel = num_sel_sh;
-
-  if (dyn_index == gridDim.x - 1 && threadIdx.x == blockDim.x - 1) {
-    ctx.setNewSize(Add<I>()(prefix, num_sel));
-    // Publish the state at the *logical* last input position (size - 1),
-    // not the last shmem tile slot: when size < BS*IPT that slot holds
-    // IDENTITY (Phase A's out-of-range fill), which composes to INIT_STATE
-    // and mis-reports non-accept.
-    const I last_gid = size - 1;
-    const I last_lid = last_gid - glb_offs;
-    const I last_ti  = last_lid / ITEMS_PER_THREAD;
-    const I last_ii  = last_lid % ITEMS_PER_THREAD;
-    ctx.setLastState(states[last_ti * SHMEM_STRIDE + last_ii]);
-
-    if (last_start != I()) {
-      ctx.setLastStart(ctx.addOffset(last_start - 1));
-    } else {
-      ctx.setLastStart(ctx.getLastStart());
-    }
-  }
-
-  if (num_sel > BLOCK_SIZE) {
-    // Dense tile: two-phase scatter for terminals, starts, and lengths.
-    // Each array is compacted into the shmem exchange at tile-local offsets,
-    // then written out as coalesced wide stores.
-#pragma unroll
-    for (I i = 0; i < ITEMS_PER_THREAD; i++) {
-      if ((is_produce_state >> i) & 1) {
-        I shmem_cur = (I)threadIdx.x * (SHMEM_STRIDE) + i;
-        exch_t[local_offs[i]] = get_terminal(states[shmem_cur]);
-      }
-    }
-    __syncthreads();
-    shmemToGlbVec<terminal_t, uint64_t, BLOCK_SIZE, I>(prefix, num_sel, d_terminals, exch_t);
-    __syncthreads();
-
-    // Compute the tok_start values into per-thread registers *and* into
-    // exch_j in the same pass.  Keeping them in registers means the length
-    // loop below reads its own thread's register value directly instead of
-    // going through shmem — that avoids the extra sync we'd otherwise need
-    // between shmemToGlbVec's exch_j reads and the exch_l writes below
-    // (exch_l aliases exch_j via the union).
-    J tok_starts[ITEMS_PER_THREAD];
-#pragma unroll
-    for (I i = 0; i < ITEMS_PER_THREAD; i++) {
-      if ((is_produce_state >> i) & 1) {
-        I offset = local_offs[i];
-        J v;
-        if (Add<I>()(prefix, offset) == I() && starts[i] == I()) {
-          v = ctx.getLastStart();
-        } else {
-          v = ctx.addOffset(starts[i] - 1);
-        }
-        tok_starts[i] = v;
-        exch_j[offset] = v;
-      }
-    }
-    __syncthreads();
-    shmemToGlbVec<J, uint64_t, BLOCK_SIZE, I>(prefix, num_sel, d_starts, exch_j);
-    __syncthreads();
-
-    // Compute lengths directly from the per-thread tok_starts registers
-    // and write straight to exch_l.  Since we already have tok_starts[i]
-    // in a register, no shmem read is needed here.  With no exch_j read
-    // to protect, we can write exch_l (aliased to exch_j) as soon as the
-    // shmemToGlbVec above is fenced by the sync above — one fewer sync
-    // than the previous three-shmem-pass scheme.
-#pragma unroll
-    for (I i = 0; i < ITEMS_PER_THREAD; i++) {
-      if ((is_produce_state >> i) & 1) {
-        I gid = glb_offs + (I)threadIdx.x * ITEMS_PER_THREAD + (I)i;
-        J tok_len = ctx.addOffset(gid + 1) - tok_starts[i];
-        if ((length_t)(tok_len) != tok_len) ctx.signalLengthOverflow();
-        exch_l[local_offs[i]] = (length_t)tok_len;
-      }
-    }
-    __syncthreads();
-    shmemToGlbVec<length_t, uint64_t, BLOCK_SIZE, I>(prefix, num_sel, d_lengths, exch_l);
   } else {
-    // Sparse tile: direct scatter.
+    for (I i = 0; i < CHUNK; i++)
+      my_bytes[i ^ (sw << 4)] = i < valid ? d_string[my_offs + i] : 0;
+  }
+  __syncthreads();   // byte classes and all chunks (the next thread's first byte) loaded
+
+  // Byte after my chunk: next thread's first byte, or the next tile's.
+  const I next_gid  = my_offs + CHUNK;
+  const bool has_nb = next_gid < size && valid == CHUNK;
+  const uint8_t nb  = !has_nb ? 0
+                    : threadIdx.x + 1 < BLOCK_SIZE
+                      ? my_bytes[CHUNK + ((((threadIdx.x + 1) >> 2) & 1) << 4)]
+                    : d_string[next_gid];
+  __syncthreads();   // next bytes read before pass B overwrites the chunks
+
+  // Pass A: per-thread state reduction.
+  uint4* my = reinterpret_cast<uint4*>(my_bytes);
+  state_t agg = IDENTITY;
 #pragma unroll
-    for (I i = 0; i < ITEMS_PER_THREAD; i++) {
-      I lid = threadIdx.x * ITEMS_PER_THREAD + i;
-      I gid = glb_offs + lid;
-      if ((is_produce_state >> i) & 1) {
-        I shmem_cur = (I)threadIdx.x * (SHMEM_STRIDE) + i;
-        I offset = Add<I>()(prefix, local_offs[i]);
-        d_terminals[offset] = get_terminal(states[shmem_cur]);
-        J tok_start, tok_end, tok_len;
-        if (offset == I() && starts[i] == I()) {
-          tok_start = ctx.getLastStart();
-        } else {
-          tok_start = ctx.addOffset(starts[i] - 1);
+  for (I k = 0; k < VECS; k++) {
+    const uint4 v = my[k ^ sw];
+#pragma unroll
+    for (I b = 0; b < 16; b++) {
+      const uint32_t word = b < 4 ? v.x : b < 8 ? v.y : b < 12 ? v.z : v.w;
+      const uint32_t byte = (word >> (8 * (b % 4))) & 0xffu;
+      if (full || 16 * k + b < valid)
+        agg = step(agg, byte);
+    }
+  }
+
+  // Incoming state of each thread; the state before the first tile is the
+  // last state of the previous chunk (IDENTITY for a fresh context).
+  state_t prefix;
+  {
+    LexerPrefixOpState state_op(ctx.state_tiles, state_prefix, compose, (int)tile, ctx.getLastState());
+    LexerBlockScanState<BLOCK_SIZE>(state_scan).ExclusiveScan(agg, prefix, compose, state_op);
+  }
+
+  // Pass B: rescan from the incoming state.  Bit i of (m0, m1, m2): byte i
+  // ends a token (the state after it produces); of (n0, n1, n2): byte i's
+  // token is kept (terminal != IGNORE_TOKEN).  Terminals are written in place.
+  uint32_t m0 = 0, m1 = 0, m2 = 0;
+#ifdef IGNORE_TOKEN
+  uint32_t n0 = 0, n1 = 0, n2 = 0;
+#else
+  const uint32_t n0 = ~0u, n1 = ~0u, n2 = ~0u;
+#endif
+  // Byte 0 of the chunk starts a token (the previous chunk's last token
+  // ended at the chunk boundary); only tracked for the chunk's first byte,
+  // other boundaries are the preceding thread's last token end.
+  bool start0 = false;
+  state_t last = prefix;   // state after my last valid byte
+  {
+    state_t st = prefix;
+#pragma unroll
+    for (I k = 0; k < VECS; k++) {
+      const uint4 v = my[k ^ sw];
+      uint32_t tw[4] = {0, 0, 0, 0};
+#pragma unroll
+      for (I b = 0; b < 16; b++) {
+        const I i = 16 * k + b;
+        const uint32_t word = b < 4 ? v.x : b < 8 ? v.y : b < 12 ? v.z : v.w;
+        const uint32_t byte = (word >> (8 * (b % 4))) & 0xffu;
+        if (full || i < valid) {
+          st = step(st, byte);
+          if (i == 0) {
+            start0 = my_offs == 0 && is_produce(st);
+          } else if (is_produce(st)) {   // byte i - 1 ends a token
+            if (i - 1 < 32)      m0 |= 1u << (i - 1);
+            else if (i - 1 < 64) m1 |= 1u << (i - 1 - 32);
+            else                 m2 |= 1u << (i - 1 - 64);
+          }
+          const uint32_t t = (uint32_t)get_terminal(st);
+#ifdef IGNORE_TOKEN
+          if (t != (uint32_t)IGNORE_TOKEN) {
+            if (i < 32)      n0 |= 1u << i;
+            else if (i < 64) n1 |= 1u << (i - 32);
+            else             n2 |= 1u << (i - 64);
+          }
+#endif
+          tw[b / 4] |= t << (8 * (b % 4));
+          last = st;
         }
-        tok_end = ctx.addOffset(gid + 1);
-        tok_len = tok_end - tok_start;
-        if ((length_t)(tok_len) != tok_len) ctx.signalLengthOverflow();
-        d_starts[offset]  = tok_start;
-        d_lengths[offset] = (length_t)tok_len;
       }
+      my[k ^ sw] = make_uint4(tw[0], tw[1], tw[2], tw[3]);
+    }
+  }
+  if (valid > 0) {
+    // My last byte ends a token if the state after the next byte produces;
+    // the input's last byte ends one in the last chunk.
+    const I li = valid - 1;
+    if (has_nb ? is_produce(step(last, nb)) : is_last_chunk) {
+      if (li < 32)      m0 |= 1u << li;
+      else if (li < 64) m1 |= 1u << (li - 32);
+      else              m2 |= 1u << (li - 64);
+    }
+  }
+  const uint32_t e0 = m0 & n0, e1 = m1 & n1, e2 = m2 & n2;   // emitted tokens
+  const I count = __popc(e0) + __popc(e1) + __popc(e2);
+
+  // Output slots and token starts.
+  MaxAdd pfx;
+  {
+    const int last_end = m2 ? 95 - __clz(m2) : m1 ? 63 - __clz(m1) : m0 ? 31 - __clz(m0) : -1;
+    const MaxAdd ma{last_end >= 0 ? uint32_t(my_offs + last_end + 2) : start0 ? 1u : 0u, count};
+    LexerPrefixOpMA ma_op(ctx.maxadd_tiles, ma_prefix, MaxAddOp(), (int)tile, MaxAdd{0u, 0u});
+    LexerBlockScanMA<BLOCK_SIZE>(ma_scan).ExclusiveScan(ma, pfx, MaxAddOp(), ma_op);
+  }
+  const I offs = pfx.cnt;
+  const uint32_t max_in = start0 ? 1u : pfx.max;   // my first token's start + 1 (0: earlier chunk)
+
+  if (valid > 0 && my_offs + valid == size) {   // owner of the last input byte
+    ctx.setNewSize(offs + count);
+    ctx.setLastState(last);
+    // start of the token holding the last byte
+    const int prev = lexer_last_below(m0, m1, m2, valid - 1);
+    ctx.setLastStart(prev >= 0  ? ctx.addOffset(my_offs + prev + 1)
+                   : max_in > 0 ? ctx.addOffset(max_in - 1)
+                                : ctx.getLastStart());
+  }
+
+  // Pass C: warp-cooperative emission.
+  I incl = count;
+#pragma unroll
+  for (I d = 1; d < WARP; d <<= 1) {
+    I y = __shfl_up_sync(0xffffffff, incl, d);
+    if (lane >= d) incl += y;
+  }
+  const I warp_total = __shfl_sync(0xffffffff, incl, WARP - 1);
+  const I warp_base  = __shfl_sync(0xffffffff, offs, 0);
+  const I warp_offs  = tile_offs + warp * WARP_BYTES;
+  const uint8_t* warp_terminals = bytes + warp * WARP_BYTES;
+  __syncwarp();   // terminals of all lanes written
+  for (I j = 0; j < warp_total; j += WARP) {
+    const I r = j + lane;
+    // owner lane: smallest o with incl_o > r
+    I o = 0;
+#pragma unroll
+    for (I d = WARP / 2; d >= 1; d >>= 1) {
+      I v = __shfl_sync(0xffffffff, incl, o + d - 1);
+      if (v <= r) o += d;
+    }
+    const I o_incl  = __shfl_sync(0xffffffff, incl, o);
+    const I o_count = __shfl_sync(0xffffffff, count, o);
+    I k = r - (o_incl - o_count);   // rank within the owner's tokens
+    const uint32_t oe0 = __shfl_sync(0xffffffff, e0, o);
+    const uint32_t oe1 = __shfl_sync(0xffffffff, e1, o);
+    const uint32_t oe2 = __shfl_sync(0xffffffff, e2, o);
+    // Word holding the k-th set bit, then the bit within it.
+    const I c0 = __popc(oe0), c01 = c0 + __popc(oe1);
+    const uint32_t m = k < c0 ? oe0 : k < c01 ? oe1 : oe2;
+    const I base     = k < c0 ? 0   : k < c01 ? 32  : 64;
+    k               -= k < c0 ? 0   : k < c01 ? c0  : c01;
+    const I pos = base + lexer_select_bit(m, k);
+    // start: after the owner's previous token end (any terminal) below pos,
+    // else the owner's incoming token start
+    const uint32_t om0   = __shfl_sync(0xffffffff, m0, o);
+    const uint32_t om1   = __shfl_sync(0xffffffff, m1, o);
+    const uint32_t om2   = __shfl_sync(0xffffffff, m2, o);
+    const uint32_t o_max = __shfl_sync(0xffffffff, max_in, o);
+    const int prev = lexer_last_below(om0, om1, om2, pos);
+    if (r < warp_total) {
+      const I chunk = warp_offs + o * CHUNK;
+      const J tok_start = prev >= 0  ? ctx.addOffset(chunk + prev + 1)
+                        : o_max > 0  ? ctx.addOffset(o_max - 1)
+                                     : ctx.getLastStart();
+      const J tok_len = ctx.addOffset(chunk + pos + 1) - tok_start;
+      if ((length_t)(tok_len) != tok_len) ctx.signalLengthOverflow();
+      d_terminals[warp_base + r] =
+          (terminal_t)warp_terminals[(o * CHUNK + pos) ^ (((o >> 2) & 1) << 4)];
+      d_starts[warp_base + r]  = tok_start;
+      d_lengths[warp_base + r] = (length_t)tok_len;
     }
   }
 }
-
