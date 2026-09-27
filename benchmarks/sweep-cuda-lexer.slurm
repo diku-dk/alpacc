@@ -25,7 +25,7 @@
 #   GRAMMAR      path to the .alp file to sweep (default: grammars/json.alp)
 #   INPUT_SIZE   dataset size in tokens (default: 10485760, ~20 MiB payload)
 #   BS_LIST      block sizes to try     (default: "128 256")
-#   IPT_LIST     items-per-thread values (default: "2 4 6 8 12 16 20 26 32")
+#   IPT_LIST     items-per-thread values (default: "32 64 96")
 #   STATE_LIST   state_t typedefs       (default: "uint16_t uint32_t")
 #   INDEX_LIST   index_t typedefs       (default: "int32_t int64_t")
 #   BENCH_RUNS   --benchmark N per config (default: 5)
@@ -68,7 +68,7 @@ fi
 
 INPUT_SIZE="${INPUT_SIZE:-10485760}"
 BS_LIST="${BS_LIST:-128 256}"
-IPT_LIST="${IPT_LIST:-2 4 6 8 12 16 20 26 32}"
+IPT_LIST="${IPT_LIST:-32 64 96}"
 STATE_LIST="${STATE_LIST:-uint16_t uint32_t}"
 INDEX_LIST="${INDEX_LIST:-int32_t int64_t}"
 export BENCH_RUNS="${BENCH_RUNS:-5}"
