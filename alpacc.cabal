@@ -9,8 +9,8 @@ homepage:           https://github.com/diku-dk/alpacc
 bug-reports:        https://github.com/diku-dk/alpacc/issues
 license:            MIT
 license-file:       LICENSE
-author:             William Due
-maintainer:         williamhenrichdue@gmail.com
+author:             Lilje Due
+maintainer:         mail@liljedue.dk
 category:           Language
 extra-source-files:
   CHANGELOG.md
