@@ -1,8 +1,8 @@
 module LL (tests) where
 
 import Alpacc.Grammar
-import Alpacc.LL
-import Alpacc.LLP hiding (LlpContext (..))
+import Alpacc.Parser.LL
+import Alpacc.Parser.LLP hiding (LlpContext (..))
 import Data.List qualified as List
 import Data.Maybe
 import Data.Sequence (Seq (..), (<|), (><), (|>))

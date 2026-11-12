@@ -2,13 +2,16 @@
 
 # Function to show usage
 show_usage() {
-    echo "Usage: $0 [q_value] [k_value] [target_runs] [parallel_jobs] [type_flag]"
+    echo "Usage: $0 [q_value] [k_value] [target_runs] [parallel_jobs] [type_flag] [backend] [--index32]"
     echo "  q_value: -q parameter for alpacc (default: 1)"
     echo "  k_value: -k parameter for alpacc (default: 1)"
     echo "  target_runs: number of successful runs needed (default: 10)"
     echo "  parallel_jobs: number of parallel jobs (default: number of CPU cores)"
     echo "  type_flag: either empty, --lexer, or --parser (default: empty)"
-    echo "Example: $0 2 3 50 4 --lexer"
+    echo "  backend: futhark backend (default: multicore)"
+    echo "  --index32: pass --index32 to generator and test tools (default: 64-bit)"
+    echo "Example: $0 2 3 50 4 --lexer multicore"
+    echo "Example: $0 2 3 50 4 --lexer multicore --index32"
 }
 
 # Check for help flag
@@ -22,7 +25,27 @@ q_value="${1:-1}"
 k_value="${2:-1}"
 target="${3:-10}"
 parallel_jobs="${4:-$(nproc)}"
-type_flag="${5:-}"
+
+# arg5 is type_flag (--lexer or --parser) or omitted; arg6 is backend.
+# When called from the Makefile in combined mode the empty type_flag is dropped
+# by shell word-splitting, so backend lands in arg5. Detect this by checking
+# whether arg5 looks like a flag.
+if [[ "${5:-}" == --lexer || "${5:-}" == --parser ]]; then
+    type_flag="${5}"
+    backend="${6:-multicore}"
+    index_flag="${7:-}"
+else
+    type_flag=""
+    backend="${5:-multicore}"
+    index_flag="${6:-}"
+fi
+
+# Only --index32 (or empty) is accepted for the index flag.
+if [[ -n "$index_flag" && "$index_flag" != "--index32" ]]; then
+    echo "Error: unrecognised index flag '$index_flag' (expected --index32 or empty)"
+    show_usage
+    exit 1
+fi
 
 # Validate that arguments are numbers
 if ! [[ "$q_value" =~ ^[0-9]+$ ]] || ! [[ "$k_value" =~ ^[0-9]+$ ]] || ! [[ "$target" =~ ^[0-9]+$ ]]; then
@@ -39,7 +62,7 @@ fi
 
 echo "Starting alpacc testing script..."
 echo "Target: $target successful runs"
-echo "Using -q $q_value -k $k_value $type_flag"
+echo "Using -q $q_value -k $k_value $type_flag $index_flag (backend=$backend)"
 echo "Running with $parallel_jobs parallel jobs"
 
 # Create a temporary directory for this run
@@ -70,11 +93,13 @@ run_test() {
     local job_id=$1
     local q_value=$2
     local k_value=$3
-    local type_flag=$4
-    local temp_dir=$5
-    local counter_file=$6
-    local target=$7
-    local done_file=$8
+    local temp_dir=$4
+    local counter_file=$5
+    local target=$6
+    local done_file=$7
+    local backend=$8
+    local type_flag=$9
+    local index_flag=${10}
     
     # Create unique work directory for this job
     local work_dir="$temp_dir/job_$job_id"
@@ -111,15 +136,17 @@ EOF
         mv random.alp.tmp random.alp
         
         # Try to convert to Futhark - keep retrying if it fails
-        if ! alpacc futhark random.alp $type_flag &> /dev/null; then
+        if ! alpacc futhark random.alp $type_flag $index_flag &> /dev/null; then
             continue  # Try a new random grammar
         fi
-        
+
         # Now we have a valid Futhark conversion, run the test
-        alpacc test generate random.alp $type_flag &> /dev/null
-        futhark script -b random.fut 'test ($loadbytes "random.inputs")' | tail -c +16 > random.results
-        
-        if alpacc test compare random.alp random.inputs random.outputs random.results $type_flag &> /dev/null; then
+        alpacc test generate random.alp $type_flag $index_flag &> /dev/null
+        futhark eval -w -f random.fut --backend="$backend" \
+            'io.savevalue "random.results.bin" (test (io.loadbytes "random.inputs"))' > /dev/null
+        tail -c +16 random.results.bin > random.results
+
+        if alpacc test compare random.alp random.inputs random.outputs random.results $type_flag $index_flag &> /dev/null; then
             # Success! Increment counter atomically
             (
                 flock -x 200
@@ -149,7 +176,7 @@ EOF
             cat random.alp
             echo "-----------------------------------------"
             echo "Test comparison output:"
-            alpacc test compare random.alp random.inputs random.outputs random.results $type_flag
+            alpacc test compare random.alp random.inputs random.outputs random.results $type_flag $index_flag
             echo "========================================="
             return 1
         fi
@@ -163,7 +190,7 @@ export -f run_test
 # Run enough parallel jobs to reach the target
 # Each job will complete one successful test
 seq 1 $target | parallel --no-notice -j "$parallel_jobs" --halt soon,fail=1 --line-buffer \
-    "run_test {} $q_value $k_value '$type_flag' $temp_dir $counter_file $target $done_file"
+    "run_test {} $q_value $k_value $temp_dir $counter_file $target $done_file '$backend' '$type_flag' '$index_flag'"
 
 # Check final count
 final_count=$(cat "$counter_file")

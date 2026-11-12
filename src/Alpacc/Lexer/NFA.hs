@@ -2,7 +2,6 @@ module Alpacc.Lexer.NFA
   ( NFA,
     RegEx (..),
     Transition (..),
-    isTransition,
     fromTransition,
     fromRegExToNFA,
     statesTransitions,
@@ -22,10 +21,6 @@ import Data.Set qualified as Set hiding (Set)
 type NFA t s = FSA Set (Transition t) s
 
 data Transition t = Trans t | Eps deriving (Show, Eq, Ord)
-
-isTransition :: Transition t -> Bool
-isTransition (Trans _) = True
-isTransition Eps = False
 
 fromTransition :: Transition t -> t
 fromTransition (Trans t) = t

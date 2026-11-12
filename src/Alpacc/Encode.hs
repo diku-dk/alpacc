@@ -1,17 +1,13 @@
 module Alpacc.Encode
-  ( SymbolEncoder,
-    TerminalEncoder,
+  ( TerminalEncoder,
     fromSymbolToTerminalEncoder,
     encodeSymbols,
     encodeTerminals,
     terminalLookup,
     symbolLookup,
-    terminalMax,
-    symbolMax,
     bracketIntType,
     productionIntType,
     numTerminals,
-    numSymbols,
     symbolTerminalIntType,
     terminalIntType,
     terminalDead,
@@ -29,7 +25,7 @@ where
 
 import Alpacc.Grammar
 import Alpacc.HashTable
-import Alpacc.LLP
+import Alpacc.Parser.LLP
   ( Bracket (..),
     llpParserTableWithStartsHomomorphisms,
   )
@@ -204,14 +200,8 @@ symbolLookup s encoder =
 symbolMax :: SymbolEncoder nt t -> Integer
 symbolMax = maximum . symbolEncoder
 
-terminalMax :: TerminalEncoder t -> Integer
-terminalMax = maximum . terminalEncoder
-
 numTerminals :: TerminalEncoder t -> Int
 numTerminals = Map.size . terminalEncoder
-
-numSymbols :: TerminalEncoder t -> Int
-numSymbols = Map.size . terminalEncoder
 
 bracketIntType ::
   SymbolEncoder nt t ->

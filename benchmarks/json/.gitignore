@@ -1,0 +1,8 @@
+*
+!.gitignore
+!*.md
+!*.rs
+!Cargo.toml
+!Cargo.lock
+!Makefile
+!futhark.pkg

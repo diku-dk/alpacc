@@ -1,0 +1,27 @@
+params {
+  lookback = 1.
+  lookahead = 1.
+}
+
+integer = /[0-9]+/.
+flt     = /[0-9]+\x2e[0-9]+/.
+hexnum  = /0x[0-9a-fA-F]+/.
+scinum  = /[0-9]+[eE][0-9]+/.
+ratnum  = /[0-9]+\/[0-9]+/.
+octnum  = /0o[0-7]+/.
+binnum  = /0b[01]+/.
+expflt  = /[0-9]+\x2e[0-9]+[eE][0-9]+/.
+sep     = /,/.
+
+S -> L.
+L -> N T.
+T -> .
+T -> sep N T.
+N -> integer.
+N -> flt.
+N -> hexnum.
+N -> scinum.
+N -> ratnum.
+N -> octnum.
+N -> binnum.
+N -> expflt.

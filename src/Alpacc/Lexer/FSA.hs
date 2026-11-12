@@ -4,12 +4,8 @@ module Alpacc.Lexer.FSA
     enumerateFSAsMap,
     OrdMap (..),
     Lexer (..),
-    fsaMap,
     fsaFirst,
     fsaSecond,
-    fsaLexerMap,
-    fsaLexerFirst,
-    fsaLexerSecond,
     enumerateLexer,
     curryTransitions,
   )
@@ -68,9 +64,6 @@ fsaLexerMap g f fsa_lexer =
   where
     produces_token = producesToken fsa_lexer
     token_map = tokenMap fsa_lexer
-
-fsaLexerFirst :: (Ord a, Ord c, OrdMap f, Ord b) => (a -> c) -> Lexer f a b k -> Lexer f c b k
-fsaLexerFirst = flip fsaLexerMap id
 
 fsaLexerSecond :: (Ord a, OrdMap f, Ord b, Ord d) => (b -> d) -> Lexer f a b k -> Lexer f a d k
 fsaLexerSecond = fsaLexerMap id

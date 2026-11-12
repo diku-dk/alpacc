@@ -3,6 +3,7 @@
 params {
   lookback = 1.
   lookahead = 1.
+  length = 16.
 }
 
 ignore = /(\s|\n|\t|\r)+/.

@@ -99,33 +99,12 @@ jobs:
           version: ${{ env.FUTHARK_VERSION }}
 
       - name: Unit tests
-        run: cabal test all
+        run: make test-unit
 
-      - name: Futhark lexer tests
-        run: bash tests/testfuthark.sh 0 0 50 10 --lexer
+      - name: Futhark tests
+        run: make test-futhark-multicore
 
-      - name: Futhark parser tests (0 1)
-        run: bash tests/testfuthark.sh 0 1 50 10 --parser
-
-      - name: Futhark parser tests (1 1)
-        run: bash tests/testfuthark.sh 1 1 50 10 --parser
-
-      - name: Futhark parser tests (2 2)
-        run: bash tests/testfuthark.sh 2 2 50 10 --parser
-
-      - name: Futhark parser tests (3 3)
-        run: bash tests/testfuthark.sh 3 3 50 10 --parser
-
-      - name: Futhark end-to-end tests (1 1)
-        run: bash tests/testfuthark.sh 1 1 50 10
-
-      - name: Futhark end-to-end tests (2 2)
-        run: bash tests/testfuthark.sh 2 2 50 10
-
-      - name: Futhark end-to-end tests (3 3)
-        run: bash tests/testfuthark.sh 3 3 50 10
-
-      - name: JSON grammar tests with multicore backend
+      - name: C tests
         run: |
           export CFLAGS="-fsanitize=undefined -fno-sanitize-recover -O"
-          bash tests/testjson.sh multicore
+          make test-c

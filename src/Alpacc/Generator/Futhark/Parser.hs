@@ -15,7 +15,7 @@ import Data.Text (Text)
 import Data.Text qualified as Text
 
 futharkParser :: Text
-futharkParser = $(embedStringFile "futhark/parser.fut")
+futharkParser = $(embedStringFile "backends/futhark/parser.fut")
 
 productionNameType :: [Text] -> Text
 productionNameType names =
@@ -49,15 +49,15 @@ module parser = mk_parser {
   def end_terminal: terminal_int = #{end_terminal}
   def production_to_terminal: [number_of_productions](opt terminal_int) =
     #{production_to_terminal} :> [number_of_productions](opt terminal_int)
-  def production_to_arity: [number_of_productions]i64 =
-    #{ari} :> [number_of_productions]i64
+  def production_to_arity: [number_of_productions]u8 =
+    #{ari} :> [number_of_productions]u8
   def hash_table_size: i64 = #{length $ oaArray oa}
   def max_iters: i64 = #{oaMaxIters oa}
   def productions_size: i64 = #{productions_size}
   def stacks_size: i64 = #{stacks_size}
-  
-  def hash_table: [hash_table_size](bool, [q+k]terminal_int, ((i64, i64), (i64, i64))) =
-    #{futharkify $ oaArray oa} :> [hash_table_size](bool, [q+k]terminal_int, ((i64, i64), (i64, i64)))
+
+  def hash_table: [hash_table_size](bool, [q+k]terminal_int, ((i32, i32), (i32, i32))) =
+    #{futharkify $ oaArray oa} :> [hash_table_size](bool, [q+k]terminal_int, ((i32, i32), (i32, i32)))
   
   def stacks: [stacks_size]bracket =
     #{futharkify stacks} :> [stacks_size]bracket

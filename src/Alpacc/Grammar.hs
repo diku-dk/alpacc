@@ -18,13 +18,10 @@ module Alpacc.Grammar
     reverseGrammar,
     findProductions,
     isTerminal,
-    isNonterminal,
     toProductionsMap,
-    unpackNTTGrammar,
     unpackNonterminal,
     unpackTerminal,
     rightSymbols,
-    grammarDuplicates,
     grammarError,
     parsingGrammar,
     getGrammar,
@@ -237,20 +234,6 @@ toProductionsMap = auxiliary Map.empty
       where
         new_prod_map = Map.adjust (s :) nt prod_map
         new_prod_map' = Map.insert nt [s] prod_map
-
--- | Given a grammar using NT and T convert it to a grammar using strings.
-unpackNTTGrammar :: Grammar NT T -> Grammar String String
-unpackNTTGrammar grammar =
-  grammar
-    { start = unpackNT $ start grammar,
-      terminals = unpackT <$> terminals grammar,
-      nonterminals = unpackNT <$> nonterminals grammar,
-      productions = bimap unpackNT unpackT <$> productions grammar
-    }
-  where
-    unpackT (T s) = Text.unpack s
-    unpackT (TLit s) = Text.unpack s
-    unpackNT (NT s) = Text.unpack s
 
 -- | Given a string of symbols, find all the nonterminals and make tuples where
 -- each nonterminal is the first element of the tuple and the second element is

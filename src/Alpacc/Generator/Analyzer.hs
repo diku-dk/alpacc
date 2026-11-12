@@ -14,8 +14,8 @@ import Alpacc.CFG
 import Alpacc.Encode
 import Alpacc.Grammar
 import Alpacc.Lexer.DFA
-import Alpacc.Lexer.DFAParallelLexer
-import Alpacc.Lexer.Encode
+import Alpacc.Lexer.DFAParallelLexer (dfaParallelLexer)
+import Alpacc.Lexer.Encode (IntParallelLexer (..), intParallelLexer, stateIntType)
 import Alpacc.Lexer.ParallelLexing
 import Alpacc.Lexer.RegularExpression
 import Alpacc.Types
@@ -110,8 +110,9 @@ mkLexer cfg = do
       encoder = encodeTerminals ignore $ parsingTerminals $ dfaTerminals spec
       dfa = lexerDFA (0 :: Integer) $ mapSymbols unBytes spec
       terminal_to_name = nameTerminals encoder
+      raw_pl = dfaParallelLexer dfa
   terminal_type <- terminalIntType encoder
-  parallel_lexer <- intDfaParallelLexer encoder dfa
+  parallel_lexer <- intParallelLexer encoder raw_pl
   state_type <- stateIntType (parLexer parallel_lexer) encoder
   transition_to_state <- transitionToStateArray parallel_lexer
   pure $
@@ -211,7 +212,8 @@ mkLexerParser cfg = do
   bracket_type <- bracketIntType s_encoder
   production_type <- productionIntType grammar
   hash_table <- llpHashTable q k empty_terminal grammar s_encoder
-  parallel_lexer <- intDfaParallelLexer t_encoder dfa
+  let raw_pl = dfaParallelLexer dfa
+  parallel_lexer <- intParallelLexer t_encoder raw_pl
   state_type <- stateIntType (parLexer parallel_lexer) t_encoder
   transition_to_state <- transitionToStateArray parallel_lexer
   pure $
