@@ -13,7 +13,7 @@ import Data.Word (Word8)
 import Prelude hiding (lex)
 
 futharkLexer :: Text
-futharkLexer = $(embedStringFile "futhark/lexer.fut")
+futharkLexer = $(embedStringFile "backends/futhark/lexer.fut")
 
 compositionsArray :: (Futharkify i, Integral i) => UInt -> ParallelLexer Word8 i -> Text
 compositionsArray int parallel_lexer =

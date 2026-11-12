@@ -1,7 +1,6 @@
 module Alpacc.Lexer.DFA
   ( DFA,
     isMatch,
-    invertSetMap,
     lexerDFA,
     DFALexer,
     fromRegExToDFA,
@@ -10,7 +9,7 @@ module Alpacc.Lexer.DFA
     DFALexerSpec (..),
     dfaTerminals,
     tokenize,
-    regExEquivalence,
+    tokenizeWithBS,
     dfaLexerSpecEquivalence,
     genDfaLexerSpec,
     Lexeme (..),
@@ -36,12 +35,12 @@ import Data.List.NonEmpty (NonEmpty)
 import Data.Map (Map)
 import Data.Map qualified as Map hiding (Map)
 import Data.Maybe
-import Data.Sequence ((|>))
-import Data.Sequence qualified as Seq hiding (Seq (..), (<|), (><), (|>))
 import Data.Set (Set)
 import Data.Set qualified as Set hiding (Set)
 import Data.Text (Text)
 import Data.Text qualified as Text
+import Data.ByteString (ByteString)
+import Data.ByteString qualified as BS
 import Data.Word
 import Test.QuickCheck
   ( Arbitrary (arbitrary, shrink),
@@ -165,16 +164,6 @@ isMatch dfa = runDFA' start_state
         Nothing -> False
       where
         maybe_state = Map.lookup (s, x) trans
-
-invertSetMap :: (Ord t, Ord s) => Map t (Set s) -> Map s (Set t)
-invertSetMap mapping = Map.fromList $ setMap <$> codomain
-  where
-    codomain = toList $ Set.unions mapping
-    domain = Map.keys mapping
-    setMap s =
-      (s,) $
-        Set.fromList $
-          filter ((s `Set.member`) . (mapping Map.!)) domain
 
 -- | http://www.cs.um.edu.mt/gordon.pace/Research/Software/Relic/Transformations/FSA/remove-useless.html
 removeUselessStates :: (Ord s, Ord t) => DFA t s -> DFA t s
@@ -414,37 +403,92 @@ data Lexeme t
 
 tokenize :: (Eq k, Ord s, Ord t) => DFALexer t s k -> Maybe k -> [t] -> Maybe [Lexeme k]
 tokenize dfa_lexer maybe_ignore cs =
-  toList <$> auxiliary 0 0 (Seq.empty) (initial dfa) cs
+  scan 0 0 (initial dfa) cs
   where
-    dfa = fsa dfa_lexer
-    trans = transitions' dfa
-    accept = accepting dfa
-    token_map = tokenMap dfa_lexer
+    dfa            = fsa dfa_lexer
+    trans          = transitions' dfa
+    accept         = accepting dfa
+    token_map      = tokenMap dfa_lexer
     produces_token = producesToken dfa_lexer
 
-    append t@(Lexeme k _) ts =
-      case maybe_ignore of
-        Just ignore -> if k == ignore then ts else ts |> t
-        Nothing -> ts |> t
+    -- emit a token and continue scanning from state s' (the state after the boundary char)
+    emit i j k s' rest
+      | shouldKeep k = (Lexeme k (i, j) :) <$> scan j j s' rest
+      | otherwise    = scan j j s' rest
 
-    auxiliary _ _ _ s [] = do
+    shouldKeep k = case maybe_ignore of
+      Just ig -> k /= ig
+      Nothing -> True
+
+    -- scan: i = token start offset, j = current offset, s = current DFA state
+    scan _ _ s [] = do
       guard $ s `Set.member` accept
-      pure Seq.empty
-    auxiliary i j lexemes s [t] = do
-      s' <- Map.lookup (s, t) trans
+      pure []
+    scan i j s [b] = do
+      s' <- Map.lookup (s, b) trans
       guard $ s' `Set.member` accept
       k <- Map.lookup s' token_map
-      pure $ append (Lexeme k (i, j + 1)) lexemes
-    auxiliary i j lexemes s (t : str'@(t' : _)) = do
-      s' <- Map.lookup (s, t) trans
+      emit i (j + 1) k s' []
+    scan i j s (b : rest@(b' : _)) = do
+      s' <- Map.lookup (s, b) trans
       let j' = j + 1
-      if (s', t') `Set.member` produces_token
+      if (s', b') `Set.member` produces_token
         then do
           k <- Map.lookup s' token_map
-          let new_lexemes = append (Lexeme k (i, j')) lexemes
-          auxiliary j' j' new_lexemes s' str'
+          emit i j' k s' rest
         else
-          auxiliary i j' lexemes s' str'
+          scan i j' s' rest
+
+-- | Like 'tokenize' but operates directly on a 'ByteString' (no [Word8] list)
+-- and delivers each lexeme to an IO callback.  Returns Nothing on lex error,
+-- or Just () on success.
+tokenizeWithBS ::
+  (Eq k, Ord s) =>
+  DFALexer Word8 s k ->
+  Maybe k ->
+  ByteString ->
+  (Lexeme k -> IO ()) ->
+  IO (Maybe ())
+tokenizeWithBS dfa_lexer maybe_ignore bs f =
+  scan 0 0 (initial dfa) 0
+  where
+    dfa            = fsa dfa_lexer
+    trans          = transitions' dfa
+    accept         = accepting dfa
+    token_map      = tokenMap dfa_lexer
+    produces_token = producesToken dfa_lexer
+    len            = BS.length bs
+
+    emit i j k s' j' = do
+      case maybe_ignore of
+        Just ig | k == ig -> scan j' j' s' j'
+        _                 -> f (Lexeme k (fromIntegral i, fromIntegral j)) >> scan j' j' s' j'
+
+    scan i j s pos
+      | pos >= len =
+          if s `Set.member` accept then pure (Just ()) else pure Nothing
+      | otherwise  = do
+          let b  = BS.index bs pos
+              j' = j + 1
+          case Map.lookup (s, b) trans of
+            Nothing -> pure Nothing
+            Just s' ->
+              let pos' = pos + 1
+              in if pos' >= len
+                   then
+                     if s' `Set.member` accept
+                       then case Map.lookup s' token_map of
+                              Nothing -> pure Nothing
+                              Just k  -> emit i j' k s' pos'
+                       else pure Nothing
+                   else do
+                     let b' = BS.index bs pos'
+                     if (s', b') `Set.member` produces_token
+                       then case Map.lookup s' token_map of
+                              Nothing -> pure Nothing
+                              Just k  -> emit i j' k s' pos'
+                       else
+                         scan i j' s' pos'
 
 mapTokens ::
   (k -> Maybe k') ->

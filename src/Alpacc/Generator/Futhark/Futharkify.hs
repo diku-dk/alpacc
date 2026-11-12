@@ -1,6 +1,5 @@
 module Alpacc.Generator.Futhark.Futharkify
   ( Futharkify (..),
-    NTuple (..),
     RawString (..),
   )
 where

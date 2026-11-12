@@ -1,17 +1,25 @@
 module Main where
 
 import Alpacc.CFG
+import Alpacc.Types
 import Alpacc.Generator.Analyzer
   ( Generator (..),
     mkLexer,
     mkLexerParser,
     mkParser,
   )
+import Alpacc.Generator.C.Generator qualified as C
 import Alpacc.Generator.Cuda.Generator qualified as Cuda
 import Alpacc.Generator.Futhark.Generator qualified as Futhark
 import Alpacc.Random qualified as Random
 import Alpacc.Test
+import Alpacc.Test.Lexer (lexerTestsSingleLong)
+import Alpacc.Test.LexerParser (lexerParserTestsSingleLong)
+import Alpacc.Test.Parser (parserTestsSingleLong)
+import CudaProbe qualified
+import Control.Monad (unless)
 import Data.ByteString qualified as ByteString
+import Data.ByteString.Lazy qualified as LBS
 import Data.Maybe
 import Data.Text (Text)
 import Data.Text qualified as Text
@@ -25,6 +33,7 @@ import Prelude hiding (last)
 data Backend
   = Futhark
   | CUDA
+  | C
   deriving (Show)
 
 data Input
@@ -60,7 +69,13 @@ data GeneratorParameters = GeneratorParameters
   { generatorInput :: !Input,
     generatorOutput :: !(Maybe String),
     generatorGenerator :: !Gen,
-    generatorBackend :: !Backend
+    generatorBackend :: !Backend,
+    generatorIndex32 :: !Bool,
+    generatorSharedMemory :: !(Maybe Int),
+    -- ^ Nothing = auto (probe local device); Just n = literal bytes.
+    generatorSmArch :: !(Maybe Int)
+    -- ^ Nothing = auto (probe local device); Just n = literal compute
+    -- capability × 10 (e.g. 75 for sm_75).
   }
   deriving (Show)
 
@@ -78,7 +93,9 @@ data TestGenerateParameters = TestGenerateParameters
     testGenerateOutput :: !(Maybe String),
     testGenerateLength :: !Int,
     testGenerateGenerator :: !Gen,
-    testGenerateMode :: !TestMode
+    testGenerateMode :: !TestMode,
+    testGenerateNoOutputs :: !Bool,
+    testGenerateIndex32 :: !Bool
   }
   deriving (Show)
 
@@ -87,7 +104,8 @@ data TestCompareParameters = TestCompareParameters
     testCompareInput :: !String,
     testCompareExpected :: !String,
     testCompareResult :: !String,
-    testCompareGenerator :: !Gen
+    testCompareGenerator :: !Gen,
+    testCompareIndex32 :: !Bool
   }
   deriving (Show)
 
@@ -243,6 +261,21 @@ generatorParameters backend =
             <*> outputParameter
             <*> generateParametar
             <*> pure backend
+            <*> switch (long "index32" <> help "Use 32-bit integers for indices (Futhark only).")
+            <*> optional
+                  ( option auto
+                      ( long "shared-memory"
+                          <> metavar "BYTES"
+                          <> help "Per-block shared memory budget baked into the generated CUDA kernel (CUDA backend only).  Default: auto-probe the local device via nvcc.  Overridable at nvcc time with -DALPACC_SHARED_MEMORY=<n>."
+                      )
+                  )
+            <*> optional
+                  ( option auto
+                      ( long "sm-arch"
+                          <> metavar "SM"
+                          <> help "Target GPU compute capability × 10 (e.g. 75 for sm_75, 80 for sm_80) baked in as ALPACC_SM_ARCH; the codegen picks BLOCK_SIZE / ITEMS_PER_THREAD from a per-arch tuning table when this is set (CUDA backend only).  Default: auto-probe the local device via nvcc.  Overridable at nvcc time with -DALPACC_SM_ARCH=<n>."
+                      )
+                  )
         )
 
 randomParameters :: Parser Command
@@ -265,6 +298,11 @@ testGenerateParameters =
             <*> lengthParameter
             <*> generateParametar
             <*> testModeParameter
+            <*> switch
+              ( long "no-outputs"
+                  <> help "Only write the .inputs file, skip generating .outputs."
+              )
+            <*> switch (long "index32" <> help "Use 32-bit indices in the .outputs wire format (matches the generator's --index32).")
         )
 
 testCompareParameters :: Parser Command
@@ -276,6 +314,7 @@ testCompareParameters =
             <*> argument str (metavar "FILE")
             <*> argument str (metavar "FILE")
             <*> generateParametar
+            <*> switch (long "index32" <> help "Interpret the result file with 32-bit indices (matches the generator's --index32).")
         )
 
 testCommands :: Parser Command
@@ -290,6 +329,7 @@ commands =
   subparser
     ( command "futhark" (info (generatorParameters Futhark) (progDesc "Generate parsers written in Futhark."))
         <> command "cuda" (info (generatorParameters CUDA) (progDesc "Generate parsers written in CUDA."))
+        <> command "c" (info (generatorParameters C) (progDesc "Generate parsers written in C."))
         <> command "random" (info randomParameters (progDesc "Generate random parser that can be used for testing."))
         <> command "test" (info testCommands (progDesc "Test related commands."))
     )
@@ -313,6 +353,7 @@ extension backend =
   case backend of
     CUDA -> ".cu"
     Futhark -> ".fut"
+    C -> ".c"
 
 outputPath :: Backend -> Maybe String -> Input -> String
 outputPath backend output input =
@@ -334,17 +375,26 @@ readContents input =
     StdInput -> TextIO.getContents
     FileInput path -> TextIO.readFile path
 
-generateProgram :: Backend -> Gen -> CFG -> Either Text Text
-generateProgram backend generator cfg =
-  case generator of
-    GenBoth -> generate gen <$> mkLexerParser cfg
-    GenLexer -> generate gen <$> mkLexer cfg
-    GenParser -> generate gen <$> mkParser cfg
+bitsToUInt :: Int -> Maybe UInt
+bitsToUInt 8  = Just U8
+bitsToUInt 16 = Just U16
+bitsToUInt 32 = Just U32
+bitsToUInt 64 = Just U64
+bitsToUInt _  = Nothing
+
+backendGenerator :: Backend -> Bool -> Maybe UInt -> Int -> Int -> Generator [Text]
+backendGenerator CUDA    index32 mLenType shmem sm = Cuda.generator index32 mLenType shmem sm
+backendGenerator Futhark index32 mLenType _     _  = Futhark.generator index32 mLenType
+backendGenerator C       index32 mLenType _     _  = C.generator index32 mLenType
+
+generateProgram :: Backend -> Bool -> Maybe UInt -> Int -> Int -> Gen -> CFG -> Either Text Text
+generateProgram backend index32 mLenType shmem sm gen cfg =
+  case gen of
+    GenBoth -> generate generator <$> mkLexerParser cfg
+    GenLexer -> generate generator <$> mkLexer cfg
+    GenParser -> generate generator <$> mkParser cfg
   where
-    gen =
-      case backend of
-        CUDA -> Cuda.generator
-        Futhark -> Futhark.generator
+    generator = backendGenerator backend index32 mLenType shmem sm
 
 pathOfInput :: FilePath -> Input -> FilePath
 pathOfInput p StdInput = p
@@ -369,7 +419,9 @@ mainGenerator :: GeneratorParameters -> IO ()
 mainGenerator params = do
   let program_path = outputPath backend output input
   cfg <- readCfg input
-  let either_program = generateProgram backend gen cfg
+  let mLenType = paramsLength (cfgParams cfg) >>= bitsToUInt
+  (shmem, smArch) <- resolveCudaDeviceParams backend mShmem mSmArch
+  let either_program = generateProgram backend index32 mLenType shmem smArch gen cfg
 
   case either_program of
     Left e -> do
@@ -381,6 +433,42 @@ mainGenerator params = do
     output = generatorOutput params
     input = generatorInput params
     gen = generatorGenerator params
+    index32 = generatorIndex32 params
+    mShmem = generatorSharedMemory params
+    mSmArch = generatorSmArch params
+
+-- | Resolve --shared-memory and --sm-arch when either is left as auto.
+-- Only probes when the backend is CUDA (probing for C/Futhark is waste).
+-- Fails hard with a clear message when nvcc/GPU is unavailable and one of
+-- them is auto — the user can then rerun with explicit values.
+resolveCudaDeviceParams :: Backend -> Maybe Int -> Maybe Int -> IO (Int, Int)
+resolveCudaDeviceParams CUDA (Just s) (Just a) = pure (s, a)
+resolveCudaDeviceParams CUDA mShmem mSmArch = do
+  hPutStrLn stderr
+    "Probing local GPU via nvcc for --shared-memory / --sm-arch auto-defaults..."
+  eR <- CudaProbe.probeDevice
+  case eR of
+    Right r -> do
+      hPutStrLn stderr $
+        "  probe: sm_arch=" <> show (CudaProbe.probeSmArch r) <>
+        ", shared_memory=" <> show (CudaProbe.probeSharedMemory r) <> " bytes"
+      pure ( fromMaybe (CudaProbe.probeSharedMemory r) mShmem
+           , fromMaybe (CudaProbe.probeSmArch r)       mSmArch
+           )
+    Left err -> do
+      hPutStrLn stderr $
+        "error: --shared-memory / --sm-arch auto-probe failed:\n  " <>
+        probeErrMsg err <>
+        "\nPass explicit values, e.g. `alpacc cuda --shared-memory 49152 --sm-arch 75 ...`."
+      exitFailure
+  where
+    probeErrMsg (CudaProbe.ProbeNvccMissing s)    = s
+    probeErrMsg (CudaProbe.ProbeCompileFailed s)  = s
+    probeErrMsg (CudaProbe.ProbeRunFailed s)      = s
+    probeErrMsg (CudaProbe.ProbeParseFailed s)    = s
+-- Non-CUDA backends never need these values; use portable placeholders.
+resolveCudaDeviceParams _ mShmem mSmArch =
+  pure (fromMaybe 49152 mShmem, fromMaybe 75 mSmArch)
 
 mainRandom :: RandomParameters -> IO ()
 mainRandom params =
@@ -406,23 +494,59 @@ mainTestGenerate params = do
                   pathOfInput "test.alp" input
 
   case testGenerateGenerator params of
-    GenLexer -> do
-      (inputs, ouputs) <- eitherToIO $ lexerTests mode cfg len
-      ByteString.writeFile (name <> ".inputs") inputs
-      ByteString.writeFile (name <> ".outputs") ouputs
-    GenParser -> do
-      (inputs, ouputs) <- eitherToIO $ parserTests mode cfg len
-      ByteString.writeFile (name <> ".inputs") inputs
-      ByteString.writeFile (name <> ".outputs") ouputs
-    GenBoth -> do
-      (inputs, ouputs) <- eitherToIO $ lexerParserTests mode cfg len
-      ByteString.writeFile (name <> ".inputs") inputs
-      ByteString.writeFile (name <> ".outputs") ouputs
+    GenLexer -> case mode of
+      Exhaustive -> do
+        (inputs, ouputs) <- eitherToIO $ lexerTests mode cfg len noOutputs index32
+        LBS.writeFile (name <> ".inputs") inputs
+        unless noOutputs $ LBS.writeFile (name <> ".outputs") ouputs
+      SingleLong -> do
+        let inputsFile = name <> ".inputs"
+        h <- openBinaryFile inputsFile ReadWriteMode
+        mOutH <- if noOutputs
+                   then pure Nothing
+                   else Just <$> openBinaryFile (name <> ".outputs") WriteMode
+        result <- lexerTestsSingleLong cfg len index32 h mOutH
+        hClose h
+        mapM_ hClose mOutH
+        eitherToIO result
+    GenParser -> case mode of
+      Exhaustive -> do
+        (inputs, ouputs) <- eitherToIO $ parserTests mode cfg len noOutputs
+        LBS.writeFile (name <> ".inputs") inputs
+        unless noOutputs $ LBS.writeFile (name <> ".outputs") ouputs
+      SingleLong -> do
+        let inputsFile = name <> ".inputs"
+        h <- openBinaryFile inputsFile WriteMode
+        mOutH <- if noOutputs
+                   then pure Nothing
+                   else Just <$> openBinaryFile (name <> ".outputs") WriteMode
+        result <- parserTestsSingleLong cfg len h mOutH
+        hClose h
+        mapM_ hClose mOutH
+        eitherToIO result
+    GenBoth -> case mode of
+      Exhaustive -> do
+        (inputs, ouputs) <- eitherToIO $ lexerParserTests mode cfg len noOutputs index32
+        LBS.writeFile (name <> ".inputs") inputs
+        unless noOutputs $ LBS.writeFile (name <> ".outputs") ouputs
+      SingleLong -> do
+        let inputsFile = name <> ".inputs"
+            outputsFile = name <> ".outputs"
+        h <- openBinaryFile inputsFile ReadWriteMode
+        mOutH <- if noOutputs
+                   then pure Nothing
+                   else Just . (outputsFile,) <$> openBinaryFile outputsFile WriteMode
+        result <- lexerParserTestsSingleLong cfg len index32 h mOutH
+        hClose h
+        mapM_ (hClose . snd) mOutH
+        eitherToIO result
   where
     out = testGenerateOutput params
     input = testGenerateInput params
     len = testGenerateLength params
     mode = testGenerateMode params
+    noOutputs = testGenerateNoOutputs params
+    index32 = testGenerateIndex32 params
 
 mainTestCompare :: TestCompareParameters -> IO ()
 mainTestCompare params = do
@@ -433,15 +557,15 @@ mainTestCompare params = do
 
   case testCompareGenerator params of
     GenLexer -> do
-      () <- eitherToIO $ lexerTestsCompare cfg input_bytes expected_bytes result_bytes
+      () <- eitherToIO $ lexerTestsCompare cfg index32 input_bytes expected_bytes result_bytes
       putStrLn "Tests passes."
       pure ()
     GenParser -> do
-      () <- eitherToIO $ parserTestsCompare input_bytes expected_bytes result_bytes
+      () <- eitherToIO $ parserTestsCompare cfg input_bytes expected_bytes result_bytes
       putStrLn "Tests passes."
       pure ()
     GenBoth -> do
-      () <- eitherToIO $ lexerParserTestsCompare cfg input_bytes expected_bytes result_bytes
+      () <- eitherToIO $ lexerParserTestsCompare cfg index32 input_bytes expected_bytes result_bytes
       putStrLn "Tests passes."
       pure ()
   where
@@ -449,6 +573,7 @@ mainTestCompare params = do
     input = testCompareInput params
     expected = testCompareExpected params
     result = testCompareResult params
+    index32 = testCompareIndex32 params
 
 main :: IO ()
 main = do

@@ -1,8 +1,8 @@
 module LLP (tests) where
 
 import Alpacc.Grammar
-import Alpacc.LL
-import Alpacc.LLP
+import Alpacc.Parser.LL
+import Alpacc.Parser.LLP
 import Control.Monad.State
 import Data.Either
 import Data.Foldable (Foldable (toList))

@@ -7,6 +7,7 @@ import Alpacc.Encode
 import Alpacc.Generator.Analyzer
 import Alpacc.Generator.Cuda.Cudafy
 import Alpacc.HashTable
+import Alpacc.Types
 import Data.Array qualified as Array
 import Data.FileEmbed
 import Data.Maybe
@@ -14,8 +15,11 @@ import Data.String.Interpolate (i)
 import Data.Text (Text)
 import Data.Text qualified as Text
 
+cudaPse :: Text
+cudaPse = $(embedStringFile "backends/cuda/pse.cu")
+
 cudaParser :: Text
-cudaParser = $(embedStringFile "cuda/parser.cu")
+cudaParser = $(embedStringFile "backends/cuda/parser.cu")
 
 terminalCast :: (Cudafy a) => a -> RawString
 terminalCast a =
@@ -23,36 +27,38 @@ terminalCast a =
 
 generateParser :: Parser -> Text
 generateParser parser =
-  (Text.strip . Text.pack)
+  cudaPse
+    <> (Text.strip . Text.pack)
     [i|
 using production_t = #{cudafy production_type};
 using bracket_t = #{cudafy bracket_type};
-const size_t Q = #{cudafy q};
-const size_t K = #{cudafy k};
+const int64_t Q = #{cudafy q};
+const int64_t K = #{cudafy k};
 const terminal_t EMPTY_TERMINAL = #{cudafy $ terminalCast empty_terminal};
-const size_t NUMBER_OF_PRODUCTIONS = #{cudafy number_of_productions};
-const terminal_t PRODUCTION_TO_TERMINAL[NUMBER_OF_PRODUCTIONS] =
-  #{cudafy $ map terminalCast production_to_tertminal};
-const bool PRODUCTION_TO_TERMINAL_IS_VALID[NUMBER_OF_PRODUCTIONS] =
+const terminal_t START_TERMINAL = #{cudafy $ terminalCast start_terminal};
+const terminal_t END_TERMINAL = #{cudafy $ terminalCast end_terminal};
+const int64_t NUMBER_OF_PRODUCTIONS = #{cudafy number_of_productions};
+__device__ const bool PRODUCTION_TO_TERMINAL_IS_VALID[NUMBER_OF_PRODUCTIONS] =
   #{cudafy production_to_tertminal_is_valid};
-const size_t PRODUCTION_TO_ARITY[NUMBER_OF_PRODUCTIONS] =
+__device__ const uint8_t PRODUCTION_TO_ARITY[NUMBER_OF_PRODUCTIONS] =
   #{ari};
-const size_t HASH_TABLE_SIZE = #{cudafy $ length $ oaArray oa};
-const size_t MAX_ITERS = #{cudafy $ oaMaxIters oa};
-const size_t PRODUCTIONS_SIZE = #{cudafy productions_size};
-const size_t STACKS_SIZE = #{cudafy stacks_size};
-const bracket_t STACKS[STACKS_SIZE] =
+const int64_t HASH_TABLE_SIZE = #{cudafy $ length $ oaArray oa};
+const int64_t MAX_ITERS = #{cudafy $ oaMaxIters oa};
+const int64_t PRODUCTIONS_SIZE = #{cudafy productions_size};
+const int64_t STACKS_SIZE = #{cudafy stacks_size};
+const int64_t MAX_BRACKETS_PER_POSITION = #{cudafy max_brackets_per_pos};
+const int64_t MAX_PRODS_PER_POSITION = #{cudafy max_prods_per_pos};
+__device__ const bracket_t STACKS[STACKS_SIZE] =
   #{cudafy stacks};
-const size_t PRODUCTIONS[STACKS_SIZE] =
+__device__ const production_t PRODUCTIONS[PRODUCTIONS_SIZE] =
   #{cudafy productions};
-const bool HASH_TABLE_IS_VALID[HASH_TABLE_SIZE] =
-  #{cudafy hash_table_is_valid};
-const terminal_t HASH_TABLE_KEYS[HASH_TABLE_SIZE][Q + K] =
-  #{cudafy $ map (map terminalCast) hash_table_keys};
-const size_t HASH_TABLE_STACKS_SPAN[HASH_TABLE_SIZE][2] =
-  #{cudafy hash_table_stacks_span};
-const size_t HASH_TABLE_PRODUCTIONS_SPAN[HASH_TABLE_SIZE][2] =
-  #{cudafy hash_table_productions_span};
+using span_t = #{cudafy span_type};
+struct alignas(16) HashRecord {
+    terminal_t key[Q + K];
+    span_t ss, se, ps, pe;
+};
+__device__ const HashRecord HASH_TABLE[HASH_TABLE_SIZE] =
+  #{cudafy hash_records};
 |]
     <> cudaParser
   where
@@ -61,8 +67,9 @@ const size_t HASH_TABLE_PRODUCTIONS_SPAN[HASH_TABLE_SIZE][2] =
     q = lookback parser
     k = lookahead parser
     empty_terminal = emptyTerminal parser
+    start_terminal = startTerminal parser
+    end_terminal = endTerminal parser
     number_of_productions = numberOfProductions parser
-    production_to_tertminal = fromMaybe 0 <$> productionToTerminal parser
     production_to_tertminal_is_valid = isJust <$> productionToTerminal parser
     ari = cudafy $ arities parser
     hash_table = llpTable parser
@@ -71,10 +78,28 @@ const size_t HASH_TABLE_PRODUCTIONS_SPAN[HASH_TABLE_SIZE][2] =
     stacks_size = length $ llpStacks hash_table
     productions_size = length $ llpProductions hash_table
     oa = llpOATable hash_table
-    ( hash_table_is_valid,
-      hash_table_keys,
-      hash_table_spans
-      ) = unzip3 $ Array.elems $ oaArray oa
-    ( hash_table_stacks_span,
-      hash_table_productions_span
-      ) = unzip hash_table_spans
+    hash_table_spans =
+      [spans | (_, _, spans) <- Array.elems $ oaArray oa]
+    -- Spans are offsets into STACKS/PRODUCTIONS; the all-ones value of
+    -- span_t is reserved as the empty-slot sentinel (checked before the
+    -- key compare in lookupSpans), so the sizes must stay strictly below.
+    spans_fit_u16 = stacks_size < 65535 && productions_size < 65535
+    span_type = if spans_fit_u16 then U16 else U32
+    span_none :: Integer
+    span_none = if spans_fit_u16 then 65535 else 4294967295
+    hash_record (valid, keys, ((ss, se), (ps, pe)))
+      | valid =
+          RawString $
+            Text.pack
+              [i|{#{cudafy $ map terminalCast keys}, #{ss}, #{se}, #{ps}, #{pe}}|]
+      | otherwise =
+          RawString $
+            Text.pack
+              [i|{#{cudafy $ map (const zero_terminal) keys}, #{span_none}, #{span_none}, #{span_none}, #{span_none}}|]
+      where
+        zero_terminal = RawString "(terminal_t) 0"
+    hash_records = map hash_record $ Array.elems $ oaArray oa
+    max_brackets_per_pos =
+      maximum $ 0 : [se - ss | ((ss, se), _) <- hash_table_spans, ss >= 0]
+    max_prods_per_pos =
+      maximum $ 0 : [pe - ps | (_, (ps, pe)) <- hash_table_spans, ps >= 0]

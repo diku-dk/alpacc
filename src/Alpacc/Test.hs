@@ -1,5 +1,6 @@
 module Alpacc.Test
   ( lexerTests,
+    lexerBytes,
     parserTests,
     lexerParserTests,
     lexerTestsCompare,

@@ -3,6 +3,7 @@ module Alpacc.Lexer.ParallelLexing
     parallelLexer,
     EndoData (..),
     listCompositions,
+    lookupComposition,
     Sim (..),
   )
 where
@@ -114,9 +115,20 @@ lookupComposition ::
 lookupComposition comps e e' =
   IntMap.lookup e comps >>= IntMap.lookup e'
 
+-- | Flat compose table laid out row-major by the FIRST argument of the
+-- composition.  Position `i*N + j` stores `f_j ∘ f_i` — i.e. "apply
+-- endomorphism i first, then j".  The CUDA and Futhark lookups mirror
+-- this: `compose[idx_a * N + idx_b] == operator()(a, b)`.
+--
+-- The row-major choice matters for GPU perf: within a warp scan step,
+-- adjacent lanes tend to see the same "just-arrived neighbour" value
+-- (varying with lane), and correlated "self" values (state stays in the
+-- same DFA node across nearby input bytes).  Putting the first argument
+-- on the outer axis lets adjacent lanes hit the same row/L1 line when
+-- their first-argument states are equal (measured with ncu).
 listCompositions :: ParallelLexer t e -> [e]
 listCompositions parallel_lexer =
-  [fromMaybe d $ lookupComposition cs e' e | e <- range, e' <- range]
+  [fromMaybe d $ lookupComposition cs e e' | e <- range, e' <- range]
   where
     range = [0 .. upper]
     cs = compositions parallel_lexer
