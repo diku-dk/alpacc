@@ -8,7 +8,7 @@
 # backend (default: c):
 #   c                    — alpacc c backend, compiled with cc
 #   cuda                 — alpacc cuda backend, compiled with nvcc (requires GPU)
-#   futhark-<target>     — alpacc futhark backend, run via futhark script
+#   futhark-<target>     — alpacc futhark backend, run via futhark eval
 #                          <target> is the Futhark execution target, e.g.:
 #                          futhark-multicore, futhark-opencl, futhark-ispc, futhark-cuda
 #
@@ -122,14 +122,22 @@ run_backend_futhark() {
     if ! alpacc futhark "$GRAMMAR" $mode_flag $index_flag; then
         echo "ERROR: alpacc futhark failed"; return 1
     fi
-    # futhark script -b emits a 16-byte header before the binary payload; strip it.
-    # Write a tuning file so chunk_size=10000 forces multi-chunk lexing on the
-    # long input, exercising the chunked code path as a regression test.
-    echo "chunk_size=10000" > "${stem}.fut.tuning"
-    futhark script --backend="$futhark_target" -b \
-        "${stem}.fut" \
-        "test (\$loadbytes \"${stem}.inputs\")" \
-        | tail -c +16 > "${stem}.results"
+    # Lexer and combined modes: a tuning file with chunk_size=10000 forces
+    # multi-chunk lexing on the long input, exercising the chunked code path
+    # as a regression test.  (A parser-only program has no chunk_size and
+    # rejects the file.)
+    local tuning_opt=()
+    if [ "$mode_flag" != "--parser" ]; then
+        echo "chunk_size=10000" > "${stem}.fut.tuning"
+        tuning_opt=(--pass-option="--tuning=${stem}.fut.tuning")
+    fi
+    # The entry point runs compiled (--backend); only the two io calls are
+    # interpreted.  io.savevalue writes the binary data format: strip its
+    # 15-byte header (b, version, rank, 4-byte type, i64 length).
+    futhark eval -w -f "${stem}.fut" --backend="$futhark_target" "${tuning_opt[@]}" \
+        "io.savevalue \"${stem}.results.bin\" (test (io.loadbytes \"${stem}.inputs\"))" \
+        > /dev/null
+    tail -c +16 "${stem}.results.bin" > "${stem}.results"
 }
 
 # ---------------------------------------------------------------------------

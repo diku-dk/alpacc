@@ -99,7 +99,7 @@ module mk_lexer (L: lexer_context)
                (prev_start: idx.t)
                (prev_size: idx.t)
                (dest: *[m](terminal_int, (idx.t, len.t)))
-               (str: [n]u8) : ?[k].( [k](terminal_int, (idx.t, len.t))
+               (str: [n]u8) : ?[k].( *[k](terminal_int, (idx.t, len.t))
                                    , state
                                    , idx.t
                                    , idx.t

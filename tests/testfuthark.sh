@@ -142,7 +142,9 @@ EOF
 
         # Now we have a valid Futhark conversion, run the test
         alpacc test generate random.alp $type_flag $index_flag &> /dev/null
-        futhark script --backend="$backend" -b random.fut 'test ($loadbytes "random.inputs")' | tail -c +16 > random.results
+        futhark eval -w -f random.fut --backend="$backend" \
+            'io.savevalue "random.results.bin" (test (io.loadbytes "random.inputs"))' > /dev/null
+        tail -c +16 random.results.bin > random.results
 
         if alpacc test compare random.alp random.inputs random.outputs random.results $type_flag $index_flag &> /dev/null; then
             # Success! Increment counter atomically
