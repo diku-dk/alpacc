@@ -101,7 +101,6 @@ library
     Alpacc.Test.Lexer
     Alpacc.Test.LexerParser
     Alpacc.Random
-    Alpacc.Analysis.CompositionHistogram
 
   hs-source-dirs:     src
 

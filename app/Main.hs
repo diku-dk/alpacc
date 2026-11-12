@@ -3,22 +3,11 @@ module Main where
 import Alpacc.CFG
 import Alpacc.Types
 import Alpacc.Generator.Analyzer
-  ( Analyzer (..),
-    AnalyzerKind (..),
-    Generator (..),
-    Lexer (..),
+  ( Generator (..),
     mkLexer,
     mkLexerParser,
     mkParser,
   )
-import Alpacc.Analysis.CompositionHistogram qualified as CH
-import Alpacc.Lexer.DFAParallelLexer (Endomorphism (..), deadState)
-import Data.Array.Unboxed qualified as UArray
-import Data.List qualified as List
-import Data.Map.Strict qualified as Map
-import Data.Set qualified as Set
-import Data.Word (Word8)
-import Alpacc.Lexer.Encode (IntParallelLexer (..))
 import Alpacc.Generator.C.Generator qualified as C
 import Alpacc.Generator.Cuda.Generator qualified as Cuda
 import Alpacc.Generator.Futhark.Generator qualified as Futhark
@@ -62,19 +51,11 @@ data Command
   = Generate !GeneratorParameters
   | Test !TestCommand
   | Random !RandomParameters
-  | Dev !DevCommand
   deriving (Show)
 
 data TestCommand
   = TestGenerate !TestGenerateParameters
   | TestCompare !TestCompareParameters
-  deriving (Show)
-
-data DevCommand
-  = DevCompositionHistogram !Input
-  | DevImageSizes !Input
-  | DevRawImageSizes !Input
-  | DevDumpEndo !Input !Int
   deriving (Show)
 
 combine :: Gen -> Gen -> Gen
@@ -343,53 +324,6 @@ testCommands =
         <> command "compare" (info testCompareParameters (progDesc "Inspect if test passed."))
     )
 
-devCompositionHistogramParameters :: Parser Command
-devCompositionHistogramParameters =
-  Dev . DevCompositionHistogram <$> inputParameter
-
-devImageSizesParameters :: Parser Command
-devImageSizesParameters =
-  Dev . DevImageSizes <$> inputParameter
-
-devRawImageSizesParameters :: Parser Command
-devRawImageSizesParameters =
-  Dev . DevRawImageSizes <$> inputParameter
-
-devDumpEndoParameters :: Parser Command
-devDumpEndoParameters =
-  (\inp c -> Dev (DevDumpEndo inp c))
-    <$> inputParameter
-    <*> option auto (long "char" <> metavar "N" <> help "Byte value 0..255")
-
-devCommands :: Parser Command
-devCommands =
-  subparser
-    ( command
-        "composition-histogram"
-        ( info
-            devCompositionHistogramParameters
-            (progDesc "Rank rule-based patterns (row/column constants and projections) in the parallel-lexer composition table.")
-        )
-        <> command
-        "image-sizes"
-        ( info
-            devImageSizesParameters
-            (progDesc "Report per-char endomorphism image sizes and the monoid closure max.")
-        )
-        <> command
-        "raw-image-sizes"
-        ( info
-            devRawImageSizesParameters
-            (progDesc "Same as image-sizes but on the raw DFA (produce-extension pairs stripped).")
-        )
-        <> command
-        "dump-endo"
-        ( info
-            devDumpEndoParameters
-            (progDesc "Print raw (src -> dst) pairs for a specific char's endomorphism.")
-        )
-    )
-
 commands :: Parser Command
 commands =
   subparser
@@ -398,7 +332,6 @@ commands =
         <> command "c" (info (generatorParameters C) (progDesc "Generate parsers written in C."))
         <> command "random" (info randomParameters (progDesc "Generate random parser that can be used for testing."))
         <> command "test" (info testCommands (progDesc "Test related commands."))
-        <> command "dev" (info devCommands (progDesc "Developer/analysis utilities."))
     )
 
 options :: ParserInfo Command
@@ -642,178 +575,6 @@ mainTestCompare params = do
     result = testCompareResult params
     index32 = testCompareIndex32 params
 
-mainDev :: DevCommand -> IO ()
-mainDev (DevCompositionHistogram input) = do
-  cfg <- readCfg input
-  analyzer <- eitherToIO $ mkLexer cfg
-  lx <- case analyzerKind analyzer of
-    Lex l -> pure l
-    Both l _ -> pure l
-    _ -> do
-      hPutStrLn stderr "dev composition-histogram: grammar produced no lexer."
-      exitFailure
-  let ipl = lexer (lx :: Lexer)
-      pl = parLexer ipl
-  TextIO.putStr $ CH.renderReport $ CH.analyze pl
-mainDev (DevImageSizes input) = do
-  cfg <- readCfg input
-  analyzer <- eitherToIO $ mkLexer cfg
-  lx <- case analyzerKind analyzer of
-    Lex l -> pure l
-    Both l _ -> pure l
-    _ -> do
-      hPutStrLn stderr "dev image-sizes: grammar produced no lexer."
-      exitFailure
-  let tbl :: Map.Map Word8 Endomorphism
-      tbl = rawEndoTable lx
-      nonDeadImage (Endomorphism arr _) =
-        length $ List.nub $ filter (/= deadState) $ UArray.elems arr
-      nonDeadPairs (Endomorphism arr _) =
-        length
-          [ (s, j)
-          | (s, j) <- UArray.assocs arr
-          , s /= deadState
-          , j /= deadState
-          ]
-      perChar = [(c, nonDeadImage e, nonDeadPairs e) | (c, e) <- Map.toAscList tbl]
-      maxImg = maximum (0 : [i | (_, i, _) <- perChar])
-      maxPairs = maximum (0 : [p | (_, _, p) <- perChar])
-      -- Monoid closure by naive BFS (matches existing maxMonoidImageSize)
-      singles = Map.elems tbl
-      initSet = Set.fromList singles
-      go seen [] = seen
-      go seen (e:queue) =
-        let new = [c | s <- singles, let c = e <> s, c `Set.notMember` seen]
-            seen' = List.foldl' (flip Set.insert) seen new
-         in go seen' (queue ++ new)
-      closed = go initSet (Set.toList initSet)
-      closedList = Set.toList closed
-      maxClosureImg = maximum (0 : map nonDeadImage closedList)
-      maxClosurePairs = maximum (0 : map nonDeadPairs closedList)
-  putStrLn $ "Per-char (raw DFA) endomorphisms: " ++ show (length perChar)
-  putStrLn $ "  max distinct non-dead image states  (per-char) : " ++ show maxImg
-  putStrLn $ "  max non-dead (in,out) pair count   (per-char) : " ++ show maxPairs
-  putStrLn $ "Monoid closure size                              : " ++ show (Set.size closed)
-  putStrLn $ "  max distinct non-dead image states (closure) : " ++ show maxClosureImg
-  putStrLn $ "  max non-dead (in,out) pair count   (closure) : " ++ show maxClosurePairs
-  putStrLn ""
-  putStrLn "Top per-char image sizes (first 20 by pair count):"
-  let sorted = List.sortOn (\(_, _, p) -> negate p) perChar
-  mapM_
-    (\(c, i, p) ->
-       putStrLn $ "  " ++ show c ++ " (0x" ++ showHex c ++ "): image=" ++ show i ++ " pairs=" ++ show p)
-    (take 20 sorted)
-  where
-    showHex w = let s = showHex' w in if length s == 1 then '0' : s else s
-    showHex' w = case w of
-      _ | w < 10 -> show w
-      _ | w < 16 -> [toEnum (fromEnum 'a' + fromIntegral w - 10)]
-      _          -> showHex' (w `div` 16) ++ showHex' (w `mod` 16)
-mainDev (DevRawImageSizes input) = do
-  cfg <- readCfg input
-  analyzer <- eitherToIO $ mkLexer cfg
-  lx <- case analyzerKind analyzer of
-    Lex l -> pure l
-    Both l _ -> pure l
-    _ -> do
-      hPutStrLn stderr "dev raw-image-sizes: grammar produced no lexer."
-      exitFailure
-  let tbl :: Map.Map Word8 Endomorphism
-      tbl = rawEndoTable lx
-      prodSet = producingTransitions lx
-      -- Strip produce-extension edges: for each char c, kill entries (s, j) where (s, c) ∈ prodSet.
-      -- Killed entries become "s -> deadState" so downstream image/pair counts are consistent.
-      stripEndo c (Endomorphism arr bs) = Endomorphism arr' bs
-        where
-          arr' = UArray.array (UArray.bounds arr)
-            [ (s, if Set.member (s, c) prodSet then deadState else j)
-            | (s, j) <- UArray.assocs arr
-            ]
-      rawTbl = Map.mapWithKey stripEndo tbl
-      nonDeadImage (Endomorphism arr _) =
-        length $ List.nub $ filter (/= deadState) $ UArray.elems arr
-      nonDeadPairs (Endomorphism arr _) =
-        length
-          [ (s, j)
-          | (s, j) <- UArray.assocs arr
-          , s /= deadState
-          , j /= deadState
-          ]
-      perChar = [(c, nonDeadImage e, nonDeadPairs e) | (c, e) <- Map.toAscList rawTbl]
-      maxImg = maximum (0 : [i | (_, i, _) <- perChar])
-      maxPairs = maximum (0 : [p | (_, _, p) <- perChar])
-      singles = Map.elems rawTbl
-      initSet = Set.fromList singles
-      go seen [] = seen
-      go seen (e:queue) =
-        let new = [c | s <- singles, let c = e <> s, c `Set.notMember` seen]
-            seen' = List.foldl' (flip Set.insert) seen new
-         in go seen' (queue ++ new)
-      closed = go initSet (Set.toList initSet)
-      closedList = Set.toList closed
-      maxClosureImg = maximum (0 : map nonDeadImage closedList)
-      maxClosurePairs = maximum (0 : map nonDeadPairs closedList)
-  putStrLn "Raw-DFA endomorphisms (produce-extension pairs stripped):"
-  putStrLn $ "Per-char endomorphisms: " ++ show (length perChar)
-  putStrLn $ "  max distinct non-dead image states (per-char)  : " ++ show maxImg
-  putStrLn $ "  max non-dead (in,out) pair count  (per-char)  : " ++ show maxPairs
-  putStrLn $ "Monoid closure size                             : " ++ show (Set.size closed)
-  putStrLn $ "  max distinct non-dead image states (closure) : " ++ show maxClosureImg
-  putStrLn $ "  max non-dead (in,out) pair count   (closure) : " ++ show maxClosurePairs
-  putStrLn ""
-  putStrLn "Top per-char pair counts (first 20):"
-  let sorted = List.sortOn (\(_, _, p) -> negate p) perChar
-  mapM_
-    (\(c, i, p) ->
-       putStrLn $ "  " ++ show c ++ ": image=" ++ show i ++ " pairs=" ++ show p)
-    (take 20 sorted)
-mainDev (DevDumpEndo input ch) = do
-  cfg <- readCfg input
-  analyzer <- eitherToIO $ mkLexer cfg
-  lx <- case analyzerKind analyzer of
-    Lex l -> pure l
-    Both l _ -> pure l
-    _ -> do
-      hPutStrLn stderr "dev dump-endo: grammar produced no lexer."
-      exitFailure
-  let tbl :: Map.Map Word8 Endomorphism
-      tbl = rawEndoTable lx
-  case Map.lookup (fromIntegral ch :: Word8) tbl of
-    Nothing -> putStrLn $ "Char " ++ show ch ++ " (0x" ++ padHex ch ++ ") not in endo table"
-    Just (Endomorphism arr _) -> do
-      let assocs = UArray.assocs arr
-          nonDead = [(s, j) | (s, j) <- assocs, s /= deadState && j /= deadState]
-          distinctSrcs = Set.size (Set.fromList (map fst nonDead))
-          distinctDsts = Set.size (Set.fromList (map snd nonDead))
-          prodSet = producingTransitions lx
-          w8 = fromIntegral ch :: Word8
-          rawPairs   = [(s, j) | (s, j) <- nonDead, not (Set.member (s, w8) prodSet)]
-          addedPairs = [(s, j) | (s, j) <- nonDead,       Set.member (s, w8) prodSet]
-          rawSrcs    = Set.size (Set.fromList (map fst rawPairs))
-          rawDsts    = Set.size (Set.fromList (map snd rawPairs))
-      putStrLn $ "Char " ++ show ch ++ " (0x" ++ padHex ch ++ "):"
-      putStrLn $ "  total states                    : " ++ show (length assocs)
-      putStrLn $ "  non-dead (src -> dst) pair count (extended DFA) : " ++ show (length nonDead)
-      putStrLn $ "  distinct sources (extended)     : " ++ show distinctSrcs
-      putStrLn $ "  distinct destinations (extended): " ++ show distinctDsts
-      putStrLn $ "  raw DFA pair count              : " ++ show (length rawPairs)
-      putStrLn $ "  raw DFA distinct sources        : " ++ show rawSrcs
-      putStrLn $ "  raw DFA distinct destinations   : " ++ show rawDsts
-      putStrLn $ "  produce-extension pair count    : " ++ show (length addedPairs)
-      putStrLn "  RAW pairs (src -> dst):"
-      mapM_ (\(s, j) -> putStrLn $ "    " ++ show s ++ " -> " ++ show j) rawPairs
-      putStrLn "  ADDED-by-produce pairs (src -> dst):"
-      mapM_ (\(s, j) -> putStrLn $ "    " ++ show s ++ " -> " ++ show j) addedPairs
-  where
-    padHex w = let s = toHex w in if length s == 1 then '0':s else s
-    toHex 0 = "0"
-    toHex n = go n where
-      go 0 = ""
-      go x = go (x `div` 16) ++ digit (x `mod` 16)
-      digit d
-        | d < 10 = show d
-        | otherwise = [toEnum (fromEnum 'a' + d - 10)]
-
 main :: IO ()
 main = do
   opts <- execParser options
@@ -823,4 +584,3 @@ main = do
     Test test -> case test of
       TestGenerate params -> mainTestGenerate params
       TestCompare params -> mainTestCompare params
-    Dev dev -> mainDev dev
