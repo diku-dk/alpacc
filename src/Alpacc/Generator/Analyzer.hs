@@ -14,15 +14,13 @@ import Alpacc.CFG
 import Alpacc.Encode
 import Alpacc.Grammar
 import Alpacc.Lexer.DFA
-import Alpacc.Lexer.DFAParallelLexer (Endomorphism, dfaParallelLexer, endomorphismTable, initState)
+import Alpacc.Lexer.DFAParallelLexer (dfaParallelLexer)
 import Alpacc.Lexer.Encode (IntParallelLexer (..), intParallelLexer, stateIntType)
 import Alpacc.Lexer.ParallelLexing
 import Alpacc.Lexer.RegularExpression
 import Alpacc.Types
-import Alpacc.Lexer.FSA (accepting, enumerateLexer, fsa, producesToken, states, tokenMap)
 import Data.Either.Extra
 import Data.Map qualified as Map
-import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as Text hiding (Text)
 import Data.Word
@@ -38,12 +36,7 @@ data Lexer
     lexer :: IntParallelLexer Word8,
     ignoreToken :: Maybe Integer,
     deadToken :: Integer,
-    transitionToState :: [Integer],
-    rawEndoTable :: Map.Map Word8 Endomorphism,
-    numDfaStates :: Int,
-    acceptingDfaStates :: Set.Set Int,
-    dfaStateTerminals :: Map.Map Int Integer,
-    producingTransitions :: Set.Set (Int, Word8)
+    transitionToState :: [Integer]
   }
   deriving (Show)
 
@@ -118,11 +111,6 @@ mkLexer cfg = do
       dfa = lexerDFA (0 :: Integer) $ mapSymbols unBytes spec
       terminal_to_name = nameTerminals encoder
       raw_pl = dfaParallelLexer dfa
-      enum_dfa = enumerateLexer initState dfa
-      raw_endo = endomorphismTable enum_dfa
-      n_dfa_states = Set.size (states (fsa enum_dfa)) + 1
-      accept_states = accepting (fsa enum_dfa)
-      state_terminal_map = Map.mapMaybe (`terminalLookup` encoder) (tokenMap enum_dfa)
   terminal_type <- terminalIntType encoder
   parallel_lexer <- intParallelLexer encoder raw_pl
   state_type <- stateIntType (parLexer parallel_lexer) encoder
@@ -136,12 +124,7 @@ mkLexer cfg = do
                 lexer = parallel_lexer,
                 deadToken = terminalDead encoder,
                 transitionToState = transition_to_state,
-                ignoreToken = terminalLookup ignore encoder,
-                rawEndoTable = raw_endo,
-                numDfaStates = n_dfa_states,
-                acceptingDfaStates = accept_states,
-                dfaStateTerminals = state_terminal_map,
-                producingTransitions = producesToken enum_dfa
+                ignoreToken = terminalLookup ignore encoder
               },
         terminalToName = terminal_to_name,
         terminalType = terminal_type,
@@ -230,11 +213,6 @@ mkLexerParser cfg = do
   production_type <- productionIntType grammar
   hash_table <- llpHashTable q k empty_terminal grammar s_encoder
   let raw_pl = dfaParallelLexer dfa
-      enum_dfa = enumerateLexer initState dfa
-      raw_endo = endomorphismTable enum_dfa
-      n_dfa_states = Set.size (states (fsa enum_dfa)) + 1
-      accept_states = accepting (fsa enum_dfa)
-      state_terminal_map = Map.mapMaybe (`terminalLookup` t_encoder) (tokenMap enum_dfa)
   parallel_lexer <- intParallelLexer t_encoder raw_pl
   state_type <- stateIntType (parLexer parallel_lexer) t_encoder
   transition_to_state <- transitionToStateArray parallel_lexer
@@ -247,12 +225,7 @@ mkLexerParser cfg = do
                   lexer = parallel_lexer,
                   deadToken = dead_token,
                   transitionToState = transition_to_state,
-                  ignoreToken = terminalLookup ignore t_encoder,
-                  rawEndoTable = raw_endo,
-                  numDfaStates = n_dfa_states,
-                  acceptingDfaStates = accept_states,
-                  dfaStateTerminals = state_terminal_map,
-                  producingTransitions = producesToken enum_dfa
+                  ignoreToken = terminalLookup ignore t_encoder
                 }
             )
             ( Parser

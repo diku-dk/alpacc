@@ -2,7 +2,6 @@
 /*
 !/*/
 !Makefile
-!benchmark.sh
 benchmarks/results/
 # Do not include futhark test files.
 
