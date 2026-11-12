@@ -98,7 +98,7 @@ bash benchmarks/sweep-cuda-parser.sh "$GRAMMAR" "$DATASET" \
      "$BS_LIST" "$IPT_LIST" "$STATE_LIST" "$INDEX_LIST"
 
 # --- Bundle artifacts for retrieval ---
-LATEST_ARTIFACTS=$(ls -1dt .claude-artifacts/parser-sweep-${GRAMMAR_NAME}-* 2>/dev/null | head -1)
+LATEST_ARTIFACTS=$(ls -1dt benchmarks/results/parser-sweep-${GRAMMAR_NAME}-* 2>/dev/null | head -1)
 if [ -n "$LATEST_ARTIFACTS" ]; then
     BUNDLE="$SUBMIT_DIR/parser-sweep-${GRAMMAR_NAME}-${SLURM_JOB_ID:-local}.tar.gz"
     tar czf "$BUNDLE" -C "$(dirname "$LATEST_ARTIFACTS")" "$(basename "$LATEST_ARTIFACTS")"

@@ -125,8 +125,7 @@ lookupComposition comps e e' =
 -- (varying with lane), and correlated "self" values (state stays in the
 -- same DFA node across nearby input bytes).  Putting the first argument
 -- on the outer axis lets adjacent lanes hit the same row/L1 line when
--- their first-argument states are equal.  See ncu findings in
--- .claude-artifacts/ncu-local/.
+-- their first-argument states are equal (measured with ncu).
 listCompositions :: ParallelLexer t e -> [e]
 listCompositions parallel_lexer =
   [fromMaybe d $ lookupComposition cs e e' | e <- range, e' <- range]

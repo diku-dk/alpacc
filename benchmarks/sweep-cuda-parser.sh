@@ -118,7 +118,7 @@ else
 fi
 [ -f "$INPUT_FILE" ] || { echo "error: dataset $INPUT_FILE not found" >&2; exit 1; }
 
-ARTIFACT_DIR="$REPO_ROOT/.claude-artifacts/parser-sweep-${GRAMMAR_NAME}-$(date +%Y%m%d-%H%M%S)"
+ARTIFACT_DIR="$REPO_ROOT/benchmarks/results/parser-sweep-${GRAMMAR_NAME}-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$ARTIFACT_DIR"
 SUMMARY_TSV="$ARTIFACT_DIR/summary.tsv"
 printf 'state_t\tindex_t\tblock_size\titems_per_thread\tkernel_us\tbytes\n' > "$SUMMARY_TSV"
