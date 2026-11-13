@@ -14,7 +14,7 @@ NVCCFLAGS=-O3 -std=c++17 -arch=native
 .PHONY: clean reset build bench bench-lexer bench-parser \
         bench-lexer-cuda bench-lexer-futhark bench-lexer-rust \
         bench-parser-cuda bench-parser-futhark \
-        build-cuda \
+        build-cuda profile-lexer-cuda \
         lexer.cu parser.cu
 
 # --- Datasets ---
@@ -111,8 +111,26 @@ bench-parser:
 
 bench: bench-lexer bench-parser
 
+# --- Profiling ---
+
+# Full ncu profile of one lexer kernel launch -> $(PROFILE_OUT).ncu-rep.
+# Built with -lineinfo and the source imported, so ncu-ui attributes
+# metrics to source lines.  --clock-control none profiles at the clocks the
+# benchmark runs at (ncu otherwise locks them to base clocks).
+NCU?=ncu
+PROFILE_OUT?=lexer-cuda
+
+lexer-cuda-profile: lexer.cu
+	@printf "$(D)  Compiling JSON CUDA lexer (-lineinfo)...$(E)\n"
+	@nvcc $(NVCCFLAGS) -lineinfo -o $@ $^
+
+profile-lexer-cuda: $(DATA) lexer-cuda-profile
+	@printf "$(H)Profiling CUDA lexer [$(GRAMMAR_NAME)] -> $(PROFILE_OUT).ncu-rep:$(E)\n"
+	@$(NCU) --set full --import-source yes --clock-control none -k lexer -c 1 -f \
+	        -o $(PROFILE_OUT) ./lexer-cuda-profile --benchmark 1 --warmup 1 < $(DATA)
+
 reset:
-	@rm -rf target lexer-rust lexer-cuda lexer.cu lexer.fut lexer lexer.c \
+	@rm -rf target lexer-rust lexer-cuda lexer-cuda-profile lexer.cu lexer.fut lexer lexer.c \
 	       parser-cuda parser.cu parser.fut parser parser.c
 
 clean: reset

@@ -136,7 +136,7 @@ ALPEOF
         # the shmem budget for a given grammar's endo_t width; nvcc fails in
         # that case and we skip the config rather than fail the run.
         for bs in 128 256; do
-            for ipt in 2 4 8; do
+            for ipt in 32 64 96; do
                 local bin="random_${bs}_${ipt}"
                 if ! nvcc -std=c++17 -arch="$arch" \
                         -DALPACC_BLOCK_SIZE="$bs" \
@@ -171,10 +171,11 @@ ALPEOF
         # ---- Test 2: server mode (default BS/IPT) ----
         # Server mode loops counted batches: feeding the batch file twice
         # must yield the batch output twice.
+        ./random -i random.inputs -o results_default.bin 2>/dev/null
         if ! cat random.inputs random.inputs | ./random --server > server_results.bin 2>/dev/null; then
             echo "===== FAIL: server mode crashed, job $job_id ====="
             all_ok=false
-        elif ! cat results_128_2.bin results_128_2.bin | cmp -s - server_results.bin; then
+        elif ! cat results_default.bin results_default.bin | cmp -s - server_results.bin; then
             echo "===== FAIL: server mode output differs from batch, job $job_id ====="
             all_ok=false
         fi
